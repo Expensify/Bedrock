@@ -1,3 +1,4 @@
+#include <libstuff/JSON/Value.h>
 #include <libstuff/SData.h>
 #include <libstuff/SQResult.h>
 #include <test/clustertest/BedrockClusterTester.h>
@@ -48,8 +49,8 @@ struct BoundParametersTest : tpunit::TestFixture
     {
         SData status("Status");
         string response = node.executeWaitVerifyContent(status);
-        STable json = SParseJSONObject(response);
-        return SToUInt64(json["commitCount"]);
+        JSON::Value json = JSON::Value::parse(response);
+        return json["CommitCount"].getUint();
     }
 
     // Reads the journal `query` column for a given commit ID across all journal tables, decompressing on

@@ -1,5 +1,6 @@
 #include <cstdint>
 #include <libstuff/libstuff.h>
+#include <libstuff/JSON/Value.h>
 #include <libstuff/SHTTPSManager.h>
 #include "BedrockCommand.h"
 #include "BedrockPlugin.h"
@@ -430,19 +431,36 @@ void BedrockCommand::deserializeHTTPSRequests(const string& serializedHTTPSReque
     if (serializedHTTPSRequests.empty()) {
         return;
     }
+    if (serializedHTTPSRequests.find('\0') != string::npos) {
+        SWARN("Serialized HTTPS requests contain an embedded NUL.");
+        return;
+    }
 
-    list<string> requests = SParseJSONArray(serializedHTTPSRequests);
-    for (const string& requestStr : requests) {
-        STable requestMap = SParseJSONObject(requestStr);
+    JSON::Value requests;
+    try {
+        requests = JSON::Value::parse(serializedHTTPSRequests);
+    } catch (const JSON::Error& e) {
+        SWARN("Unable to parse serialized HTTPS requests: " << e.what());
+        return;
+    }
+    if (!requests.isArray()) {
+        SWARN("Serialized HTTPS requests must be an array.");
+        return;
+    }
+    for (const auto& requestMap : JSON::ArrayValue(requests)) {
+        const auto numericAttribute = [&](const string& key) {
+            const auto& value = requestMap.getMemberWithDefault(key);
+            return value.isString() ? value.getString() : value.serialize();
+        };
 
         unique_ptr<SHTTPSManager::Transaction> httpsRequest = make_unique<SHTTPSManager::Transaction>(_noopHTTPSManager, request["requestID"]);
         httpsRequest->s = nullptr;
-        httpsRequest->created = SToUInt64(requestMap["created"]);
-        httpsRequest->finished = SToUInt64(requestMap["finished"]);
-        httpsRequest->timeoutAt = SToUInt64(requestMap["timeoutAt"]);
-        httpsRequest->response = SToInt(requestMap["response"]);
-        httpsRequest->fullRequest.deserialize(SDecodeBase64(requestMap["fullRequest"]));
-        httpsRequest->fullResponse.deserialize(SDecodeBase64(requestMap["fullResponse"]));
+        httpsRequest->created = SToUInt64(numericAttribute("created"));
+        httpsRequest->finished = SToUInt64(numericAttribute("finished"));
+        httpsRequest->timeoutAt = SToUInt64(numericAttribute("timeoutAt"));
+        httpsRequest->response = SToInt(numericAttribute("response"));
+        httpsRequest->fullRequest.deserialize(SDecodeBase64(requestMap.getStringMemberWithDefault("fullRequest")));
+        httpsRequest->fullResponse.deserialize(SDecodeBase64(requestMap.getStringMemberWithDefault("fullResponse")));
 
         // These should never be incomplete when passed with a serialized command.
         if (!httpsRequest->response) {

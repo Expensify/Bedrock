@@ -1,4 +1,5 @@
 #include <libstuff/libstuff.h>
+#include <libstuff/JSON/SAXHandler.h>
 #include "SQResult.h"
 #include "libstuff/SQResultFormatter.h"
 #include <stdexcept>
@@ -213,100 +214,142 @@ string SQResult::serialize(const string& format) const
     }
 }
 
-bool SQResult::deserialize(const string& json)
-{
-    // Reset ourselves to start
-    clear();
+namespace {
+// SQLite emits columns as object members in SELECT order, including duplicate names.
+// Convert each row into a JSON array while parsing so neither order nor duplicates
+// are lost in JSON::Value's object map.
+class SQLiteResultHandler : public JSON::SAXHandler {
+public:
+    vector<string> headers;
 
-    // Is it an array (SQLite style) or object (old Bedrock style) response?
-    size_t pos = json.find_first_of("[{");
-    if (pos == string::npos) {
-        return false;
+    bool StartObject()
+    {
+        const bool isRow = depth++ == 1;
+        return isRow ? JSON::SAXHandler::StartArray() : JSON::SAXHandler::StartObject();
     }
-    bool isObject = true;
-    if (json[pos] == '[') {
-        isObject = false;
-    }
 
-    // If there are any problems, clean up whatever we've parsed
-    try {
-        if (isObject) {
-            // Verify we have the basic components
-            STable content = SParseJSONObject(json);
-            if (!SContains(content, "headers")) {
-                STHROW("Missing 'headers'");
+    bool Key(const char* str, size_t length, bool copy)
+    {
+        if (depth == 2) {
+            if (!finishedFirstRow) {
+                headers.emplace_back(str, length);
             }
-            if (!SContains(content, "rows")) {
-                STHROW("Missing 'rows'");
-            }
-
-            // Add the headers
-            list<string> jsonHeaders = SParseJSONArray(content["headers"]);
-            setHeaders(vector<string>(jsonHeaders.begin(), jsonHeaders.end()));
-
-            // Add the rows
-            list<string> jsonRows = SParseJSONArray(content["rows"]);
-            rows.resize(jsonRows.size());
-            int rowIndex = 0;
-            for (string& jsonRowStr : jsonRows) {
-                // Get the row and make sure it has the right number of columns
-                list<string> jsonRow = SParseJSONArray(jsonRowStr);
-                if (jsonRow.size() != headers.size()) {
-                    STHROW("Incorrect number of columns in row");
-                }
-
-                // Insert the values
-                SQResultRow& row = rows[rowIndex++];
-                row.result = this;
-                for (const string& s : jsonRow) {
-                    row.push_back(s);
-                }
-            }
-
-            // Success!
-            return true;
-        } else {
-            // Parse an array-style response.
-            auto array = SParseJSONArray(json);
-            if (array.empty()) {
-                // Nothing here.
-                return true;
-            }
-
-            // We need to preserve the *order* of the headers of the first row, which is not actually in the JSON spec but
-            // is important here.
-            vector<string> parsedHeaders;
-            SParseJSONObject(array.front(), "", [&](const string& key, const string& value){
-                parsedHeaders.push_back(key);
-            });
-            setHeaders(move(parsedHeaders));
-
-            // Now we need to parse each row.
-            for (auto& jsonRow : array) {
-                // Add a blank row to the bottom of the results
-                rows.resize(rows.size() + 1);
-
-                // Now we grab a reference to our new blank row.
-                SQResultRow& row = rows[rows.size() - 1];
-                row.result = this;
-
-                // And get the data that will fit in this row.
-                // We pass the empty string here for how we deserialize `null` from JSON becuase historically we have no way to
-                // differentiate these values in an SQResult.
-                // These are done *in order* rather than by key, which is strictly for JSON.
-                // However, that's what SQLite returns.
-                SParseJSONObject(jsonRow, "", [&](const string& key, const string& value){
-                    row.push_back(value);
-                });
-            }
-
             return true;
         }
+        return JSON::SAXHandler::Key(str, length, copy);
+    }
+
+    bool EndObject(size_t memberCount)
+    {
+        if (--depth == 1) {
+            finishedFirstRow = true;
+            return JSON::SAXHandler::EndArray(memberCount);
+        }
+        return JSON::SAXHandler::EndObject(memberCount);
+    }
+
+    bool StartArray()
+    {
+        // Only objects can be rows. Arrays nested inside column values are allowed.
+        if (depth == 1) {
+            return false;
+        }
+        ++depth;
+        return JSON::SAXHandler::StartArray();
+    }
+
+    bool EndArray(size_t elementCount)
+    {
+        --depth;
+        return JSON::SAXHandler::EndArray(elementCount);
+    }
+
+private:
+    size_t depth = 0;
+    bool finishedFirstRow = false;
+};
+
+string resultValue(const JSON::Value& value, bool emptyNull)
+{
+    if (value.isNull() && emptyNull) {
+        return "";
+    }
+    return value.isString() ? value.getString() : value.serialize();
+}
+}
+
+bool SQResult::deserialize(const string& json)
+{
+    clear();
+
+    // JSON string streams stop at NUL; do not accept a valid prefix and ignore the rest.
+    if (json.find('\0') != string::npos) {
+        return false;
+    }
+
+    // If there are any problems, clean up whatever we've parsed.
+    try {
+        const size_t pos = json.find_first_not_of(" \t\r\n");
+        if (pos == string::npos) {
+            return false;
+        }
+        if (json[pos] == '{') {
+            const JSON::Value content = JSON::Value::parse(json);
+            if (!content.hasMember("headers") || !content["headers"].isArray()) {
+                STHROW("Missing or invalid 'headers'");
+            }
+            if (!content.hasMember("rows") || !content["rows"].isArray()) {
+                STHROW("Missing or invalid 'rows'");
+            }
+
+            vector<string> parsedHeaders;
+            for (const auto& header : JSON::ConstArrayValue(content["headers"])) {
+                parsedHeaders.push_back(resultValue(header, false));
+            }
+            setHeaders(move(parsedHeaders));
+
+            for (const auto& jsonRow : JSON::ConstArrayValue(content["rows"])) {
+                if (!jsonRow.isArray() || jsonRow.size() != headers.size()) {
+                    STHROW("Incorrect number of columns in row");
+                }
+                rows.emplace_back();
+                SQResultRow& row = rows.back();
+                row.result = this;
+                for (const auto& value : JSON::ConstArrayValue(jsonRow)) {
+                    row.push_back(resultValue(value, false));
+                }
+            }
+            return true;
+        }
+        if (json[pos] != '[') {
+            return false;
+        }
+
+        SQLiteResultHandler handler;
+        rapidjson::Reader reader;
+        rapidjson::StringStream stream(json.c_str());
+        if (reader.Parse(stream, handler).IsError()) {
+            STHROW("Invalid JSON-encoded SQResult");
+        }
+        const unique_ptr<JSON::Value> content = handler.getValue();
+        setHeaders(move(handler.headers));
+        for (const auto& jsonRow : JSON::ArrayValue(*content)) {
+            if (!jsonRow.isArray()) {
+                STHROW("Invalid row in JSON-encoded SQResult");
+            }
+            rows.emplace_back();
+            SQResultRow& row = rows.back();
+            row.result = this;
+            for (const auto& value : JSON::ConstArrayValue(jsonRow)) {
+                // SQLite-style results historically represent SQL null as an empty string.
+                row.push_back(resultValue(value, true));
+            }
+        }
+        return true;
     } catch (const SException& e) {
         SDEBUG("Failed to deserialize JSON-encoded SQResult (" << e.what() << "): " << json);
     }
 
-    // Failed, reset and report failure
     clear();
     return false;
 }

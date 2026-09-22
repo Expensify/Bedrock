@@ -26,6 +26,7 @@
 #include <mbedtls/sha1.h>
 #include <mbedtls/sha256.h>
 
+#include <libstuff/JSON/Value.h>
 #include <libstuff/SQResult.h>
 #include <libstuff/SData.h>
 #include <libstuff/SFastBuffer.h>
@@ -1500,8 +1501,6 @@ string SDecodeURIComponent(const char* buffer, int length)
 }
 
 // --------------------------------------------------------------------------
-const char* _SParseJSONValue(const char* ptr, const char* end, string& value, bool populateValue, const string& nullValue);
-
 string SToJSON(const int64_t value, const bool forceString)
 {
     return SToJSON(to_string(value), forceString);
@@ -1535,22 +1534,24 @@ string SToJSON(const string& value, const bool forceString)
     // Is it already a JSON array or object?
     if (!forceString && value.size() >= 2 &&
         ((value[0] == '[' && value[value.size() - 1] == ']') || (value[0] == '{' && value[value.size() - 1] == '}'))) {
-        // If we can parse it, then return the array or object.
-        string ignore;
-        const char* ptr = value.c_str();
-        const char* end = ptr + value.size();
-        const char* parseEnd = _SParseJSONValue(ptr, end, ignore, false, "null");
-        if (parseEnd == end) { // Parsed it all.
-            return value;
+        // Preserve the original formatting when the shared parser accepts the complete value.
+        // Its string stream stops at a NUL, so reject embedded NULs before validating.
+        if (value.find('\0') == string::npos) {
+            try {
+                JSON::Value::parse(value);
+                return value;
+            } catch (const JSON::InvalidArgument&) {
+                // Invalid JSON is escaped as a string below.
+            }
         }
     }
 
     // Otherwise, it's a string -- escape and return
     // We need to escape all control characters in the string, not just the white-space control characters.
-    return "\"" + SEscape(value, "\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f"
-                                 "\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f\x7f\"\\/",
-                          '\\') +
-           "\"";
+    const string escaped = SEscape(value.c_str(), "\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f"
+                                         "\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f\x7f\"\\/",
+                                   '\\', value.size());
+    return "\"" + SReplace(escaped, string(1, '\0'), "\\u0000") + "\"";
 }
 
 // --------------------------------------------------------------------------
@@ -1566,296 +1567,6 @@ string SComposeJSONObject(const STable& nameValueMap, const bool forceString)
     working.resize(working.size() - 1);
     working += "}";
     return working;
-}
-
-// --------------------------------------------------------------------------
-#define _JSONWS()                                                                                                      \
-        do {                                                                                                               \
-            while (ptr < end && isspace(*ptr))                                                                             \
-            ++ptr;                                                                                                     \
-            if (ptr >= end)                                                                                                \
-            return ptr;                                                                                                \
-        } while (0)
-#define _JSONTEST(_CH_)                                                                                                \
-        do {                                                                                                               \
-            if (ptr >= end || *ptr != _CH_) {                                                                              \
-                if (ptr >= end)                                                                                            \
-                SDEBUG("Expecting: '" << _CH_ << "', found 'eol'");                                                    \
-                else                                                                                                       \
-                SDEBUG("Expecting: '" << _CH_ << "', found '" << ptr << "'");                                          \
-                return NULL;                                                                                               \
-            }                                                                                                              \
-            ++ptr;                                                                                                         \
-        } while (0)
-#define _JSONASSERTPTR()                                                                                               \
-        do {                                                                                                               \
-            if (ptr == NULL)                                                                                               \
-            return NULL;                                                                                               \
-        } while (0)
-//#define _JSONLOG( ) do { cout << __LINE__ << ": " << ptr << endl; } while(0)
-#define _JSONLOG()                                                                                                     \
-        do {                                                                                                               \
-        } while (0)
-const char* _SParseJSONString(const char* ptr, const char* end, string& out, bool populateOut)
-{
-    SASSERT(ptr && end);
-    SASSERT(*ptr);
-    _JSONLOG();
-    // Walk across and find the end quote
-    _JSONWS();
-    _JSONTEST('"');
-    const char* strStart = ptr;
-    for (; ptr < end && *ptr; ++ptr) {
-        // Found the end of this string
-        if (*ptr == '"') {
-            break;
-        }
-        // We want to skip all escaped characters so we don't mistakenly count
-        // an escaped double-quote as the actual end.
-        else if (*ptr == '\\') {
-            ++ptr;
-        }
-    }
-    _JSONTEST('"');
-
-    if (populateOut) {
-        string strOut(strStart, ptr - strStart - 1);
-        out += SUnescape(strOut.c_str(), '\\');
-    }
-    return ptr;
-}
-
-// --------------------------------------------------------------------------
-const char* _SParseJSONArray(const char* ptr, const char* end, list<string>& out, bool populateOut, const string& nullValue)
-{
-    SASSERT(ptr && end);
-    SASSERT(*ptr);
-    _JSONLOG();
-    // Walk across the array
-    _JSONWS();
-    _JSONTEST('[');
-    _JSONWS();
-    if (*ptr == ']') {
-        return ptr + 1; // Empty array
-    }
-    while (true) {
-        // Find the value
-        _JSONWS();
-        string value;
-        ptr = _SParseJSONValue(ptr, end, value, populateOut, nullValue);
-        _JSONASSERTPTR(); // Make sure no parse error.
-        if (populateOut) {
-            out.push_back(value);
-        }
-        _JSONLOG();
-
-        // See if we're done
-        _JSONWS();
-        if (*ptr == ']') {
-            return ptr + 1; // Done
-        }
-        _JSONTEST(',');
-    }
-}
-
-// --------------------------------------------------------------------------
-const char* _SParseJSONObject(const char* ptr, const char* end, STable& out, bool populateOut, const string& nullValue, const function<void(const string&, const string&)>& callback = [] (const string&, const string&){})
-{
-    SASSERT(ptr && end);
-    SASSERT(*ptr);
-    _JSONLOG();
-    // Walk across the name value table
-    _JSONWS();
-    _JSONTEST('{');
-    _JSONWS();
-    if (*ptr == '}') {
-        return ptr + 1; // Empty object
-    }
-    while (true) {
-        // Find the name
-        _JSONWS();
-        string name;
-        ptr = _SParseJSONString(ptr, end, name, populateOut);
-        _JSONASSERTPTR(); // Make sure no parse error.
-        _JSONWS();
-        _JSONTEST(':');
-
-        // Find the value
-        _JSONWS();
-        string value;
-        ptr = _SParseJSONValue(ptr, end, value, populateOut, nullValue);
-        _JSONASSERTPTR(); // Make sure no parse error.
-        if (populateOut) {
-            // Got one more
-            out[name] = value;
-            callback(name, value);
-        }
-        _JSONLOG();
-
-        // See if we're done
-        _JSONWS();
-        if (*ptr == '}') {
-            return ptr + 1; // Finished this object
-        }
-        _JSONTEST(',');
-    }
-}
-
-// --------------------------------------------------------------------------
-const char* _SParseJSONValue(const char* ptr, const char* end, string& value, bool populateValue, const string& nullValue)
-{
-    _JSONLOG();
-    // Classify based on the first character
-    _JSONWS();
-    switch (*ptr) {
-        case '"': {
-            // String
-            ptr = _SParseJSONString(ptr, end, value, populateValue);
-            _JSONASSERTPTR(); // Make sure no parse error.
-            break;
-        }
-
-        case '{': {
-            // Object -- just grab the string representation.
-            STable ignore;
-            const char* valueStart = ptr;
-            ptr = _SParseJSONObject(ptr, end, ignore, false, nullValue);
-            _JSONASSERTPTR(); // Make sure no parse error.
-            if (populateValue) {
-                value.resize(ptr - valueStart);
-                memcpy(&value[0], valueStart, ptr - valueStart);
-            }
-            break;
-        }
-
-        case '[': {
-            // Array -- just grab the string representation.
-            list<string> ignore;
-            const char* valueStart = ptr;
-            ptr = _SParseJSONArray(ptr, end, ignore, false, nullValue);
-            _JSONASSERTPTR(); // Make sure no parse error.
-            if (populateValue) {
-                value.resize(ptr - valueStart);
-                memcpy(&value[0], valueStart, ptr - valueStart);
-            }
-            break;
-        }
-
-        default: {
-            // Maybe a number?
-            if (isdigit(*ptr) || (*ptr == '-' && ptr + 1 < end && isdigit(*(ptr + 1)))) {
-                // Parse this number
-                const char* numStart = ptr;
-
-                // Maybe a negative value?
-                if (*ptr == '-') {
-                    ++ptr;
-                }
-                while (ptr < end && isdigit(*ptr)) {
-                    ++ptr;
-                }
-
-                // Maybe a float value?
-                if (*ptr == '.') {
-                    ++ptr;
-                    while (ptr < end && isdigit(*ptr)) {
-                        ++ptr;
-                    }
-                }
-
-                // Maybe a scientific notation value?
-                if (*ptr == 'e' || *ptr == 'E') {
-                    ++ptr;
-                    if (*ptr == '-' || *ptr == '+') {
-                        ++ptr;
-                    }
-                    while (ptr < end && isdigit(*ptr)) {
-                        ++ptr;
-                    }
-                }
-
-                if (populateValue) {
-                    value.resize(ptr - numStart);
-                    memcpy(&value[0], numStart, ptr - numStart);
-                }
-            } else if (!strncmp(ptr, "true", 4)) {
-                // Found boolean true
-                if (populateValue) {
-                    value = "true";
-                }
-                ptr += 4; // strlen(true)
-            } else if (!strncmp(ptr, "false", 5)) {
-                // Found boolean false
-                if (populateValue) {
-                    value = "false";
-                }
-                ptr += 5; // strlen(false)
-            } else if (!strncmp(ptr, "null", 4)) {
-                // Found null
-                if (populateValue) {
-                    value = nullValue;
-                }
-                ptr += 4; // strlen(null)
-            }
-            // else unsupported, ignore
-            break;
-        }
-    }
-
-    // Done
-    return ptr;
-}
-
-STable SParseJSONObject(const string& object, const string& nullValue, const function<void(const string&, const string&)>& callback)
-{
-    // Assume it's an object
-    STable out;
-    if (object.size() < 2) {
-        return out;
-    }
-    const char* ptr = object.c_str();
-    const char* end = ptr + object.size();
-    const char* parseEnd = _SParseJSONObject(ptr, end, out, true, nullValue, callback);
-
-    // Trim trailing whitespace
-    while (parseEnd && parseEnd < end && *parseEnd && isspace(*parseEnd)) {
-        ++parseEnd;
-    }
-
-    // Did we parse it all?  If not, return nothing.
-    if (parseEnd < end) {
-        // Did not parse it all.
-        if (parseEnd) {
-            SWARN("Incomplete parse at:" << parseEnd << "(" << (int) (end - parseEnd) << ", ch:" << (int) (*parseEnd)
-                  << ")");
-        } else {
-            SWARN("Malformed JSON (" << out.size() << " entries parsed)");
-        }
-        return STable();
-    }
-    return out;
-}
-
-// --------------------------------------------------------------------------
-list<string> SParseJSONArray(const string& array, const string& nullValue)
-{
-    // Assume it's an array
-    list<string> out;
-    if (array.size() < 2) {
-        return out;
-    }
-    const char* ptr = array.c_str();
-    const char* end = ptr + array.size();
-    const char* parseEnd = _SParseJSONArray(ptr, end, out, true, nullValue);
-    while (parseEnd && isspace(*parseEnd)) {
-        // Skip trailing whitespace.
-        parseEnd++;
-    }
-    if (parseEnd != end) {
-        // Did not parse it all.
-        return list<string>();
-    }
-    return out;
 }
 
 // --------------------------------------------------------------------------
@@ -3669,12 +3380,6 @@ list<string> SParseList(const string& value, char separator)
     SParseList(value, valueList, separator);
     return valueList;
 }
-
-string SGetJSONArrayFront(const string& jsonArray)
-{
-    list<string> l = SParseJSONArray(jsonArray);
-    return l.empty() ? "" : l.front();
-};
 
 string SToStr(const sockaddr_in& addr)
 {

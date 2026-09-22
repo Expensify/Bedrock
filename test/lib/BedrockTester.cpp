@@ -1,3 +1,4 @@
+#include <libstuff/JSON/Value.h>
 #include "BedrockTester.h"
 #include "libstuff/libstuff.h"
 
@@ -192,15 +193,15 @@ void BedrockTester::autoAttachDebugger()
     // Load the configuration and parse it
     string configStr;
     SFileLoad(autoAttachConfigFile, configStr);
-    STable config = SParseJSONObject(configStr);
+    JSON::Value config = JSON::Value::parse(configStr);
 
     // Get the rpc server and inject the current pid
-    string rpcServer = config["rpcServer"];
+    string rpcServer = config["rpcServer"].getString();
     config["pid"] = getpid();
 
     // Create, connect and send the config to the lldb RPC server
     int socket = S_socket(rpcServer, true, false, true);
-    SFastBuffer serialized(SComposeJSONObject(config));
+    SFastBuffer serialized(config.serialize());
     S_sendconsume(socket, serialized);
 
     // Half close the socket (we're no longer writing to it. FIN is sent)
@@ -365,8 +366,26 @@ string BedrockTester::executeWaitVerifyContent(const SData& request, const strin
 
 STable BedrockTester::executeWaitVerifyContentTable(const SData& request, const string& expectedResult)
 {
-    string result = executeWaitVerifyContent(request, expectedResult);
-    return SParseJSONObject(result);
+    const string result = executeWaitVerifyContent(request, expectedResult);
+    // Commands may return an empty or non-JSON body, including successful asynchronous requests.
+    // Keep this helper's existing empty-table result for bodies that are not JSON objects.
+    if (result.empty() || result.find('\0') != string::npos) {
+        return {};
+    }
+    JSON::Value json;
+    try {
+        json = JSON::Value::parse(result);
+    } catch (const JSON::Error&) {
+        return {};
+    }
+    if (!json.isObject()) {
+        return {};
+    }
+    STable table;
+    for (const auto& [key, value] : JSON::ConstObjectValue(json)) {
+        table[key] = value.isString() ? value.getString() : value.serialize();
+    }
+    return table;
 }
 
 vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int connections, bool control, bool returnOnDisconnect, int* errorCode)
@@ -683,7 +702,15 @@ bool BedrockTester::waitForStatusTerm(const string& term, const string& testValu
     uint64_t start = STimeNow();
     while (STimeNow() < start + timeoutUS) {
         try {
-            string result = SParseJSONObject(BedrockTester::executeWaitVerifyContent(SData("Status"), "200", true))[term];
+            const auto status = JSON::Value::parse(BedrockTester::executeWaitVerifyContent(SData("Status"), "200", true));
+            // Status callers use the same case-insensitive field names as SData.
+            string result;
+            for (const auto& [key, value] : JSON::ConstObjectValue(status)) {
+                if (SIEquals(key, term)) {
+                    result = value.isString() ? value.getString() : value.serialize();
+                    break;
+                }
+            }
 
             // if the value matches, return, otherwise wait
             if (result == testValue) {
@@ -702,7 +729,7 @@ bool BedrockTester::waitForLeadingFollowing(uint64_t timeoutUS)
     uint64_t start = STimeNow();
     while (STimeNow() < start + timeoutUS) {
         try {
-            string result = SParseJSONObject(BedrockTester::executeWaitVerifyContent(SData("Status"), "200", true))["state"];
+            string result = JSON::Value::parse(BedrockTester::executeWaitVerifyContent(SData("Status"), "200", true))["state"].getString();
 
             // if the value matches, return, otherwise wait
             if (result == "LEADING" || result == "FOLLOWING") {

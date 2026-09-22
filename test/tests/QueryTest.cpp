@@ -1,3 +1,4 @@
+#include <libstuff/JSON/Value.h>
 #include "libstuff/libstuff.h"
 #include <libstuff/SData.h>
 #include <test/lib/BedrockTester.h>
@@ -73,7 +74,7 @@ struct QueryTest : tpunit::TestFixture
         string resultJSON = tester->executeWaitMultipleData({query})[0].content;
 
         // Parse the first item in the first row of results and check that.
-        ASSERT_EQUAL(SParseJSONObject(SParseJSONArray(resultJSON).front())["value"], "first value");
+        ASSERT_EQUAL(JSON::Value::parse(resultJSON)[0]["value"].getString(), "first value");
     }
 
     void testWriteInSecondStatement()
@@ -87,7 +88,7 @@ struct QueryTest : tpunit::TestFixture
         string resultJSON = tester->executeWaitMultipleData({query})[0].content;
 
         // Parse the first item in the first row of results and check that.
-        ASSERT_EQUAL(SParseJSONObject(SParseJSONArray(resultJSON).front())["value"], "second value");
+        ASSERT_EQUAL(JSON::Value::parse(resultJSON)[0]["value"].getString(), "second value");
     }
 
     void testNoWhere()
@@ -110,7 +111,7 @@ struct QueryTest : tpunit::TestFixture
             query["ReadDBFlags"] = "-json";
             query["query"] = "SELECT " + expression + " AS result FROM " + values + ";";
             string resultJSON = tester->executeWaitMultipleData({query})[0].content;
-            return stod(SParseJSONObject(SParseJSONArray(resultJSON).front())["result"]);
+            return JSON::Value::parse(resultJSON)[0]["result"].getFloat();
         };
 
         // median(v) == percentile(v, 50) == the middle value.

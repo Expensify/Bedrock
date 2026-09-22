@@ -178,6 +178,36 @@ struct SQResultTest : tpunit::TestFixture
         ASSERT_EQUAL(result[0]["name"], "first");
         ASSERT_TRUE(result.deserialize(R"({"headers":["value","name"],"rows":[["third","fourth"]]})"));
         ASSERT_EQUAL(result[0]["name"], "fourth");
+        // SQLite column order and repeated column names must survive parsing.
+        ASSERT_TRUE(result.deserialize(R"([{"z":1,"a":2,"z":3},{"z":4,"a":5,"z":6}])"));
+        ASSERT_TRUE(result.getHeaders() == vector<string>({"z", "a", "z"}));
+        ASSERT_EQUAL(result[0][0], "1");
+        ASSERT_EQUAL(result[0][1], "2");
+        ASSERT_EQUAL(result[0][2], "3");
+        ASSERT_EQUAL(result[1][2], "6");
+
+        // Nested cells retain their types; SQL NULL remains an empty cell.
+        ASSERT_TRUE(result.deserialize(R"([{"text":"123","object":{"z":true},"array":[1,"null"],"nothing":null}])"));
+        ASSERT_EQUAL(result[0]["text"], "123");
+        ASSERT_EQUAL(result[0]["object"], R"({"z":true})");
+        ASSERT_EQUAL(result[0]["array"], R"([1,"null"])");
+        ASSERT_EQUAL(result[0]["nothing"], "");
+        ASSERT_TRUE(result.deserialize(R"({"headers":["nothing"],"rows":[[null]]})"));
+        ASSERT_EQUAL(result[0][0], "null");
+
+        // A failure must clear even rows successfully parsed before the bad input.
+        for (const string& invalid : {R"([{"a":1},{"a":2])", R"([{"a":1},[]])", R"({"headers":["a"],"rows":[[1],[2,3]]})", R"([{"a":1}] trailing)"}) {
+            ASSERT_FALSE(result.deserialize(invalid));
+            ASSERT_TRUE(result.empty());
+            ASSERT_TRUE(result.getHeaders().empty());
+        }
+
+        for (const string& validPrefix : {R"([{"a":1}])", R"({"headers":["a"],"rows":[[1]]})"}) {
+            ASSERT_FALSE(result.deserialize(validPrefix + '\0' + "trailing"));
+            ASSERT_TRUE(result.empty());
+            ASSERT_TRUE(result.getHeaders().empty());
+        }
+
         ASSERT_FALSE(result.deserialize("invalid"));
         ASSERT_TRUE(result.empty());
         ASSERT_TRUE(result.getHeaders().empty());

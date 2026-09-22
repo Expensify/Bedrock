@@ -1,3 +1,4 @@
+#include <libstuff/JSON/Value.h>
 #include <iostream>
 #include <unistd.h>
 
@@ -473,18 +474,18 @@ struct GetJobTest : tpunit::TestFixture
         ASSERT_FALSE(response["cancelledChildJobs"].empty());
 
         // Checking the finished job
-        list<string> finishedChildJobs = SParseJSONArray(response["finishedChildJobs"]);
+        auto finishedChildJobs = JSON::Value::parse(response["finishedChildJobs"]);
         ASSERT_EQUAL(finishedChildJobs.size(), 1);
-        STable childJob = SParseJSONObject(finishedChildJobs.front());
-        ASSERT_EQUAL(childJob["jobID"], finishedChildID);
-        ASSERT_EQUAL(childJob["data"], finishedChildData);
+        JSON::Value childJob = finishedChildJobs[0];
+        ASSERT_EQUAL(childJob["jobID"].serialize(), finishedChildID);
+        ASSERT_EQUAL(childJob["data"].serialize(), finishedChildData);
 
         // Checking the cancelled job
-        list<string> cancelledChildJobs = SParseJSONArray(response["cancelledChildJobs"]);
+        auto cancelledChildJobs = JSON::Value::parse(response["cancelledChildJobs"]);
         ASSERT_EQUAL(cancelledChildJobs.size(), 1);
-        childJob = SParseJSONObject(cancelledChildJobs.front());
-        ASSERT_EQUAL(childJob["jobID"], cancelledChildID);
-        ASSERT_EQUAL(childJob["data"], cancelledChildData);
+        childJob = cancelledChildJobs[0];
+        ASSERT_EQUAL(childJob["jobID"].serialize(), cancelledChildID);
+        ASSERT_EQUAL(childJob["data"].serialize(), cancelledChildData);
     }
 
     // This is the same as testPriorities but some of the states are set to RUNQUEUED
@@ -647,7 +648,7 @@ struct GetJobTest : tpunit::TestFixture
 
         tester->readDB("SELECT COUNT(1) FROM jobs WHERE name = 'medium' AND state = 'RUNNING' AND JSON_EXTRACT(data, '$.mockRequest') IS NULL;", result);
         STable response = tester->executeWaitVerifyContentTable(command);
-        list<string> jobList = SParseJSONArray(response["jobs"]);
+        auto jobList = JSON::Value::parse(response["jobs"]);
         ASSERT_EQUAL(jobList.size(), 2);
     }
 
@@ -702,29 +703,29 @@ struct GetJobTest : tpunit::TestFixture
         // Get jobPriority 0
         command["jobPriority"] = "0";
         response = tester->executeWaitVerifyContentTable(command);
-        list<string> jobList = SParseJSONArray(response["jobs"]);
+        auto jobList = JSON::Value::parse(response["jobs"]);
         ASSERT_EQUAL(jobList.size(), 1);
-        ASSERT_EQUAL(SParseJSONObject(jobList.front())["name"], "low_5");
+        ASSERT_EQUAL(jobList[0]["name"].getString(), "low_5");
 
         // Get jobPriority 500
         // nextRun is the same for all the jobs, so we just want to confirm that a medium job was returned
         command["jobPriority"] = "500";
         response = tester->executeWaitVerifyContentTable(command);
-        jobList = SParseJSONArray(response["jobs"]);
+        jobList = JSON::Value::parse(response["jobs"]);
         ASSERT_EQUAL(jobList.size(), 2);
-        ASSERT_NOT_EQUAL(SParseJSONObject(jobList.front())["name"].find("medium"), string::npos);
-        jobList.pop_front();
-        ASSERT_NOT_EQUAL(SParseJSONObject(jobList.front())["name"].find("medium"), string::npos);
+        ASSERT_NOT_EQUAL(jobList[0]["name"].getString().find("medium"), string::npos);
+        jobList.erase(jobList.arrayBegin());
+        ASSERT_NOT_EQUAL(jobList[0]["name"].getString().find("medium"), string::npos);
 
         // Get jobPriority 1000
         // nextRun is the same for all the jobs, so we just want to confirm that a high job was returned
         command["jobPriority"] = "1000";
         response = tester->executeWaitVerifyContentTable(command);
-        jobList = SParseJSONArray(response["jobs"]);
+        jobList = JSON::Value::parse(response["jobs"]);
         ASSERT_EQUAL(jobList.size(), 2);
-        ASSERT_NOT_EQUAL(SParseJSONObject(jobList.front())["name"].find("high"), string::npos);
-        jobList.pop_front();
-        ASSERT_NOT_EQUAL(SParseJSONObject(jobList.front())["name"].find("high"), string::npos);
+        ASSERT_NOT_EQUAL(jobList[0]["name"].getString().find("high"), string::npos);
+        jobList.erase(jobList.arrayBegin());
+        ASSERT_NOT_EQUAL(jobList[0]["name"].getString().find("high"), string::npos);
     }
 
     void testInvalidJobPriority()
@@ -904,9 +905,9 @@ struct GetJobTest : tpunit::TestFixture
         command["name"] = "www-prod/*";
         command["numResults"] = "10";
         STable response = tester->executeWaitVerifyContentTable(command);
-        list<string> returnedJobs = SParseJSONArray(response["jobs"]);
+        auto returnedJobs = JSON::Value::parse(response["jobs"]);
         ASSERT_EQUAL(returnedJobs.size(), 1);
-        ASSERT_EQUAL(SParseJSONObject(returnedJobs.front())["jobID"], otherJobID);
+        ASSERT_EQUAL(returnedJobs[0]["jobID"].serialize(), otherJobID);
         ASSERT_EQUAL(tester->readDB("SELECT state FROM jobs WHERE jobID = " + paramJobID + ";"), "FAILED");
         ASSERT_EQUAL(tester->readDB("SELECT state FROM jobs WHERE jobID = " + siblingJobID + ";"), "FAILED");
         ASSERT_EQUAL(tester->readDB("SELECT state FROM jobs WHERE jobID = " + otherJobID + ";"), "RUNNING");
@@ -958,13 +959,13 @@ struct GetJobTest : tpunit::TestFixture
         command["name"] = "www-prod/BatchBad*";
         command["numResults"] = "10";
         STable response = tester->executeWaitVerifyContentTable(command);
-        ASSERT_EQUAL(SParseJSONArray(response["jobs"]).size(), 0);
+        ASSERT_EQUAL(JSON::Value::parse(response["jobs"]).size(), 0);
         ASSERT_EQUAL(tester->readDB("SELECT COUNT(*) FROM jobs WHERE name GLOB 'www-prod/BatchBad*' AND state='FAILED' AND JSON_EXTRACT(data, '$.mockRequest') IS NULL;"), "10");
         ASSERT_EQUAL(tester->readDB("SELECT COUNT(*) FROM jobs WHERE name GLOB 'www-prod/BatchBad*' AND state='QUEUED' AND JSON_EXTRACT(data, '$.mockRequest') IS NULL;"), "5");
 
         // A second GetJobs drains the remaining jobs.
         response = tester->executeWaitVerifyContentTable(command);
-        ASSERT_EQUAL(SParseJSONArray(response["jobs"]).size(), 0);
+        ASSERT_EQUAL(JSON::Value::parse(response["jobs"]).size(), 0);
         ASSERT_EQUAL(tester->readDB("SELECT COUNT(*) FROM jobs WHERE name GLOB 'www-prod/BatchBad*' AND state='FAILED' AND JSON_EXTRACT(data, '$.mockRequest') IS NULL;"), "15");
         ASSERT_EQUAL(tester->readDB("SELECT COUNT(*) FROM jobs WHERE name GLOB 'www-prod/BatchBad*' AND state='QUEUED' AND JSON_EXTRACT(data, '$.mockRequest') IS NULL;"), "0");
     }
