@@ -486,7 +486,8 @@ template<class A, class B, class C> inline bool SContains(const map<A, B, C>& na
     return nameValueMap.find(name) != nameValueMap.end();
 }
 
-template<class A> inline bool SContains(const list<A>& valueList, const A& value)
+// Compare directly with the search value, which need not have the list's element type.
+template<class A, class B> inline bool SContains(const list<A>& valueList, const B& value)
 {
     return ::find(valueList.begin(), valueList.end(), value) != valueList.end();
 }

@@ -763,6 +763,24 @@ struct LibStuff : tpunit::TestFixture
         ASSERT_TRUE(SContains(stringList, "asdf"));
         ASSERT_FALSE(SContains(stringList, "fdsa"));
 
+        const char listBuffer[] = {'x', 'a', 's', 'd', 'f', 'y'};
+        const string_view listView(listBuffer + 1, 4);
+        ASSERT_TRUE(SContains(stringList, listView));
+        ASSERT_FALSE(SContains(stringList, listView.substr(0, 3)));
+        ASSERT_FALSE(SContains(list<string>{}, listView));
+        ASSERT_TRUE(SContains(list<string>{""}, string_view{}));
+        ASSERT_TRUE(SContains(list<string>{"a\0b"s}, "a\0b"sv));
+        ASSERT_FALSE(SContains(list<string>{"a\0b"s}, "a"sv));
+
+        const list<string_view> views = {listView, "other"};
+        ASSERT_TRUE(SContains(views, "asdf"s));
+        ASSERT_TRUE(SContains(views, "other"));
+        ASSERT_FALSE(SContains(views, "missing"s));
+        const list<int> numbers = {1, 2};
+        ASSERT_TRUE(SContains(numbers, 1));
+        ASSERT_TRUE(SContains(numbers, 2LL));
+        ASSERT_FALSE(SContains(numbers, 3LL));
+
         ASSERT_TRUE(SContains(string("asdf"), "a"));
         ASSERT_TRUE(SContains(string("asdf"), string("asd")));
 

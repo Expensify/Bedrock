@@ -3514,7 +3514,7 @@ uint64_t SToUInt64(const string& val)
 
 bool SContains(const list<string>& valueList, const char* value)
 {
-    return ::find(valueList.begin(), valueList.end(), string(value)) != valueList.end();
+    return SContains(valueList, string_view(value));
 }
 
 bool SContains(string_view haystack, string_view needle)
