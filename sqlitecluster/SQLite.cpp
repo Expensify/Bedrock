@@ -20,6 +20,9 @@
 atomic<bool> SQLite::enableTrace(false);
 atomic<int64_t> SQLite::journalZstdDictionaryID(0);
 
+// Longest we will go without calling sqlite3_wal_checkpoint_v2 while commits are still arriving.
+constexpr uint64_t CHECKPOINT_INTERVAL_US = 1'000'000;
+
 sqlite3* SQLite::getDBHandle()
 {
     return _db;
@@ -393,9 +396,11 @@ void SQLite::clearAbortRef()
 
 int SQLite::_walHookCallback(void* sqliteObject, sqlite3* db, const char* name, int walFileSize)
 {
+    // This is only a prompt to checkpoint sooner rather than later. In `wal2` journal mode SQLite skips this callback
+    // for part of the WAL cycle, so the commit path also checkpoints on a timer and takes the frame count it reports
+    // from the checkpoint itself rather than from here.
     SQLite* sqlite = static_cast<SQLite*>(sqliteObject);
     sqlite->_sharedData.outstandingFramesToCheckpoint = walFileSize;
-    sqlite->_sharedData.knownOutstandingFramesToCheckpoint = walFileSize;
     return SQLITE_OK;
 }
 
@@ -1243,15 +1248,25 @@ int SQLite::commit(const string& description, const string& commandName, functio
 
         // If we are the first to set it (i.e., test_and_set returned `false` as the previous value), we'll start a checkpoint.
         if (!_sharedData.checkpointInProgress.test_and_set()) {
-            if (_sharedData.outstandingFramesToCheckpoint) {
-                auto start = STimeNow();
+            // Checkpoint whenever we know frames are waiting, and otherwise at least once per interval. The interval
+            // matters because outstandingFramesToCheckpoint can read zero while the WAL is in fact growing: the WAL
+            // hook that would raise it is suppressed for part of the `wal2` cycle, and with no second trigger we
+            // would stop checkpointing altogether for as long as that lasts.
+            const uint64_t start = STimeNow();
+            if (_sharedData.outstandingFramesToCheckpoint || start - _sharedData.lastCheckpointAttempt >= CHECKPOINT_INTERVAL_US) {
+                _sharedData.lastCheckpointAttempt = start;
+                int framesInWAL = 0;
                 int framesCheckpointed = 0;
-                sqlite3_wal_checkpoint_v2(_db, 0, _checkpointMode, NULL, &framesCheckpointed);
-                auto end = STimeNow();
-                SINFO("Checkpoint with type=" << _checkpointMode << " complete with " << framesCheckpointed << " frames checkpointed of " << _sharedData.outstandingFramesToCheckpoint << " frames outstanding in " << (end - start) << "us.");
+                sqlite3_wal_checkpoint_v2(_db, 0, _checkpointMode, &framesInWAL, &framesCheckpointed);
+                const uint64_t end = STimeNow();
 
-                // It might not actually be 0, but we'll just let sqlite tell us what it is next time _walHookCallback runs.
-                _sharedData.outstandingFramesToCheckpoint = 0;
+                // Ask sqlite what is actually left rather than assuming the checkpoint drained everything. Both
+                // counts are -1 if the checkpoint could not run, in which case we keep the previous value so the
+                // next attempt still has a reason to fire.
+                if (framesInWAL >= 0 && framesCheckpointed >= 0) {
+                    _sharedData.outstandingFramesToCheckpoint = framesInWAL > framesCheckpointed ? framesInWAL - framesCheckpointed : 0;
+                }
+                SINFO("Checkpoint with type=" << _checkpointMode << " complete with " << framesCheckpointed << " frames checkpointed of " << _sharedData.outstandingFramesToCheckpoint << " frames outstanding in " << (end - start) << "us.");
             }
             _sharedData.checkpointInProgress.clear();
         }
@@ -1437,7 +1452,7 @@ uint64_t SQLite::getCommitCount() const
 
 uint64_t SQLite::getOutstandingFramesToCheckpoint() const
 {
-    return _sharedData.knownOutstandingFramesToCheckpoint;
+    return _sharedData.outstandingFramesToCheckpoint;
 }
 
 size_t SQLite::getLastWriteChangeCount()

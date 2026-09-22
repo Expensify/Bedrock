@@ -431,13 +431,14 @@ public:
         // We use this flag to prevent to threads running checkpoints t the same time.
         atomic_flag checkpointInProgress = ATOMIC_FLAG_INIT;
 
-        // This records the most recent count of the number of frames to checkpoint. We may be able to remove this with
-        // no ill effects, but currently we use it to set a floor on the number of frames we will try and checkpoint.
+        // Frames in the WAL that have not yet been copied into the main database file, as reported by the last
+        // checkpoint. Between checkpoints the WAL hook also writes here, and it counts every frame in the WAL rather
+        // than only the un-copied ones, so this can read high until the next checkpoint corrects it.
         atomic<size_t> outstandingFramesToCheckpoint = 0;
 
-        // Like above, this records the number of frames that we know are currently waiting to be checkpointed, however it
-        // is not reset at the end of each checkpoint. This way the graph that relies on this value won't dip to 0
-        atomic<size_t> knownOutstandingFramesToCheckpoint = 0;
+        // STimeNow() at the last call to sqlite3_wal_checkpoint_v2, so that we keep calling it even across stretches
+        // where outstandingFramesToCheckpoint reads zero.
+        atomic<uint64_t> lastCheckpointAttempt = 0;
 
         // This can be locked in exclusive mode to prevent all writes. This exists to support the `BlockWrites` command.
         shared_mutex writeLock;
