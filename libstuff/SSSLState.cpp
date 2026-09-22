@@ -67,11 +67,28 @@ void SSSLState::freeConfig()
     mbedtls_x509_crt_free(&_cacert);
 }
 
-SSSLState::SSSLState(const string& hostname, int socket)
+SSSLState::SSSLState(const string& hostname, int socket, const shared_ptr<const STCPManager::MTLSConnection>& connection)
 {
     mbedtls_ssl_init(&ssl);
     mbedtls_net_init(&net_ctx);
+    mbedtls_ssl_config_init(&_connectionConfig);
+    mbedtls_x509_crt_init(&_clientCertificate);
+    mbedtls_pk_init(&_clientPrivateKey);
 
+    try {
+        _initialize(hostname, socket, connection);
+    } catch (...) {
+        // The caller still owns a supplied fd if construction fails.
+        if (socket != -1) {
+            net_ctx.fd = -1;
+        }
+        _free();
+        throw;
+    }
+}
+
+void SSSLState::_initialize(const string& hostname, int socket, const shared_ptr<const STCPManager::MTLSConnection>& connection)
+{
     // Hostname here is expected to contain the port. I.e.: expensify.com:443
     // We need to split it into its componenets.
     string domain;
@@ -86,6 +103,10 @@ SSSLState::SSSLState(const string& hostname, int socket)
     if (lastResult) {
         mbedtls_strerror(lastResult, errorBuffer, sizeof(errorBuffer));
         STHROW("mbedtls_ssl_set_hostname failed with error " + to_string(lastResult) + ": " + errorBuffer);
+    }
+
+    if (connection) {
+        _initializeMTLS(*connection);
     }
 
     // If no socket was supplied, create our own.
@@ -108,7 +129,7 @@ SSSLState::SSSLState(const string& hostname, int socket)
         net_ctx.fd = socket;
     }
 
-    lastResult = mbedtls_ssl_setup(&ssl, &_conf);
+    lastResult = mbedtls_ssl_setup(&ssl, connection ? &_connectionConfig : &_conf);
     if (lastResult) {
         mbedtls_strerror(lastResult, errorBuffer, sizeof(errorBuffer));
         STHROW("mbedtls_ssl_setup failed with error " + to_string(lastResult) + ": " + errorBuffer);
@@ -117,11 +138,64 @@ SSSLState::SSSLState(const string& hostname, int socket)
     mbedtls_ssl_set_bio(&ssl, &net_ctx, mbedtls_net_send, mbedtls_net_recv, nullptr);
 }
 
+void SSSLState::_initializeMTLS(const STCPManager::MTLSConnection& connection)
+{
+    char errorBuffer[500] = {0};
+    int lastResult = mbedtls_ssl_config_defaults(&_connectionConfig, MBEDTLS_SSL_IS_CLIENT,
+                                               MBEDTLS_SSL_TRANSPORT_STREAM, MBEDTLS_SSL_PRESET_DEFAULT);
+    if (lastResult) {
+        mbedtls_strerror(lastResult, errorBuffer, sizeof(errorBuffer));
+        STHROW("mbedtls_ssl_config_defaults failed with error " + to_string(lastResult) + ": " + errorBuffer);
+    }
+
+    mbedtls_ssl_conf_authmode(&_connectionConfig, MBEDTLS_SSL_VERIFY_REQUIRED);
+    mbedtls_ssl_conf_rng(&_connectionConfig, mbedtls_ctr_drbg_random, &_ctr_drbg);
+    mbedtls_ssl_conf_ca_chain(&_connectionConfig, &_cacert, nullptr);
+
+    // The PEM parsers require lengths that include the terminating null byte.
+    lastResult = mbedtls_x509_crt_parse(&_clientCertificate,
+                                      reinterpret_cast<const unsigned char*>(connection.certificate.c_str()),
+                                      connection.certificate.size() + 1);
+    if (lastResult) {
+        mbedtls_strerror(lastResult, errorBuffer, sizeof(errorBuffer));
+        STHROW("mbedtls_x509_crt_parse failed with error " + to_string(lastResult) + ": " + errorBuffer);
+    }
+
+    lastResult = mbedtls_pk_parse_key(&_clientPrivateKey,
+                                    reinterpret_cast<const unsigned char*>(connection.privateKey.c_str()),
+                                    connection.privateKey.size() + 1, nullptr, 0, mbedtls_ctr_drbg_random, &_ctr_drbg);
+    if (lastResult) {
+        mbedtls_strerror(lastResult, errorBuffer, sizeof(errorBuffer));
+        STHROW("mbedtls_pk_parse_key failed with error " + to_string(lastResult) + ": " + errorBuffer);
+    }
+
+    lastResult = mbedtls_pk_check_pair(&_clientCertificate.pk, &_clientPrivateKey, mbedtls_ctr_drbg_random, &_ctr_drbg);
+    if (lastResult) {
+        mbedtls_strerror(lastResult, errorBuffer, sizeof(errorBuffer));
+        STHROW("mbedtls_pk_check_pair failed with error " + to_string(lastResult) + ": " + errorBuffer);
+    }
+
+    // mbedTLS borrows these contexts, so they must live as long as the SSL state.
+    lastResult = mbedtls_ssl_conf_own_cert(&_connectionConfig, &_clientCertificate, &_clientPrivateKey);
+    if (lastResult) {
+        mbedtls_strerror(lastResult, errorBuffer, sizeof(errorBuffer));
+        STHROW("mbedtls_ssl_conf_own_cert failed with error " + to_string(lastResult) + ": " + errorBuffer);
+    }
+}
+
 SSSLState::~SSSLState()
+{
+    _free();
+}
+
+void SSSLState::_free()
 {
     // Note that this closes the socket if one is set, so there is no need (and in fact it is a bug) to close it otherwise.
     mbedtls_net_free(&net_ctx);
     mbedtls_ssl_free(&ssl);
+    mbedtls_ssl_config_free(&_connectionConfig);
+    mbedtls_x509_crt_free(&_clientCertificate);
+    mbedtls_pk_free(&_clientPrivateKey);
 }
 
 int SSSLState::send(const char* buffer, int length)
