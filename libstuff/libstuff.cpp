@@ -3517,14 +3517,14 @@ bool SContains(const list<string>& valueList, const char* value)
     return ::find(valueList.begin(), valueList.end(), string(value)) != valueList.end();
 }
 
-bool SContains(const string& haystack, const string& needle)
+bool SContains(string_view haystack, string_view needle)
 {
-    return haystack.find(needle) != string::npos;
+    return haystack.find(needle) != string_view::npos;
 }
 
-bool SContains(const string& haystack, char needle)
+bool SContains(string_view haystack, char needle)
 {
-    return haystack.find(needle) != string::npos;
+    return haystack.find(needle) != string_view::npos;
 }
 
 bool SContains(const STable& nameValueMap, const string& name)

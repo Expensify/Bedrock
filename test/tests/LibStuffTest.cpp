@@ -765,6 +765,29 @@ struct LibStuff : tpunit::TestFixture
 
         ASSERT_TRUE(SContains(string("asdf"), "a"));
         ASSERT_TRUE(SContains(string("asdf"), string("asd")));
+
+        const char buffer[] = {'x', 'a', 'b', 'c', 'y'};
+        const string_view view(buffer + 1, 3);
+        ASSERT_TRUE(SContains(view, "bc"));
+        ASSERT_TRUE(SContains("xabc"s, view));
+        ASSERT_TRUE(SContains("abc", view));
+        ASSERT_TRUE(SContains(view, "bc"s));
+        ASSERT_TRUE(SContains(view, view.substr(1)));
+        ASSERT_FALSE(SContains(view, "cy"));
+        ASSERT_FALSE(SContains(view, "abcd"));
+        ASSERT_FALSE(SContains(view, "BC"));
+        ASSERT_TRUE(SContains(view, string_view{}));
+        ASSERT_TRUE(SContains(string_view{}, string_view{}));
+        ASSERT_FALSE(SContains(string_view{}, view));
+        ASSERT_TRUE(SContains("a\0bc"sv, "\0b"sv));
+        ASSERT_TRUE(SContains(view, 'c'));
+        ASSERT_FALSE(SContains(view, 'y'));
+        ASSERT_FALSE(SContains(string_view{}, 'a'));
+        ASSERT_TRUE(SContains("a\0b"sv, '\0'));
+
+        ASSERT_TRUE(SContains("abc", "bc"));
+        ASSERT_TRUE(SContains("abc", 'b'));
+        ASSERT_TRUE(SContains(SString("abc"), "bc"));
     }
 
     void testStringViewConcatenation()

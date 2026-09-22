@@ -497,8 +497,10 @@ template<class A> inline bool SContains(const set<A>& valueList, const A& value)
 }
 
 bool SContains(const list<string>& valueList, const char* value);
-bool SContains(const string& haystack, const string& needle);
-bool SContains(const string& haystack, char needle);
+
+// Substring searches respect the view bounds, including embedded NULs.
+bool SContains(string_view haystack, string_view needle);
+bool SContains(string_view haystack, char needle);
 bool SContains(const STable& nameValueMap, const string& name);
 
 bool SIsValidSQLiteDateModifier(const string& modifier);
