@@ -234,9 +234,19 @@ shared_ptr<SResolution> STCPManager::Socket::_startResolution(const string& host
 }
 
 STCPManager::Socket::Socket(const string& host, bool https, int resolveGraceMS)
+    : Socket(host, https, resolveGraceMS, nullptr)
+{
+}
+
+STCPManager::Socket::Socket(shared_ptr<const MTLSConnection> connection, int resolveGraceMS)
+    : Socket(connection ? connection->hostname : "", true, resolveGraceMS, connection)
+{
+}
+
+STCPManager::Socket::Socket(const string& host, bool https, int resolveGraceMS, shared_ptr<const MTLSConnection> connection)
     : s(-1), addr{}, state(State::CONNECTING), connectFailure(false), openTime(STimeNow()), lastSendTime(openTime),
     lastRecvTime(openTime), ssl(nullptr), data(nullptr), id(STCPManager::Socket::socketCount++), https(https),
-    dnsResolution(_startResolution(host)), hostToResolve(host)
+    dnsResolution(_startResolution(host)), hostToResolve(host), _mtlsConnection(move(connection))
 {
     // We give DNS a couple milliseconds to resolve. If it succeeds, we'll create a socket.
     pollfd pfd = {dnsResolution->getFD(), POLLIN, 0};
@@ -316,7 +326,8 @@ STCPManager::Socket::Socket(Socket&& from)
     id(from.id),
     https(from.https),
     dnsResolution(from.dnsResolution),
-    hostToResolve(move(from.hostToResolve))
+    hostToResolve(move(from.hostToResolve)),
+    _mtlsConnection(move(from._mtlsConnection))
 {
     from.s = -1;
     from.ssl = nullptr;
@@ -416,11 +427,6 @@ bool STCPManager::Socket::recv()
         lastRecvTime = STimeNow();
     }
     return result;
-}
-
-STCPManager::MTLSSocket::MTLSSocket(shared_ptr<const MTLSConnection> connection, int resolveGraceMS)
-    : Socket(connection->hostname, true, resolveGraceMS), _connection(move(connection))
-{
 }
 
 unique_ptr<STCPManager::Port> STCPManager::openPort(const string& host)
