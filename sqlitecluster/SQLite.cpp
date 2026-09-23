@@ -1,5 +1,5 @@
 #include "SQLite.h"
-#include "HCTreeJournal.h"
+#include <libstuff/sqlite3hct.h>
 
 #include <chrono>
 #include <linux/limits.h>
