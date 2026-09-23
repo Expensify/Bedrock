@@ -97,6 +97,7 @@ BedrockTester::BedrockTester(const map<string, string>& args,
 
     if (ENABLE_HCTREE) {
         defaultArgs["-newDBsUseHctree"] = "";
+        defaultArgs["-hctreeExperimentalMode"] = "";
     }
     if (VERBOSE_LOGGING) {
         defaultArgs["-v"] = "";
