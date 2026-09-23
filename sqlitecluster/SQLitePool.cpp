@@ -10,9 +10,9 @@ SQLitePool::SQLitePool(size_t maxDBs,
                        int64_t mmapSizeGB,
                        bool hctree,
                        const string& checkpointMode,
-                       vector<function<void()>> afterCommitCallbacks, bool hctreeFollowerJournal)
+                       vector<function<void()>> afterCommitCallbacks, bool hctreeExperimentalMode)
     : _maxDBs(max(maxDBs, 1ul)),
-    _baseDB(filename, cacheSize, maxJournalSize, minJournalTables, mmapSizeGB, hctree, checkpointMode, afterCommitCallbacks, hctreeFollowerJournal),
+    _baseDB(filename, cacheSize, maxJournalSize, minJournalTables, mmapSizeGB, hctree, checkpointMode, afterCommitCallbacks, hctreeExperimentalMode),
     _objects(_maxDBs, nullptr)
 {
 }
