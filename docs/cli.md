@@ -30,9 +30,9 @@ To see a full list of Bedrock's configuration options, just run `bedrock -?` on 
 	-workerThreads  <#>         Number of worker threads to start (min 1, defaults to number of CPU cores)
 	-queryLog       <filename>  Set the query log filename (default 'queryLog.csv', SIGUSR2/SIGQUIT to enable/disable)
 	-maxJournalSize <#commits>  Number of commits to retainin the historical journal (default 1000000)
-	-hctreeExperimentalMode        Enable experimental HC-Tree features (currently, follower commits to hct_journal)
+	-hctreeExperimentalMode        Enable HC-Tree journal commits for both leaders and followers
 
-	With `-hctreeExperimentalMode`, HC-Tree nodes apply replication and synchronization commits to `hct_journal`; WAL2 nodes and HC-Tree leaders continue to use the legacy journals. A node can serve synchronization from both journals. A blank legacy entry at commit 1 aligns new databases with HC-Tree's initial CID. HC-Tree followers use `bedrock_hct_journal_anchor` for a local write when a replicated commit makes no database changes, so that SQLite records its journal row. Before a flagged HC-Tree node becomes leader, it rebases a stale HC-Tree journal to the latest legacy commit or removes legacy entries older than the oldest contiguous HC-Tree entry. This can sharply reduce the history available for other nodes to synchronize from; a node missing the retained range will need a fresh database copy. Use the flag only on nodes intended to participate in this rollout.
+	With `-hctreeExperimentalMode`, HC-Tree nodes write leader and follower commits to `hct_journal`, while WAL2 nodes and HC-Tree nodes without the flag keep writing to the legacy journals. A node can serve synchronization from both journals. New databases start with a blank legacy entry at commit 1 to align with HC-Tree's initial CID, and existing HC-Tree databases rebase before entering follower mode. A no-op transaction writes `bedrock_hct_journal_anchor` so SQLite records its journal row. Before becoming leader, the node removes legacy entries older than the oldest contiguous HC-Tree entry. This can sharply reduce the history available for other nodes to synchronize from; a node missing the retained range will need a fresh database copy. Use the flag only on nodes intended to participate in this rollout.
 
 	Quick Start Tips:
 	-----------------
