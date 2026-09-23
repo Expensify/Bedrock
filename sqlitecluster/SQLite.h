@@ -85,7 +85,7 @@ public:
     // mmapSizeGB: address space to use for memory-mapped IO, in GB.
     SQLite(const string& filename, int cacheSize, int maxJournalSize, int minJournalTables,
            int64_t mmapSizeGB = 0, bool hctree = false, const string& checkpointMode = "PASSIVE",
-           vector<function<void()>> afterCommitCallbacks = {});
+           vector<function<void()>> afterCommitCallbacks = {}, bool hctreeFollowerJournal = false);
 
     // This constructor is not exactly a copy constructor. It creates an other SQLite object based on the first except
     // with a *different* journal table. This avoids a lot of locking around creating structures that we know already
@@ -399,6 +399,11 @@ public:
     void exclusiveLockDB();
     void exclusiveUnlockDB();
 
+    // Called with exclusiveLockDB held when changing cluster roles. Leaders remain in NORMAL mode
+    // while they use the legacy journal; followers use the HC-Tree replication API.
+    void setHCTreeFollowerMode(bool following);
+    void prepareHCTreeLeadership();
+
 private:
     // This structure contains all of the data that's shared between a set of SQLite objects that share the same
     // underlying database file.
@@ -471,6 +476,10 @@ public:
         // This can be locked in exclusive mode to prevent all writes. This exists to support the `BlockWrites` command.
         shared_mutex writeLock;
 
+        // Mode changes require exclusive access, including against read transactions.
+        shared_mutex accessLock;
+        atomic<bool> hctreeFollowerMode{false};
+
 private:
         // The data required to replicate transactions, in two lists, depending on whether this has only been prepared
         // or if it's been committed.
@@ -486,13 +495,15 @@ private:
     static string initializeFilename(const string& filename);
     static bool validateDBFormat(const string& filename, bool hctree);
     static sqlite3* initializeDB(const string& filename, int64_t mmapSizeGB, bool hctree);
-    static vector<string> initializeJournal(sqlite3* db, int minJournalTables);
+    static vector<string> initializeJournal(sqlite3* db, int minJournalTables, bool hctreeFollowerJournal);
     void commonConstructorInitialization(bool hctree = false);
     static int getCheckpointModeFromString(const string& checkpointModeString);
 
     // This is also an initializer to support RAII-style allocation in the constructor but is pulled out separately as
     // it's not static and depends on several other members being initialized before it.
     SharedData& initializeSharedData();
+    uint64_t getLegacyCommitCount() const;
+    void rebaseHCTreeJournal(uint64_t legacyCommitID);
 
     // The filename of this DB, canonicalized to its full path on disk.
     const string _filename;
@@ -501,6 +512,7 @@ private:
     uint64_t _maxJournalSize;
 
     const bool _hctree;
+    const bool _hctreeFollowerJournal;
 
     // The underlying sqlite3 DB handle.
     sqlite3* _db;
@@ -519,6 +531,8 @@ private:
 
     // True when we have a transaction in progress.
     bool _insideTransaction = false;
+
+    optional<shared_lock<shared_mutex>> _transactionAccessLock;
 
     // A blank journal entry is prepared even though both its query and hash are empty.
     bool _prepared = false;
@@ -581,6 +595,7 @@ private:
 
     // Static version for initializers.
     static string _getJournalQuery(const vector<string>& journalNames, const list<string>& queryParts, bool append = false);
+    string _getLastNonBlankQuery(uint64_t index) const;
 
     // Callback function that we'll register for authorizing queries in sqlite.
     static int _sqliteAuthorizerCallback(void*, int, const char*, const char*, const char*, const char*);
