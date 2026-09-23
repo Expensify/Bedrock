@@ -22,8 +22,12 @@ const char* SDeburr::unicodeToAscii(uint32_t codepoint)
 
 string SDeburr::deburr(const unsigned char* inputBytes)
 {
+    return deburr(inputBytes, strlen(reinterpret_cast<const char*>(inputBytes)));
+}
+
+string SDeburr::deburr(const unsigned char* inputBytes, size_t inputLength)
+{
     string result;
-    size_t inputLength = strlen(reinterpret_cast<const char*>(inputBytes));
     result.reserve(inputLength);
     size_t i = 0;
     while (i < inputLength) {
@@ -113,13 +117,13 @@ string SDeburr::deburr(const unsigned char* inputBytes)
 
 string SDeburr::deburr(const string& input)
 {
-    return deburr(reinterpret_cast<const unsigned char*>(input.c_str()));
+    return deburr(reinterpret_cast<const unsigned char*>(input.data()), input.size());
 }
 
 void SDeburr::registerSQLite(sqlite3* db)
 {
     // SQLite UDF: DEBURR(text) → deburred UTF-8 text, which may still contain non-ASCII characters.
-    // SQL NULL input → NULL; other inputs are converted to UTF-8 and deburred up to the first NUL byte.
+    // SQL NULL input → NULL; other inputs are converted to UTF-8 and deburred over their explicit byte length.
     // Declared deterministic to enable SQLite optimizations
     auto sqliteDeburr = [](sqlite3_context* ctx, int argc, sqlite3_value** argv) {
         if (argc != 1) {
@@ -130,12 +134,14 @@ void SDeburr::registerSQLite(sqlite3* db)
             sqlite3_result_null(ctx);
             return;
         }
+        // sqlite3_value_text() truncates at an embedded NUL, so take the explicit byte length first.
+        const int textBytes = sqlite3_value_bytes(argv[0]);
         const unsigned char* text = sqlite3_value_text(argv[0]);
         if (!text) {
             sqlite3_result_null(ctx);
             return;
         }
-        string out = SDeburr::deburr(text);
+        string out = SDeburr::deburr(text, static_cast<size_t>(textBytes));
         sqlite3_result_text(ctx, out.c_str(), static_cast<int>(out.size()), SQLITE_TRANSIENT);
     };
 

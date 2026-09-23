@@ -15,7 +15,8 @@ struct SDeburrTest : tpunit::TestFixture
                                         TEST(SDeburrTest::testTurkish),
                                         TEST(SDeburrTest::testPolishSlavic),
                                         TEST(SDeburrTest::testNordic),
-                                        TEST(SDeburrTest::testEmojiAndCJK))
+                                         TEST(SDeburrTest::testEmojiAndCJK),
+                                         TEST(SDeburrTest::testEmbeddedNUL))
     {
     }
 
@@ -82,5 +83,25 @@ struct SDeburrTest : tpunit::TestFixture
     {
         ASSERT_EQUAL(SDeburr::deburr("pizza 🍕"), string("pizza 🍕"));
         ASSERT_EQUAL(SDeburr::deburr("東京"), string("東京"));
+    }
+
+    void testEmbeddedNUL()
+    {
+        // The string overload must process the explicit length, including NUL bytes.
+        ASSERT_EQUAL(SDeburr::deburr(string("\0B", 2)), string("\0B", 2));
+        ASSERT_EQUAL(SDeburr::deburr(string("A\0B", 3)), string("A\0B", 3));
+        ASSERT_EQUAL(SDeburr::deburr(string("AB\0", 3)), string("AB\0", 3));
+        ASSERT_EQUAL(SDeburr::deburr(string("A\0\0B", 4)), string("A\0\0B", 4));
+
+        // Accented text after a NUL is still transliterated. é is the two-byte sequence C3 A9.
+        const string accentedAfterNul = string("A\0", 2) + "é";
+        ASSERT_EQUAL(SDeburr::deburr(accentedAfterNul), string("A\0e", 3));
+
+        // The NUL-terminated pointer overload still stops at the first NUL.
+        const unsigned char truncated[] = {'A', '\0', 'B'};
+        ASSERT_EQUAL(SDeburr::deburr(truncated), string("A"));
+
+        // Ordinary transliteration is unchanged.
+        ASSERT_EQUAL(SDeburr::deburr("Fábio"), string("Fabio"));
     }
 } __SDeburrTest;

@@ -26,7 +26,7 @@ public:
      * - Leaves ASCII unchanged; mapped characters use the table's case (including the existing Đ → d mapping)
      *
      * The pointer overload requires a non-null, NUL-terminated UTF-8 string and stops at the first NUL byte.
-     * The string overload delegates via c_str(), so it also ignores any content after an embedded NUL.
+     * The string overload processes the string's explicit length, including embedded NUL bytes.
      */
     static string deburr(const unsigned char* input);
     static string deburr(const string& input);
@@ -34,7 +34,7 @@ public:
     /**
      * Register the SQLite UDF `DEBURR(text)` on the provided database handle.
      *
-     * - Converts non-NULL input to UTF-8 text and applies `deburr`, including its first-NUL truncation
+     * - Converts non-NULL input to UTF-8 text and applies `deburr` over the value's explicit byte length
      * - Preserves unmapped valid Unicode and does not lowercase the result or guarantee ASCII-only output
      * - Marked deterministic to allow SQLite optimizations and query planning
      * - NULL input yields NULL
@@ -52,6 +52,11 @@ private:
      * - Unmapped code points → returns nullptr (the caller preserves their original bytes)
      */
     static const char* unicodeToAscii(uint32_t codepoint);
+
+    /**
+     * Processes `inputLength` bytes. NUL bytes are preserved rather than treated as terminators.
+     */
+    static string deburr(const unsigned char* inputBytes, size_t inputLength);
 
     /**
      * Lookup table for ASCII replacements of selected Latin-1 Supplement and Latin Extended-A characters.
