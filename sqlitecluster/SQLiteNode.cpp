@@ -1728,11 +1728,12 @@ void SQLiteNode::_changeState(SQLiteNodeState newState)
         _db.exclusiveLockDB();
 
         try {
-            const bool hctreeFollowerMode = newState == SQLiteNodeState::SYNCHRONIZING ||
-                newState == SQLiteNodeState::SUBSCRIBING || newState == SQLiteNodeState::FOLLOWING;
-            _db.setHCTreeFollowerMode(hctreeFollowerMode);
             if (newState == SQLiteNodeState::LEADING) {
                 _db.prepareHCTreeLeadership();
+            }
+            // Keep STANDINGDOWN in leader mode until all of its commits have finished.
+            if (newState != SQLiteNodeState::STANDINGDOWN) {
+                _db.setHCTreeFollowerMode(newState != SQLiteNodeState::LEADING);
             }
 
             // Send to everyone we're connected to, whether or not

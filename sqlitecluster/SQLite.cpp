@@ -388,6 +388,9 @@ SQLite::SQLite(const string& filename, int cacheSize, int maxJournalSize,
         if (legacyCommitID > (hctCommit.empty() ? 0 : SToUInt64(hctCommit))) {
             rebaseHCTreeJournal(legacyCommitID);
         }
+        // All bootstrap/schema writes are finished, and no other handles exist yet.
+        SASSERT(sqlite3_hct_journal_setmode(_db, SQLITE_HCT_FOLLOWER) == SQLITE_OK);
+        _sharedData.hctreeFollowerMode = true;
     }
 }
 
@@ -578,41 +581,50 @@ SQLite::~SQLite()
 
 void SQLite::exclusiveLockDB()
 {
-    _sharedData.accessLock.lock();
-    // This order is important and not intuitive. It seems like we should lock `writeLock` before `commitLock` because that's the order these occur in a typical database operation,
-    // however, there are two possible flows here. For a non-blocking transaction (i.e., one run in parallel with other transactions), the lock order is:
-    // writeLock, commitLock, but importantly, in this case, these are not locked simultaneously. writeLock is only locked for the time of the actual DB write query, and then released.
-    // So for a non-blocking transaction, this becomes unimportant, these are used singly.
-    // However, for a blocking transaction (one run by the blocking commit thread) the commit lock is acquired at the BEGIN of the transaction, and critically - held for the duration
-    // of the transaction. So in these instances, we lock commitLock first, and then writeLock, but the critical difference is we hold the commitLock through the entire duration of all
-    // writes in this case.
-    // So when these are both locked by the same thread at the same time, `commitLock` is always locked first, and we do it the same way here to avoid deadlocks.
+    // Block new writers, then let existing transactions finish. They no longer need
+    // writeLock after their first write, and all potential writers register before
+    // acquiring commitLock, so we must not hold commitLock while waiting for them.
+    _sharedData.writeLock.lock();
+    uint64_t count;
+    while ((count = _sharedData.openWriteTransactionCount.load())) {
+        _sharedData.openWriteTransactionCount.wait(count);
+    }
     try {
         SINFO("Locking commitLock");
         _sharedData.commitLock.lock();
         SINFO("commitLock Locked");
     } catch (const system_error& e) {
-        _sharedData.accessLock.unlock();
+        _sharedData.writeLock.unlock();
         SWARN("Caught system_error calling _sharedData.commitLock, code: " << e.code() << ", message: " << e.what());
-        throw;
-    }
-    try {
-        SINFO("Locking writeLock");
-        _sharedData.writeLock.lock();
-        SINFO("writeLock Locked");
-    } catch (const system_error& e) {
-        _sharedData.commitLock.unlock();
-        _sharedData.accessLock.unlock();
-        SWARN("Caught system_error calling _sharedData.writeLock, code: " << e.code() << ", message: " << e.what());
         throw;
     }
 }
 
 void SQLite::exclusiveUnlockDB()
 {
-    _sharedData.writeLock.unlock();
     _sharedData.commitLock.unlock();
-    _sharedData.accessLock.unlock();
+    _sharedData.writeLock.unlock();
+}
+
+void SQLite::beginWriteTransaction()
+{
+    if (_isWriteTransaction) {
+        return;
+    }
+    shared_lock<shared_mutex> lock(_sharedData.writeLock);
+    _sharedData.openWriteTransactionCount++;
+    _isWriteTransaction = true;
+}
+
+void SQLite::finishWriteTransaction()
+{
+    if (!_isWriteTransaction) {
+        return;
+    }
+    _isWriteTransaction = false;
+    if (_sharedData.openWriteTransactionCount.fetch_sub(1) == 1) {
+        _sharedData.openWriteTransactionCount.notify_all();
+    }
 }
 
 void SQLite::setHCTreeFollowerMode(bool following)
@@ -620,16 +632,7 @@ void SQLite::setHCTreeFollowerMode(bool following)
     if (!_hctree || !hctreeExperimentalMode || following == _sharedData.hctreeFollowerMode) {
         return;
     }
-    if (following) {
-        const uint64_t legacyCommitID = getLegacyCommitCount();
-        SQResult result;
-        SASSERT(!SQuery(_db, "SELECT MAX(cid) FROM hct_journal", result));
-        const uint64_t hctCommitID = result.empty() || result[0][0].empty() ? 0 : SToUInt64(result[0][0]);
-        if (legacyCommitID > hctCommitID) {
-            rebaseHCTreeJournal(legacyCommitID);
-        }
-    }
-    int rc = sqlite3_hct_journal_setmode(_db, following ? SQLITE_HCT_FOLLOWER : SQLITE_HCT_NORMAL);
+    int rc = sqlite3_hct_journal_setmode(_db, following ? SQLITE_HCT_FOLLOWER : SQLITE_HCT_LEADER);
     SASSERT(rc == SQLITE_OK);
     _sharedData.hctreeFollowerMode = following;
 }
@@ -639,7 +642,7 @@ void SQLite::prepareHCTreeLeadership()
     if (!_hctree || !hctreeExperimentalMode) {
         return;
     }
-    SASSERT(!_sharedData.hctreeFollowerMode);
+    SASSERT(_sharedData.hctreeFollowerMode);
     SQResult result;
     SASSERT(!SQuery(_db, "SELECT MIN(cid), MAX(cid), COUNT(*) FROM hct_journal", result));
     SASSERT(result.size() == 1 && !result[0][0].empty());
@@ -648,8 +651,7 @@ void SQLite::prepareHCTreeLeadership()
     uint64_t count = SToUInt64(result[0][2]);
     uint64_t legacyCommitID = getLegacyCommitCount();
     if (legacyCommitID > newest) {
-        rebaseHCTreeJournal(legacyCommitID);
-        oldest = legacyCommitID;
+        SERROR("Legacy journal advanced beyond HC-Tree journal after initialization");
     } else if (newest - oldest + 1 != count) {
         SERROR("Cannot lead with a non-contiguous HC-Tree journal");
     }
@@ -668,7 +670,7 @@ void SQLite::prepareHCTreeLeadership()
         }
     }
     if (!rc) {
-        rc = SQuery(_db, "COMMIT");
+        rc = sqlite3_hct_journal_local_commit(_db);
     }
     if (rc) {
         SQuery(_db, "ROLLBACK");
@@ -705,7 +707,9 @@ bool SQLite::beginTransaction(SQLite::TRANSACTION_TYPE type, bool beginOnly)
         rollback();
         STHROW("Attempted to begin transaction while in invalid state: _uncommittedQuery not empty");
     }
-    _transactionAccessLock.emplace(_sharedData.accessLock);
+    if (type == TRANSACTION_TYPE::EXCLUSIVE) {
+        beginWriteTransaction();
+    }
     _lastTransactionType = type;
     _transactionTimer.start("BEGIN_TRANSACTION");
     if (type == TRANSACTION_TYPE::EXCLUSIVE) {
@@ -713,7 +717,7 @@ bool SQLite::beginTransaction(SQLite::TRANSACTION_TYPE type, bool beginOnly)
         if (isSyncThread) {
             // Blocking the sync thread has catastrophic results (forking) and so we either get this quickly, or we fail the transaction.
             if (!_sharedData.commitLock.try_lock_for(5s)) {
-                _transactionAccessLock.reset();
+                finishWriteTransaction();
                 SWARN("Failed to acquire commit lock in sync thread exclusive transaction!");
                 STHROW("512 Internal Lock Timeout");
             }
@@ -743,7 +747,7 @@ bool SQLite::beginTransaction(SQLite::TRANSACTION_TYPE type, bool beginOnly)
     }
     if (!_insideTransaction) {
         _sharedData.openTransactionCount--;
-        _transactionAccessLock.reset();
+        finishWriteTransaction();
     }
 
     _queryCache.clear();
@@ -860,10 +864,6 @@ int SQLite::read(const string& query, sqlite3_qrf_spec* spec) const
 int SQLite::read(const string& query, const map<string, Parameter>& params, sqlite3_qrf_spec* spec) const
 {
     // Execute the read-only query. Skips caching.
-    optional<shared_lock<shared_mutex>> accessLock;
-    if (!_insideTransaction) {
-        accessLock.emplace(_sharedData.accessLock);
-    }
     uint64_t before = STimeNow();
     SQResult ignore;
     int queryResult = SQuery(_db, query, ignore, 0, true, spec, params);
@@ -879,10 +879,6 @@ bool SQLite::read(const string& query, SQResult& result, bool skipInfoWarn) cons
 
 bool SQLite::read(const string& query, const map<string, Parameter>& params, SQResult& result, bool skipInfoWarn) const
 {
-    optional<shared_lock<shared_mutex>> accessLock;
-    if (!_insideTransaction) {
-        accessLock.emplace(_sharedData.accessLock);
-    }
     uint64_t before = STimeNow();
     bool queryResult = false;
     _readQueryCount++;
@@ -1021,10 +1017,15 @@ bool SQLite::writeLocalUnreplicated(const string& query)
         return false;
     }
 
-    // Held in shared mode for the same reason the journal trim in `prepare` holds it: BlockWrites needs to be able to
-    // stop this.
-    shared_lock<shared_mutex> accessLock(_sharedData.accessLock);
-    shared_lock<shared_mutex> lock(_sharedData.writeLock);
+    beginWriteTransaction();
+    struct WriteTransactionGuard
+    {
+        SQLite& db;
+        ~WriteTransactionGuard()
+        {
+            db.finishWriteTransaction();
+        }
+    } guard{*this};
     if (SQuery(_db, "BEGIN CONCURRENT")) {
         return false;
     }
@@ -1041,7 +1042,7 @@ bool SQLite::writeLocalUnreplicated(const string& query)
             SQuery(_db, "ROLLBACK");
             return false;
         }
-        commitFailed = _sharedData.hctreeFollowerMode ? sqlite3_hct_journal_local_commit(_db) : SQuery(_db, "COMMIT");
+        commitFailed = (_hctree && hctreeExperimentalMode) ? sqlite3_hct_journal_local_commit(_db) : SQuery(_db, "COMMIT");
     }
 
     if (commitFailed) {
@@ -1054,7 +1055,7 @@ bool SQLite::writeLocalUnreplicated(const string& query)
 
 size_t SQLite::getJournalTableCount() const
 {
-    return _journalNames.size();
+    return _journalNames.size() + (_hctree && hctreeExperimentalMode ? 1 : 0);
 }
 
 bool SQLite::trimJournalTable(size_t journalTableIndex, int64_t batchSize)
@@ -1064,13 +1065,34 @@ bool SQLite::trimJournalTable(size_t journalTableIndex, int64_t batchSize)
         return true;
     }
 
-    const string& journalName = _journalNames[journalTableIndex % _journalNames.size()];
-
     // If the commitCount is less than the max journal size, keep everything. Otherwise, keep everything from
     // commitCount - _maxJournalSize forward. We can't just do the last subtraction part because it overflows our
     // unsigned int.
     const auto state = getCommitState();
     const uint64_t commitCount = state.commitCount;
+
+    if (_hctree && hctreeExperimentalMode && journalTableIndex % getJournalTableCount() == _journalNames.size()) {
+        uint64_t oldestCommitToKeep = commitCount < _maxJournalSize ? 0 : commitCount - _maxJournalSize;
+        if (state.hashCommitID) {
+            oldestCommitToKeep = min(oldestCommitToKeep, state.hashCommitID);
+        }
+        if (!oldestCommitToKeep) {
+            return true;
+        }
+        SQResult bounds;
+        if (!read("SELECT MIN(cid), MAX(cid) FROM hct_journal", bounds) || bounds.empty() || bounds[0][0].empty()) {
+            return false;
+        }
+        if (SToUInt64(bounds[0][0]) >= oldestCommitToKeep || bounds[0][0] == bounds[0][1]) {
+            return true;
+        }
+        // Delete a prefix, never the final entry. HC-Tree requires the journal
+        // to remain nonempty and only permits deleting rows in CID order.
+        return writeLocalUnreplicated("DELETE FROM hct_journal WHERE cid IN (SELECT cid FROM hct_journal "
+            "WHERE cid < " + SQ(oldestCommitToKeep) + " ORDER BY cid LIMIT " + SQ(batchSize) + ");");
+    }
+
+    const string& journalName = _journalNames[journalTableIndex % _journalNames.size()];
 
     // We wont delete the newest commit with a hash, even if it's older than the cutoff. This is not a
     // practical concern for real databases, but can come up in test situations.
@@ -1099,6 +1121,7 @@ bool SQLite::_writeIdempotent(const string& query, const map<string, Parameter>&
     if (!_insideTransaction) {
         STHROW("500 Attempted to write outside of transaction");
     }
+    beginWriteTransaction();
 
     _queryCache.clear();
     _writeQueryCount++;
@@ -1122,24 +1145,21 @@ bool SQLite::_writeIdempotent(const string& query, const map<string, Parameter>&
     // than the raw `query` because followers replay journal SQL via writeUnmodified() with no params map,
     // so placeholders would bind to NULL on the replica. See PR #2600 discussion.
     string expandedSql;
-    {
-        shared_lock<shared_mutex> lock(_sharedData.writeLock);
-        if (_enableRewrite) {
-            resultCode = SQuery(_db, query, result, 2'000'000, true, nullptr, params, &expandedSql);
-            if (resultCode == SQLITE_AUTH) {
-                // Run re-written query. The rewrite is expected to preserve placeholder names so the
-                // same bound params bind to it as well. Discard the failed original's partial expansion
-                // and capture the rewritten form instead.
-                _currentlyRunningRewritten = true;
-                SASSERT(SEndsWith(_rewrittenQuery, ";"));
-                expandedSql.clear();
-                SQResult rewrittenResult;
-                resultCode = SQuery(_db, _rewrittenQuery, rewrittenResult, 2'000'000, true, nullptr, params, &expandedSql);
-                _currentlyRunningRewritten = false;
-            }
-        } else {
-            resultCode = SQuery(_db, query, result, 2000 * STIME_US_PER_MS, false, nullptr, params, &expandedSql);
+    if (_enableRewrite) {
+        resultCode = SQuery(_db, query, result, 2'000'000, true, nullptr, params, &expandedSql);
+        if (resultCode == SQLITE_AUTH) {
+            // Run re-written query. The rewrite is expected to preserve placeholder names so the
+            // same bound params bind to it as well. Discard the failed original's partial expansion
+            // and capture the rewritten form instead.
+            _currentlyRunningRewritten = true;
+            SASSERT(SEndsWith(_rewrittenQuery, ";"));
+            expandedSql.clear();
+            SQResult rewrittenResult;
+            resultCode = SQuery(_db, _rewrittenQuery, rewrittenResult, 2'000'000, true, nullptr, params, &expandedSql);
+            _currentlyRunningRewritten = false;
         }
+    } else {
+        resultCode = SQuery(_db, query, result, 2000 * STIME_US_PER_MS, false, nullptr, params, &expandedSql);
     }
 
     // If we got a constraints error, throw that.
@@ -1190,6 +1210,8 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash, chrono::m
     const int64_t journalID = _sharedData.nextJournalCount++;
     _journalName = _journalNames[journalID % _journalNames.size()];
 
+    // Even a blank transaction writes a journal entry. Register before acquiring commitLock.
+    beginWriteTransaction();
     // We lock this here, so that we can guarantee the order in which commits show up in the database.
     if (!_mutexLocked) {
         auto start = chrono::steady_clock::now();
@@ -1290,7 +1312,7 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash, chrono::m
     _sharedData.prepareTransactionInfo(commitCount + 1, _uncommittedQuery, _uncommittedHash);
 
     int result = SQLITE_OK;
-    if (!_sharedData.hctreeFollowerMode) {
+    if (!_hctree || !hctreeExperimentalMode) {
         string query = "INSERT INTO " + _journalName + " VALUES (:commitID, :query, :hash)";
         map<string, SQLite::Parameter> params = {
             {":commitID", SQLite::Parameter::i((int64_t) (commitCount + 1))},
@@ -1344,15 +1366,33 @@ int SQLite::commit(const string& description, const string& commandName, functio
             _pageCountDifference = SToInt64(pageCountResult[0][0]);
         }
     }
-    if (_sharedData.hctreeFollowerMode) {
+    if (_hctree && hctreeExperimentalMode) {
         const string journalData = _uncommittedHash + ":" + _uncommittedQuery;
         if (sqlite3_txn_state(_db, "main") != SQLITE_TXN_WRITE) {
             result = SQuery(_db, "UPDATE bedrock_hct_journal_anchor SET n = n + 1");
         }
         if (!result) {
-            result = sqlite3_hct_journal_follower_commit(_db,
-                reinterpret_cast<const unsigned char*>(journalData.data()), journalData.size(),
-                _sharedData.commitCount + 1, _sharedData.commitCount);
+            if (_sharedData.hctreeFollowerMode) {
+                result = sqlite3_hct_journal_follower_commit(_db,
+                    reinterpret_cast<const unsigned char*>(journalData.data()), journalData.size(),
+                    _sharedData.commitCount + 1, _sharedData.commitCount);
+            } else {
+                sqlite3_int64 cid = 0;
+                sqlite3_int64 snapshot = 0;
+                result = sqlite3_hct_journal_leader_commit(_db,
+                    reinterpret_cast<const unsigned char*>(journalData.data()), journalData.size(), &cid, &snapshot);
+                if (cid) {
+                    SASSERT(cid == _sharedData.commitCount + 1);
+                    if (result) {
+                        // SQLite allocated a CID but rolled back this transaction. The
+                        // corresponding HC-Tree journal row is an empty commit.
+                        _sharedData.prepareTransactionInfo(cid, "", "");
+                        _sharedData.incrementCommit("");
+                    }
+                } else {
+                    SASSERT(result != SQLITE_OK);
+                }
+            }
         }
     } else {
         result = SQuery(_db, "COMMIT");
@@ -1430,7 +1470,7 @@ int SQLite::commit(const string& description, const string& commandName, functio
 
         _sharedData.commitLock.unlock();
         _mutexLocked = false;
-        _transactionAccessLock.reset();
+        finishWriteTransaction();
         _queryCache.clear();
         _sharedData.openTransactionCount--;
 
@@ -1550,7 +1590,7 @@ void SQLite::rollback(const string& commandName)
             _commitLockElapsed += _sharedData._commitLockTimer.stop();
             _sharedData.commitLock.unlock();
         }
-        _transactionAccessLock.reset();
+        finishWriteTransaction();
     } else {
         // Stop the timer without storing the time spent since transaction as already rolled back.
         _transactionTimer.stop();
@@ -1592,10 +1632,6 @@ bool SQLite::getCommit(uint64_t id, string* query, string* hash)
     string firstQueryPart = "SELECT "s + (query ? "decompress(query)" : "1") + ", " + (hash ? "hash" : "1") + " FROM";
     string internalQuery = firstQueryPart + " journalEntries WHERE id = " + SQ(id);
     SQResult result;
-    optional<shared_lock<shared_mutex>> accessLock;
-    if (!_insideTransaction) {
-        accessLock.emplace(_sharedData.accessLock);
-    }
     SASSERT(!SQuery(_db, internalQuery, result));
     if (result.empty()) {
         return false;
@@ -1614,10 +1650,6 @@ void SQLite::getLastNonBlankCommit(uint64_t index, uint64_t& commitID, string& h
 {
     // Look up the highest nonblank row in each journal using its primary key.
     SQResult result;
-    optional<shared_lock<shared_mutex>> accessLock;
-    if (!_insideTransaction) {
-        accessLock.emplace(_sharedData.accessLock);
-    }
     SASSERT(!SQuery(_db, _getLastNonBlankQuery(index), result));
     commitID = result.empty() ? 0 : SToUInt64(result[0][0]);
     hash = commitID ? result[0][1] : "";
@@ -1642,10 +1674,6 @@ int SQLite::getCompressedCommits(uint64_t fromIndex, uint64_t toIndex, SQResult&
     SDEBUG("Getting commits #" << fromIndex << "-" << toIndex);
     if (timeoutLimitUS) {
         setTimeout(timeoutLimitUS);
-    }
-    optional<shared_lock<shared_mutex>> accessLock;
-    if (!_insideTransaction) {
-        accessLock.emplace(_sharedData.accessLock);
     }
     int queryResult = SQuery(_db, query, result);
     clearTimeout();
@@ -1900,12 +1928,6 @@ void SQLite::setCommitEnabled(bool enable)
 
 int SQLite::getPreparedStatements(const string& query, list<sqlite3_stmt*>& statements)
 {
-    // The prepared statements are handed back to the caller, which must finish using them
-    // before a mode transition. Preparation itself is guarded here.
-    optional<shared_lock<shared_mutex>> accessLock;
-    if (!_insideTransaction) {
-        accessLock.emplace(_sharedData.accessLock);
-    }
     // We need a pointer to a prepared statement.
     sqlite3_stmt* ppStmt = nullptr;
 

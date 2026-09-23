@@ -175,7 +175,8 @@ public:
     // commit conflicts.
     bool trimJournalTable(size_t journalTableIndex, int64_t batchSize);
 
-    // The number of journal tables in this database. Any index passed to `trimJournalTable` is taken modulo this.
+    // The number of journal tables to trim, including the HC-Tree journal in experimental mode.
+    // Any index passed to `trimJournalTable` is taken modulo this.
     size_t getJournalTableCount() const;
 
     // Enable or disable update-noop mode.
@@ -402,8 +403,7 @@ public:
     void exclusiveLockDB();
     void exclusiveUnlockDB();
 
-    // Called with exclusiveLockDB held when changing cluster roles. Leaders remain in NORMAL mode
-    // while they use the legacy journal; followers use the HC-Tree replication API.
+    // Called with exclusiveLockDB held when changing cluster roles.
     void setHCTreeFollowerMode(bool following);
     void prepareHCTreeLeadership();
 
@@ -479,8 +479,8 @@ public:
         // This can be locked in exclusive mode to prevent all writes. This exists to support the `BlockWrites` command.
         shared_mutex writeLock;
 
-        // Mode changes require exclusive access, including against read transactions.
-        shared_mutex accessLock;
+        // Count transactions that may still write after releasing writeLock.
+        atomic<uint64_t> openWriteTransactionCount{0};
         atomic<bool> hctreeFollowerMode{false};
 
 private:
@@ -534,7 +534,7 @@ private:
     // True when we have a transaction in progress.
     bool _insideTransaction = false;
 
-    optional<shared_lock<shared_mutex>> _transactionAccessLock;
+    bool _isWriteTransaction = false;
 
     // A blank journal entry is prepared even though both its query and hash are empty.
     bool _prepared = false;
@@ -573,6 +573,8 @@ private:
     static thread_local uint64_t _commitLockWait;
 
     bool _writeIdempotent(const string& query, const map<string, Parameter>& params, SQResult& result, bool alwaysKeepQueries = false);
+    void beginWriteTransaction();
+    void finishWriteTransaction();
 
     // Constructs a UNION query from a list of 'query parts' over each of our journal tables.
     // Fore each table, queryParts will be joined with that table's name as a separator. I.e., if you have a tables
