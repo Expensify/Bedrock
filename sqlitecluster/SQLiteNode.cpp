@@ -1728,11 +1728,9 @@ void SQLiteNode::_changeState(SQLiteNodeState newState)
         _db.exclusiveLockDB();
 
         try {
-            // The leader still commits through Bedrock's legacy journals. HC-Tree's
-            // FOLLOWER mode is used only while replaying commits, including synchronization.
-            const bool following = newState == SQLiteNodeState::SYNCHRONIZING ||
+            const bool hctreeFollowerMode = newState == SQLiteNodeState::SYNCHRONIZING ||
                 newState == SQLiteNodeState::SUBSCRIBING || newState == SQLiteNodeState::FOLLOWING;
-            _db.setHCTreeFollowerMode(following);
+            _db.setHCTreeFollowerMode(hctreeFollowerMode);
             if (newState == SQLiteNodeState::LEADING) {
                 _db.prepareHCTreeLeadership();
             }
