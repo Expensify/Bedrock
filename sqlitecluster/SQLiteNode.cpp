@@ -1727,16 +1727,30 @@ void SQLiteNode::_changeState(SQLiteNodeState newState)
         // Note: _stateMutex is already locked here (by update, _replicate, or postPoll).
         _db.exclusiveLockDB();
 
-        // Send to everyone we're connected to, whether or not
-        // we're "LoggedIn" (else we might change state after sending LOGIN,
-        // but before we receive theirs, and they'll miss it).
-        // Broadcast the new state
-        _state = newState;
-        SData state("STATE");
-        state["StateChangeCount"] = to_string(++_stateChangeCount);
-        state["State"] = stateName(_state);
-        state["Priority"] = SToStr(_priority);
-        _sendToAllPeers(state);
+        try {
+            // The leader still commits through Bedrock's legacy journals. HC-Tree's
+            // FOLLOWER mode is used only while replaying commits, including synchronization.
+            const bool following = newState == SQLiteNodeState::SYNCHRONIZING ||
+                newState == SQLiteNodeState::SUBSCRIBING || newState == SQLiteNodeState::FOLLOWING;
+            _db.setHCTreeFollowerMode(following);
+            if (newState == SQLiteNodeState::LEADING) {
+                _db.prepareHCTreeLeadership();
+            }
+
+            // Send to everyone we're connected to, whether or not
+            // we're "LoggedIn" (else we might change state after sending LOGIN,
+            // but before we receive theirs, and they'll miss it).
+            // Broadcast the new state
+            _state = newState;
+            SData state("STATE");
+            state["StateChangeCount"] = to_string(++_stateChangeCount);
+            state["State"] = stateName(_state);
+            state["Priority"] = SToStr(_priority);
+            _sendToAllPeers(state);
+        } catch (...) {
+            _db.exclusiveUnlockDB();
+            throw;
+        }
 
         _db.exclusiveUnlockDB();
     }
