@@ -32,8 +32,8 @@ bool SQLiteCore::commit(const SQLiteNode& node, uint64_t& commitID, string& tran
     }
 
     // Perform the actual commit, rollback if it fails.
-    const uint64_t previousCommitCount = _db.getCommitCount();
-    int errorCode = _db.commit(SQLiteNode::stateName(node.getState()), commandName);
+    bool commitIDAllocated = false;
+    int errorCode = _db.commit(commitIDAllocated, SQLiteNode::stateName(node.getState()), commandName);
     if (errorCode) {
         if (errorCode == SQLITE_BUSY_SNAPSHOT) {
             // No extra logging needed for expected case.
@@ -43,7 +43,7 @@ bool SQLiteCore::commit(const SQLiteNode& node, uint64_t& commitID, string& tran
             SWARN("Unexpected commit error: " << errorCode << ", rolling back.");
         }
         _db.rollback(commandName);
-        if (_db.getCommitCount() > previousCommitCount) {
+        if (commitIDAllocated) {
             // A failed HC-Tree leader commit can still allocate a CID and write
             // an empty journal entry, which the followers must receive.
             node.notifyCommit();

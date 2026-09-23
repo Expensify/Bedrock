@@ -240,6 +240,11 @@ public:
     // The main purpose of this is to allow replications in SQLiteNode to notify other waiting threads that the commit has finished even before the checkpoint is done.
     int commit(const string& description = "UNSPECIFIED", const string& commandName = "", function<void()>* preCheckpointCallback = nullptr);
 
+    // Also reports whether the HC-Tree leader API allocated a CID for this transaction,
+    // including when SQLite commits an empty journal entry after the transaction fails.
+    // Always false for WAL2 and HC-Tree followers.
+    int commit(bool& commitIDAllocated, const string& description = "UNSPECIFIED", const string& commandName = "", function<void()>* preCheckpointCallback = nullptr);
+
     // Cancels the current transaction and rolls it back.
     void rollback(const string& commandName = "");
 

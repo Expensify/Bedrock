@@ -1339,6 +1339,13 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash, chrono::m
 
 int SQLite::commit(const string& description, const string& commandName, function<void()>* preCheckpointCallback)
 {
+    bool commitIDAllocated = false;
+    return commit(commitIDAllocated, description, commandName, preCheckpointCallback);
+}
+
+int SQLite::commit(bool& commitIDAllocated, const string& description, const string& commandName, function<void()>* preCheckpointCallback)
+{
+    commitIDAllocated = false;
     // If commits have been disabled, return an error without attempting the commit.
     if (!_sharedData._commitEnabled) {
         return COMMIT_DISABLED;
@@ -1381,6 +1388,7 @@ int SQLite::commit(const string& description, const string& commandName, functio
                 sqlite3_int64 snapshot = 0;
                 result = sqlite3_hct_journal_leader_commit(_db,
                     reinterpret_cast<const unsigned char*>(journalData.data()), journalData.size(), &cid, &snapshot);
+                commitIDAllocated = cid != 0;
                 if (cid) {
                     SASSERT(cid == _sharedData.commitCount + 1);
                     if (result) {
