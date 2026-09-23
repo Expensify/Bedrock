@@ -1247,12 +1247,15 @@ int SQLite::commit(const string& description, const string& commandName, functio
             if (_sharedData.outstandingFramesToCheckpoint) {
                 auto start = STimeNow();
                 int framesCheckpointed = 0;
-                sqlite3_wal_checkpoint_v2(_db, 0, _checkpointMode, NULL, &framesCheckpointed);
+                int walFrameSize = 0;
+                sqlite3_wal_checkpoint_v2(_db, "main", _checkpointMode, &walFrameSize, &framesCheckpointed);
                 auto end = STimeNow();
                 SINFO("Checkpoint with type=" << _checkpointMode << " complete with " << framesCheckpointed << " frames checkpointed of " << _sharedData.outstandingFramesToCheckpoint << " frames outstanding in " << (end - start) << "us.");
 
-                // It might not actually be 0, but we'll just let sqlite tell us what it is next time _walHookCallback runs.
-                _sharedData.outstandingFramesToCheckpoint = 0;
+                // If both of our output sizes from above do not look like error values, update the remaining frames to checkpoint.
+                if (framesCheckpointed >= 0 && walFrameSize >= 0 && framesCheckpointed <= walFrameSize) {
+                    _sharedData.outstandingFramesToCheckpoint = walFrameSize - framesCheckpointed;
+                }
             }
             _sharedData.checkpointInProgress.clear();
         }
