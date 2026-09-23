@@ -343,6 +343,8 @@ int main(int argc, char* argv[])
     // We default to PASSIVE checkpoint everywhere as that has been the value proven to work fine for many years.
     SETDEFAULT("-checkpointMode", "PASSIVE");
 
+    SQLite::hctreeExperimentalMode = args.isSet("-hctreeExperimentalMode");
+
     // Reset the database if requested
     if (args.isSet("-clean") || args.isSet("-bootstrap")) {
         // Remove it

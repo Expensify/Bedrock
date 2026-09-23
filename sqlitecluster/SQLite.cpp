@@ -20,6 +20,7 @@
 // Tracing can only be enabled or disabled globally, not per object.
 atomic<bool> SQLite::enableTrace(false);
 atomic<int64_t> SQLite::journalZstdDictionaryID(0);
+atomic<bool> SQLite::hctreeExperimentalMode(false);
 
 sqlite3* SQLite::getDBHandle()
 {
@@ -203,10 +204,11 @@ sqlite3* SQLite::initializeDB(const string& filename, int64_t mmapSizeGB, bool h
     return db;
 }
 
-vector<string> SQLite::initializeJournal(sqlite3* db, int minJournalTables, bool hctreeExperimentalMode)
+vector<string> SQLite::initializeJournal(sqlite3* db, int minJournalTables, bool hctree)
 {
     // Make sure we don't try and create more journals than we can name.
     SASSERT(minJournalTables < 10'000);
+    const bool experimentalHCTree = hctree && hctreeExperimentalMode;
 
     // First, we create all of the tables through `minJournalTables` if they don't exist.
     for (int currentJounalTable = -1; currentJounalTable <= minJournalTables; currentJounalTable++) {
@@ -254,7 +256,7 @@ vector<string> SQLite::initializeJournal(sqlite3* db, int minJournalTables, bool
         }
     }
 
-    if (hctreeExperimentalMode) {
+    if (experimentalHCTree) {
         SASSERT(sqlite3_hct_journal_init(db) == SQLITE_OK);
         // HC-Tree does not journal a read-only transaction, even if follower_commit()
         // succeeds. A small local write makes blank and no-op replicated commits real.
@@ -270,7 +272,7 @@ vector<string> SQLite::initializeJournal(sqlite3* db, int minJournalTables, bool
         }
         journalEntriesQuery += "SELECT id, query, hash FROM " + journalName;
     }
-    if (hctreeExperimentalMode || hctJournalExists) {
+    if (experimentalHCTree || hctJournalExists) {
         // The query is a BLOB containing a 73-byte GUID:SHA1 hash, a colon, then the
         // original (possibly compressed) query bytes. The initial HC-Tree row has no prefix.
         string hctEntries = "SELECT cid AS id, "
@@ -363,13 +365,12 @@ void SQLite::commonConstructorInitialization(bool hctree)
 }
 
 SQLite::SQLite(const string& filename, int cacheSize, int maxJournalSize,
-               int minJournalTables, int64_t mmapSizeGB, bool hctree, const string& checkpointMode, vector<function<void()>> afterCommitCallbacks, bool hctreeExperimentalMode) :
+               int minJournalTables, int64_t mmapSizeGB, bool hctree, const string& checkpointMode, vector<function<void()>> afterCommitCallbacks) :
     _filename(initializeFilename(filename)),
     _maxJournalSize(maxJournalSize),
     _hctree(validateDBFormat(_filename, hctree)),
-    _hctreeExperimentalMode(_hctree && hctreeExperimentalMode),
     _db(initializeDB(_filename, mmapSizeGB, _hctree)),
-    _journalNames(initializeJournal(_db, minJournalTables, _hctreeExperimentalMode)),
+    _journalNames(initializeJournal(_db, minJournalTables, _hctree)),
     // Note that it's significant that _sharedData is initialized after _hctree, _db, and _journalNames.
     // initializeSharedData is a member function, and it will operate on these member variables. If they are not set when it's called,
     // initialization will not be correct.
@@ -381,7 +382,7 @@ SQLite::SQLite(const string& filename, int cacheSize, int maxJournalSize,
     _checkpointMode(getCheckpointModeFromString(checkpointMode))
 {
     commonConstructorInitialization(_hctree);
-    if (_hctreeExperimentalMode) {
+    if (_hctree && hctreeExperimentalMode) {
         const uint64_t legacyCommitID = getLegacyCommitCount();
         const string hctCommit = read("SELECT MAX(cid) FROM hct_journal");
         if (legacyCommitID > (hctCommit.empty() ? 0 : SToUInt64(hctCommit))) {
@@ -394,7 +395,6 @@ SQLite::SQLite(const SQLite& from) :
     _filename(from._filename),
     _maxJournalSize(from._maxJournalSize),
     _hctree(from._hctree),
-    _hctreeExperimentalMode(from._hctreeExperimentalMode),
     _db(initializeDB(_filename, from._mmapSizeGB, false)), // Create a *new* DB handle from the same filename, don't copy the existing handle.
     _journalNames(from._journalNames),
     _sharedData(from._sharedData),
@@ -534,7 +534,7 @@ uint64_t SQLite::getLegacyCommitCount() const
 
 void SQLite::rebaseHCTreeJournal(uint64_t legacyCommitID)
 {
-    SASSERT(_hctreeExperimentalMode && legacyCommitID);
+    SASSERT(_hctree && hctreeExperimentalMode && legacyCommitID);
     SINFO("Rebasing HC-Tree journal to legacy commit " << legacyCommitID);
     SQResult legacy;
     SASSERT(!SQuery(_db, "SELECT query, hash FROM journalEntries WHERE id = " + SQ(legacyCommitID), legacy));
@@ -617,7 +617,7 @@ void SQLite::exclusiveUnlockDB()
 
 void SQLite::setHCTreeFollowerMode(bool following)
 {
-    if (!_hctreeExperimentalMode || following == _sharedData.hctreeFollowerMode) {
+    if (!_hctree || !hctreeExperimentalMode || following == _sharedData.hctreeFollowerMode) {
         return;
     }
     if (following) {
@@ -636,7 +636,7 @@ void SQLite::setHCTreeFollowerMode(bool following)
 
 void SQLite::prepareHCTreeLeadership()
 {
-    if (!_hctreeExperimentalMode) {
+    if (!_hctree || !hctreeExperimentalMode) {
         return;
     }
     SASSERT(!_sharedData.hctreeFollowerMode);

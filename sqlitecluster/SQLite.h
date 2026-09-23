@@ -85,7 +85,7 @@ public:
     // mmapSizeGB: address space to use for memory-mapped IO, in GB.
     SQLite(const string& filename, int cacheSize, int maxJournalSize, int minJournalTables,
            int64_t mmapSizeGB = 0, bool hctree = false, const string& checkpointMode = "PASSIVE",
-           vector<function<void()>> afterCommitCallbacks = {}, bool hctreeExperimentalMode = false);
+           vector<function<void()>> afterCommitCallbacks = {});
 
     // This constructor is not exactly a copy constructor. It creates an other SQLite object based on the first except
     // with a *different* journal table. This avoids a lot of locking around creating structures that we know already
@@ -372,6 +372,9 @@ public:
     // The zstd dictionary ID to use when compressing journal entries. 0 means no compression.
     static atomic<int64_t> journalZstdDictionaryID;
 
+    // Set once at startup to enable experimental HC-Tree behavior on HC-Tree databases.
+    static atomic<bool> hctreeExperimentalMode;
+
     int64_t getLastConflictIdentifier() const;
 
     string getLastConflictLocation() const;
@@ -495,7 +498,7 @@ private:
     static string initializeFilename(const string& filename);
     static bool validateDBFormat(const string& filename, bool hctree);
     static sqlite3* initializeDB(const string& filename, int64_t mmapSizeGB, bool hctree);
-    static vector<string> initializeJournal(sqlite3* db, int minJournalTables, bool hctreeExperimentalMode);
+    static vector<string> initializeJournal(sqlite3* db, int minJournalTables, bool hctree);
     void commonConstructorInitialization(bool hctree = false);
     static int getCheckpointModeFromString(const string& checkpointModeString);
 
@@ -512,7 +515,6 @@ private:
     uint64_t _maxJournalSize;
 
     const bool _hctree;
-    const bool _hctreeExperimentalMode;
 
     // The underlying sqlite3 DB handle.
     sqlite3* _db;
