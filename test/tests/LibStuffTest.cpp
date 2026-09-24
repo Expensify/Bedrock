@@ -1,4 +1,4 @@
-#include <libstuff/JSON/Value.h>
+#include <libstuff/JSON/Utils.h>
 #include <arpa/inet.h>
 #include <cstring>
 #include <unistd.h>
@@ -234,8 +234,7 @@ struct LibStuff : tpunit::TestFixture
         }
 
         // Verify we can parse/encode PHP objects
-        const auto ofx = JSON::Value::parse(innerObject0["ofxTest"]);
-        ASSERT_EQUAL(JSON::Value::parse(ofx.serialize()), ofx);
+        ASSERT_EQUAL(innerObject0["ofxTest"], SComposeJSONObject(JSON::Utils::toSTable(JSON::Value::parse(innerObject0["ofxTest"]))));
 
         // Reject malformed input through the shared parser.
         ASSERT_THROW(JSON::Value::parse(
