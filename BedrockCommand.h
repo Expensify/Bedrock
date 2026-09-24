@@ -18,6 +18,8 @@ public:
         QUEUE_WORKER,
         QUEUE_BLOCKING,
         QUEUE_PAGE_LOCK,
+        COMMAND_THREAD,
+        DB_HANDLE,
 
         // Time spent in the blockingCommit thread (not the same as "commit lock time")
         BLOCKING_PREPEEK,
@@ -138,6 +140,9 @@ public:
     // Finish recording time for a given action type. `type` must match what was passed to the most recent call to
     // `startTiming`.
     void stopTiming(TIMING_INFO type);
+
+    // Record an interval that began outside the command's execution thread.
+    void recordTiming(TIMING_INFO type, uint64_t startTime);
 
     // Add a summary of our timing info to our response object.
     void finalizeTimingInfo();
