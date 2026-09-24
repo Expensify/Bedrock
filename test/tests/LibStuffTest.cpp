@@ -42,6 +42,7 @@ struct LibStuff : tpunit::TestFixture
                                      TEST(LibStuff::testGZip),
                                      TEST(LibStuff::testConstantTimeEquals),
                                      TEST(LibStuff::testParseIntegerList),
+                                     TEST(LibStuff::testSParseList),
                                      TEST(LibStuff::testSData),
                                      TEST(LibStuff::testSTable),
                                      TEST(LibStuff::testFileIO),
@@ -51,6 +52,9 @@ struct LibStuff : tpunit::TestFixture
                                      TEST(LibStuff::testHexConversion),
                                      TEST(LibStuff::testBase32Conversion),
                                      TEST(LibStuff::testContains),
+                                     TEST(LibStuff::testStringViewConcatenation),
+                                     TEST(LibStuff::testSIEquals),
+                                     TEST(LibStuff::testSStartsWith),
                                      TEST(LibStuff::testFirstOfMonth),
                                      TEST(LibStuff::SREMatchTest),
                                      TEST(LibStuff::SREReplaceTest),
@@ -510,6 +514,39 @@ struct LibStuff : tpunit::TestFixture
         ASSERT_TRUE(before == after);
     }
 
+    void testSParseList()
+    {
+        const char buffer[] = {'x', 'a', ',', ' ', 'b', ',', 'c', 'y'};
+        const string_view view(buffer + 1, 6);
+        list<string> values = {"stale"};
+        ASSERT_TRUE(SParseList(view, values));
+        ASSERT_EQUAL(values, (list<string>{"a", "b", "c"}));
+        ASSERT_EQUAL(SParseList(view), values);
+        ASSERT_EQUAL(SParseList("a, b,c"), values);
+        ASSERT_EQUAL(SParseList("a, b,c"s), values);
+        ASSERT_EQUAL(SParseList("a; b;c"sv, ';'), values);
+        ASSERT_TRUE(SParseList("a; b;c", values, ';'));
+        ASSERT_EQUAL(values, (list<string>{"a", "b", "c"}));
+
+        ASSERT_EQUAL(SParseList("  a  , ,b,, \tc"sv), (list<string>{"a  ", "b", "\tc"}));
+        ASSERT_FALSE(SParseList("a,"sv, values));
+        ASSERT_EQUAL(values, list<string>{"a"});
+        ASSERT_FALSE(SParseList(string_view{}, values));
+        ASSERT_TRUE(values.empty());
+        ASSERT_TRUE(SParseList(string_view{}).empty());
+        ASSERT_TRUE(SParseList(" , , "sv).empty());
+
+        ASSERT_EQUAL(SParseList("a,b\0,c"sv), (list<string>{"a", "b"}));
+        ASSERT_EQUAL(SParseList("a,b\0,c"s), (list<string>{"a", "b"}));
+        ASSERT_FALSE(SParseList("\0ignored"sv, values));
+        ASSERT_TRUE(values.empty());
+
+        string source = "one,two";
+        ASSERT_TRUE(SParseList(string_view(source), values));
+        source.assign(source.size(), 'x');
+        ASSERT_EQUAL(values, (list<string>{"one", "two"}));
+    }
+
     void testSData()
     {
         SData a("this is a methodline");
@@ -776,8 +813,130 @@ struct LibStuff : tpunit::TestFixture
         ASSERT_TRUE(SContains(stringList, "asdf"));
         ASSERT_FALSE(SContains(stringList, "fdsa"));
 
+        const char listBuffer[] = {'x', 'a', 's', 'd', 'f', 'y'};
+        const string_view listView(listBuffer + 1, 4);
+        ASSERT_TRUE(SContains(stringList, listView));
+        ASSERT_FALSE(SContains(stringList, listView.substr(0, 3)));
+        ASSERT_FALSE(SContains(list<string>{}, listView));
+        ASSERT_TRUE(SContains(list<string>{""}, string_view{}));
+        ASSERT_TRUE(SContains(list<string>{"a\0b"s}, "a\0b"sv));
+        ASSERT_FALSE(SContains(list<string>{"a\0b"s}, "a"sv));
+
+        const list<string_view> views = {listView, "other"};
+        ASSERT_TRUE(SContains(views, "asdf"s));
+        ASSERT_TRUE(SContains(views, "other"));
+        ASSERT_FALSE(SContains(views, "missing"s));
+        const list<int> numbers = {1, 2};
+        ASSERT_TRUE(SContains(numbers, 1));
+        ASSERT_TRUE(SContains(numbers, 2LL));
+        ASSERT_FALSE(SContains(numbers, 3LL));
+
         ASSERT_TRUE(SContains(string("asdf"), "a"));
         ASSERT_TRUE(SContains(string("asdf"), string("asd")));
+
+        const char buffer[] = {'x', 'a', 'b', 'c', 'y'};
+        const string_view view(buffer + 1, 3);
+        ASSERT_TRUE(SContains(view, "bc"));
+        ASSERT_TRUE(SContains("xabc"s, view));
+        ASSERT_TRUE(SContains("abc", view));
+        ASSERT_TRUE(SContains(view, "bc"s));
+        ASSERT_TRUE(SContains(view, view.substr(1)));
+        ASSERT_FALSE(SContains(view, "cy"));
+        ASSERT_FALSE(SContains(view, "abcd"));
+        ASSERT_FALSE(SContains(view, "BC"));
+        ASSERT_TRUE(SContains(view, string_view{}));
+        ASSERT_TRUE(SContains(string_view{}, string_view{}));
+        ASSERT_FALSE(SContains(string_view{}, view));
+        ASSERT_TRUE(SContains("a\0bc"sv, "\0b"sv));
+        ASSERT_TRUE(SContains(view, 'c'));
+        ASSERT_FALSE(SContains(view, 'y'));
+        ASSERT_FALSE(SContains(string_view{}, 'a'));
+        ASSERT_TRUE(SContains("a\0b"sv, '\0'));
+
+        ASSERT_TRUE(SContains("abc", "bc"));
+        ASSERT_TRUE(SContains("abc", 'b'));
+        ASSERT_TRUE(SContains(SString("abc"), "bc"));
+    }
+
+    void testStringViewConcatenation()
+    {
+        const char buffer[] = {'a', 'b', 'c', 'd'};
+        const string_view view(buffer + 1, 2);
+        const string text = "text";
+        const SString tableValue = "table";
+        ASSERT_EQUAL(view + text, "bctext");
+        ASSERT_EQUAL(text + view, "textbc");
+        ASSERT_EQUAL(view + "literal", "bcliteral");
+        ASSERT_EQUAL("literal" + view, "literalbc");
+        ASSERT_EQUAL(view + view, "bcbc");
+        ASSERT_EQUAL(view + tableValue, "bctable");
+        ASSERT_EQUAL(tableValue + view, "tablebc");
+        ASSERT_EQUAL("prefix" + view + text + "suffix", "prefixbctextsuffix");
+        ASSERT_EQUAL(text, "text");
+        ASSERT_EQUAL(tableValue, "table");
+
+        ASSERT_EQUAL(string_view{} + view, "bc");
+        ASSERT_EQUAL(view + string_view{}, "bc");
+        ASSERT_EQUAL(string_view{} + string_view{}, "");
+        ASSERT_EQUAL("a\0b"sv + "c\0d"sv, "a\0bc\0d"s);
+
+        // A view may refer to the string whose storage is reused, even when concatenation reallocates.
+        string appendTarget(100, 'a');
+        const string_view appendView(appendTarget.data(), appendTarget.size());
+        ASSERT_EQUAL(move(appendTarget) + appendView, string(200, 'a'));
+        string prependTarget(100, 'b');
+        const string_view prependView(prependTarget.data(), prependTarget.size());
+        ASSERT_EQUAL(prependView + move(prependTarget), string(200, 'b'));
+
+        ASSERT_EQUAL(text + "literal", "textliteral");
+        ASSERT_EQUAL("literal" + text, "literaltext");
+        ASSERT_EQUAL(text + text, "texttext");
+    }
+
+    void testSIEquals()
+    {
+        const char buffer[] = {'x', 'H', 'e', 'L', 'L', 'o', 'y'};
+        const string_view view(buffer + 1, 5);
+        ASSERT_TRUE(SIEquals(view, "hello"));
+        ASSERT_TRUE(SIEquals("HELLO"s, view));
+        ASSERT_TRUE(SIEquals(view, "hello"sv));
+        ASSERT_TRUE(SIEquals("Hello", "hELLo"));
+        ASSERT_FALSE(SIEquals(view, "hell"));
+        ASSERT_FALSE(SIEquals("hell", view));
+        ASSERT_FALSE(SIEquals(view, "helloy"));
+        ASSERT_FALSE(SIEquals(view, "world"));
+        ASSERT_TRUE(SIEquals(string_view{}, ""));
+        ASSERT_TRUE(SIEquals(string_view{}, string_view{}));
+        ASSERT_FALSE(SIEquals(string_view{}, view));
+        ASSERT_FALSE(SIEquals(view, string_view{}));
+
+        // Preserve the previous strcasecmp behavior for strings containing NULs.
+        ASSERT_TRUE(SIEquals("a\0suffix"sv, "A"));
+        ASSERT_TRUE(SIEquals("A"s, "a\0suffix"s));
+        ASSERT_TRUE(SIEquals("a\0left"sv, "A\0right"sv));
+        ASSERT_TRUE(SIEquals(string_view{}, "\0suffix"sv));
+        ASSERT_FALSE(SIEquals("a\0suffix"sv, "b\0suffix"sv));
+    }
+
+    void testSStartsWith()
+    {
+        const char buffer[] = {'x', 'a', 'b', 'c', 'y'};
+        const string_view view(buffer + 1, 3);
+        ASSERT_TRUE(SStartsWith(view, "ab"));
+        ASSERT_TRUE(SStartsWith(view, "abc"s));
+        ASSERT_TRUE(SStartsWith("abcd"s, view));
+        ASSERT_TRUE(SStartsWith(view, view.substr(0, 2)));
+        ASSERT_TRUE(SStartsWith("abc", "ab"));
+        ASSERT_FALSE(SStartsWith(view, "bc"));
+        ASSERT_FALSE(SStartsWith(view, "abcd"));
+        ASSERT_FALSE(SStartsWith(view, "AB"));
+        ASSERT_TRUE(SStartsWith(view, string_view{}));
+        ASSERT_TRUE(SStartsWith(string_view{}, string_view{}));
+        ASSERT_FALSE(SStartsWith(string_view{}, view));
+        ASSERT_TRUE(SStartsWith(buffer + 1, 3, buffer + 1, 2));
+
+        ASSERT_TRUE(SStartsWith("a\0left"sv, "a\0right"sv.substr(0, 3)));
+        ASSERT_FALSE(SStartsWith("a\0"sv, "a\0b"sv));
     }
 
     void testFirstOfMonth()

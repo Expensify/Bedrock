@@ -119,8 +119,7 @@ struct SQResultTest : tpunit::TestFixture
     {
         SQResult result;
 
-        // Public header initialization remains available to callers during the accessor migration.
-        result.headers = {"name", "value"};
+        result.setHeaders({"name", "value"});
         SQResultRow row(result);
         row.push_back("first");
         row.push_back("second");
