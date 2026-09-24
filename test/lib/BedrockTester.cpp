@@ -1,4 +1,4 @@
-#include <libstuff/JSON/Value.h>
+#include <libstuff/JSON/Utils.h>
 #include "BedrockTester.h"
 #include "libstuff/libstuff.h"
 
@@ -381,11 +381,7 @@ STable BedrockTester::executeWaitVerifyContentTable(const SData& request, const 
     if (!json.isObject()) {
         return {};
     }
-    STable table;
-    for (const auto& [key, value] : JSON::ConstObjectValue(json)) {
-        table[key] = value.isString() ? value.getString() : value.serialize();
-    }
-    return table;
+    return JSON::Utils::toSTable(json);
 }
 
 vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int connections, bool control, bool returnOnDisconnect, int* errorCode)
@@ -702,15 +698,9 @@ bool BedrockTester::waitForStatusTerm(const string& term, const string& testValu
     uint64_t start = STimeNow();
     while (STimeNow() < start + timeoutUS) {
         try {
-            const auto status = JSON::Value::parse(BedrockTester::executeWaitVerifyContent(SData("Status"), "200", true));
             // Status callers use the same case-insensitive field names as SData.
-            string result;
-            for (const auto& [key, value] : JSON::ConstObjectValue(status)) {
-                if (SIEquals(key, term)) {
-                    result = value.isString() ? value.getString() : value.serialize();
-                    break;
-                }
-            }
+            auto status = JSON::Utils::toSTable(JSON::Value::parse(BedrockTester::executeWaitVerifyContent(SData("Status"), "200", true)));
+            const string result = status[term];
 
             // if the value matches, return, otherwise wait
             if (result == testValue) {

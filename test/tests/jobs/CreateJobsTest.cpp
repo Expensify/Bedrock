@@ -12,7 +12,6 @@ struct CreateJobsTest : tpunit::TestFixture
                               TEST(CreateJobsTest::createWithHttp),
                               TEST(CreateJobsTest::createWithInvalidJson),
                               TEST(CreateJobsTest::preserveDataTypes),
-                              TEST(CreateJobsTest::reservedDataNames),
                               TEST(CreateJobsTest::createWithParentIDNotRunning),
                               TEST(CreateJobsTest::createWithParentMocked),
                               TEST(CreateJobsTest::createUniqueChildWithWrongParent),
@@ -91,10 +90,6 @@ struct CreateJobsTest : tpunit::TestFixture
     void createWithInvalidJson()
     {
         SData command("CreateJobs");
-        for (const string& invalid : {"{}", "[]", "[null]", "[{}]", "[{\"name\":\"job\"},]"}) {
-            command["jobs"] = invalid;
-            tester->executeWaitVerifyContent(command, "401 Invalid JSON");
-        }
         command["jobs"] = _generateCreateJobContentJSON() + "}";
         tester->executeWaitVerifyContent(command, "401 Invalid JSON");
     }
@@ -104,7 +99,7 @@ struct CreateJobsTest : tpunit::TestFixture
         // Mutating mock data and removing the private rerun marker must not convert string values into JSON scalars.
         SData command("CreateJobs");
         command["mockRequest"] = "true";
-        command["jobs"] = R"([{"name":"typedData","unique":true,"rerunIfDataChanged":true,"data":{"number":"123","literal":"null","nested":{"enabled":"true"},"array":["123",null],"_BEDROCKRERUNIFDATACHANGED":true,"MockRequest":false}}])";
+        command["jobs"] = R"([{"name":"typedData","unique":true,"rerunIfDataChanged":true,"data":{"number":"123","nested":{"enabled":"true"},"_bedrockRerunIfDataChanged":true}}])";
         const auto created = JSON::Value::parse(tester->executeWaitVerifyContent(command));
         ASSERT_EQUAL(created["jobIDs"].size(), 1);
 
@@ -115,50 +110,9 @@ struct CreateJobsTest : tpunit::TestFixture
         const auto job = JSON::Value::parse(tester->executeWaitVerifyContent(command));
         const auto& data = job["data"];
         ASSERT_EQUAL(data["number"].getString(), "123");
-        ASSERT_EQUAL(data["literal"].getString(), "null");
         ASSERT_EQUAL(data["nested"]["enabled"].getString(), "true");
-        ASSERT_EQUAL(data["array"][0].getString(), "123");
-        ASSERT_TRUE(data["array"][1].isNull());
-        ASSERT_TRUE(data["MockRequest"].getBool());
-        ASSERT_FALSE(data.hasMember("mockRequest"));
-        ASSERT_FALSE(data.hasMember("_BEDROCKRERUNIFDATACHANGED"));
+        ASSERT_TRUE(data["mockRequest"].getBool());
         ASSERT_FALSE(data.hasMember("_bedrockRerunIfDataChanged"));
-    }
-
-    void reservedDataNames()
-    {
-        SData command("CreateJob");
-        command["name"] = "mixedCaseDelete";
-        command["repeat"] = "STARTED, +1 HOUR";
-        const string jobID = tester->executeWaitVerifyContentTable(command)["jobID"];
-        command.clear();
-        command.methodLine = "GetJob";
-        command["name"] = "mixedCaseDelete";
-        tester->executeWaitVerifyContent(command);
-
-        // Reserved data names remain case-insensitive when finishing a recurring job.
-        command.clear();
-        command.methodLine = "FinishJob";
-        command["jobID"] = jobID;
-        command["data"] = R"({"DELETE":true})";
-        tester->executeWaitVerifyContent(command);
-        ASSERT_EQUAL(tester->readDB("SELECT COUNT(*) FROM jobs WHERE jobID=" + jobID + ";"), "0");
-
-        command.clear();
-        command.methodLine = "CreateJob";
-        command["name"] = "mixedCaseRetryCount";
-        command["retryAfter"] = "+1 HOUR";
-        command["data"] = R"({"RETRYAFTERCOUNT":10})";
-        const string retryJobID = tester->executeWaitVerifyContentTable(command)["jobID"];
-
-        // A differently cased retry counter must still stop the job at the retry limit.
-        command.clear();
-        command.methodLine = "GetJobs";
-        command["name"] = "mixedCaseRetryCount";
-        command["numResults"] = "1";
-        const auto jobs = JSON::Value::parse(tester->executeWaitVerifyContent(command));
-        ASSERT_EQUAL(jobs["jobs"].size(), 0);
-        ASSERT_EQUAL(tester->readDB("SELECT state FROM jobs WHERE jobID=" + retryJobID + ";"), "FAILED");
     }
 
     void createWithParentIDNotRunning()

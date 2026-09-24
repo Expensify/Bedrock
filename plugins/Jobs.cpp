@@ -1,7 +1,7 @@
 #include "Jobs.h"
 
 #include <BedrockServer.h>
-#include <libstuff/JSON/Value.h>
+#include <libstuff/JSON/Utils.h>
 #include <libstuff/SQResult.h>
 #include <sqlitecluster/SQLitePeer.h>
 #include <sqlitecluster/SQLiteUtils.h>
@@ -146,10 +146,7 @@ static list<STable> parseJobRequests(const string& jobs, bool requireName)
         if (!job.isObject() || job.size() == 0) {
             STHROW("401 Invalid JSON");
         }
-        STable attributes;
-        for (const auto& [key, value] : JSON::ConstObjectValue(job)) {
-            attributes[key] = jobAttribute(value);
-        }
+        STable attributes = JSON::Utils::toSTable(job);
         if (requireName && !SContains(attributes, "name")) {
             STHROW("402 Missing name");
         }
