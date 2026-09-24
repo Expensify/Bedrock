@@ -159,6 +159,10 @@ That also means you can continue using whatever MySQL language binding you alrea
 
 It really can be that easy.
 
+### GUI Clients
+
+If you'd rather use a graphical tool than the command line, [Beekeeper Studio](https://www.beekeeperstudio.io/db/bedrockdb-client/) has native support for connecting to Bedrock via its MySQL-compatible proxy.
+
 ## Bedrock plugins
 Additionally, Bedrock::DB is just one plugin to the overall Bedrock platform.  Bedrock itself is less a database, and more a tool that can be used to build a wide variety of data-management applications -- with a database being just one example.  Each "plugin" implements and exposes new externally-visible commands (essentially equivalent to "stored procedures").  However, unlike simple stored procedures, plugins can also include schema changes.  Plugins can be enabled via the "-plugins" command line parameter.  Current plugins include:
 

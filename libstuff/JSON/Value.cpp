@@ -42,6 +42,10 @@ Value::Value(const string& s) : valueType(STRING), stringValue(s)
 {
 }
 
+Value::Value(string_view s) : valueType(STRING), stringValue(s)
+{
+}
+
 Value::Value(string&& s) : valueType(STRING), stringValue(move(s))
 {
 }
@@ -49,7 +53,7 @@ Value::Value(string&& s) : valueType(STRING), stringValue(move(s))
 Value::Value(const ValueType type) : valueType(type)
 {
     if (type == OBJECT) {
-        objectValue = make_shared<map<string, Value>>();
+        objectValue = make_shared<ObjectMap>();
     }
 
     if (type == ARRAY) {
@@ -59,7 +63,7 @@ Value::Value(const ValueType type) : valueType(type)
 
 Value::Value(initializer_list<KeyValue> initializerList) : startTime(chrono::high_resolution_clock::now()), valueType(OBJECT)
 {
-    objectValue = make_shared<map<string, Value>>();
+    objectValue = make_shared<ObjectMap>();
     for (auto& item : initializerList) {
         // The KeyValue has full ownership of its underlying items and it was designed for the specific purpose of being safe to move here
         objectValue->emplace_hint(objectValue->end(), move(item.key), move(item.value));
@@ -67,13 +71,14 @@ Value::Value(initializer_list<KeyValue> initializerList) : startTime(chrono::hig
     logSlowConstructor();
 }
 
-Value::Value(const map<string, Value>& values) : startTime(chrono::high_resolution_clock::now()), valueType(OBJECT), objectValue(make_shared<map<string, Value>>(values))
+Value::Value(const map<string, Value>& values) : startTime(chrono::high_resolution_clock::now()), valueType(OBJECT), objectValue(make_shared<ObjectMap>(values.begin(), values.end()))
 {
     logSlowConstructor();
 }
 
-Value::Value(map<string, Value>&& values) : valueType(OBJECT), objectValue(make_shared<map<string, Value>>(move(values)))
+Value::Value(map<string, Value>&& values) : valueType(OBJECT), objectValue(make_shared<ObjectMap>())
 {
+    objectValue->merge(values);
 }
 
 Value::Value(const uint64_t i) : valueType(INT)
@@ -159,7 +164,7 @@ Value::Value(const Value& v) : startTime(chrono::high_resolution_clock::now())
             break;
 
         case OBJECT:
-            objectValue = make_shared<map<string, Value>>(*v.objectValue);
+            objectValue = make_shared<ObjectMap>(*v.objectValue);
             valueType = OBJECT;
             logSlowConstructor();
             break;
@@ -452,41 +457,50 @@ const string& Value::getString() const
     return stringValue;
 }
 
-Value& Value::operator[](const string& key) &
+Value& Value::getOrInsertMember(string_view key)
+{
+    auto it = objectValue->lower_bound(key);
+    if (it == objectValue->end() || it->first != key) {
+        it = objectValue->try_emplace(it, string(key));
+    }
+    return it->second;
+}
+
+Value& Value::operator[](string_view key) &
 {
     try {
         ensureType(OBJECT);
     } catch (TypeError& e) {
-        throw TypeError(string(e.what()) + " key: '" + key + "' method: 'operator[] &'");
+        throw TypeError(string(e.what()) + " key: '" + string(key) + "' method: 'operator[] &'");
     }
 
-    return (*objectValue)[key];
+    return getOrInsertMember(key);
 }
 
-Value Value::operator[](const string& key) &&
+Value Value::operator[](string_view key) &&
 {
     try {
         ensureType(OBJECT);
     } catch (JSON::TypeError& e) {
-        throw JSON::TypeError(string(e.what()) + " key: '" + key + "' method: 'operator[] &&'");
+        throw JSON::TypeError(string(e.what()) + " key: '" + string(key) + "' method: 'operator[] &&'");
     }
 
-    return move((*objectValue)[key]);
+    return move(getOrInsertMember(key));
 }
 
-const Value& Value::operator[](const string& key) const&
+const Value& Value::operator[](string_view key) const&
 {
     try {
         ensureType(OBJECT);
     } catch (JSON::TypeError& e) {
-        throw JSON::TypeError(string(e.what()) + " key: '" + key + "' method: 'operator[] const&'");
+        throw JSON::TypeError(string(e.what()) + " key: '" + string(key) + "' method: 'operator[] const&'");
     }
 
-    try {
-        return objectValue->at(key);
-    } catch (const out_of_range&) {
-        throw NotFound("JSON Error, key not found - '" + key + "' method: 'operator[] const&'");
+    const auto it = objectValue->find(key);
+    if (it == objectValue->end()) {
+        throw NotFound("JSON Error, key not found - '" + string(key) + "' method: 'operator[] const&'");
     }
+    return it->second;
 }
 
 Value& Value::operator[](size_t i) &
@@ -601,14 +615,18 @@ void Value::push_back(bool b)
     arrayValue->emplace_back(b);
 }
 
-pair<map<string, Value>::iterator, bool> Value::emplace(const string& key, Value&& v)
+pair<Value::ObjectMap::iterator, bool> Value::emplace(string_view key, Value&& v)
 {
     try {
         ensureType(OBJECT);
     } catch (JSON::TypeError& e) {
         throw JSON::TypeError(string(e.what()) + " method: 'emplace' (move)");
     }
-    return objectValue->emplace(key, move(v));
+    const auto it = objectValue->lower_bound(key);
+    if (it != objectValue->end() && it->first == key) {
+        return {it, false};
+    }
+    return {objectValue->emplace_hint(it, key, move(v)), true};
 }
 
 Value& Value::back()
@@ -639,10 +657,10 @@ const Value& Value::back() const
     return arrayValue->back();
 }
 
-string Value::extractStringWithDefault(const string& key, const string& defaultString)
+string Value::extractStringWithDefault(string_view key, string_view defaultString)
 {
     if (!isObject()) {
-        return defaultString;
+        return string(defaultString);
     }
 
     auto it = objectValue->find(key);
@@ -650,17 +668,17 @@ string Value::extractStringWithDefault(const string& key, const string& defaultS
         return move(objectValue->extract(it).mapped().stringValue);
     }
 
-    return defaultString;
+    return string(defaultString);
 }
 
-void Value::extractTo(map<string, JSON::Value>::iterator it, JSON::Value& v)
+void Value::extractTo(ObjectMap::iterator it, JSON::Value& v)
 {
     ensureType(OBJECT);
     v.ensureType(OBJECT);
     v.objectValue->insert(objectValue->extract(it));
 }
 
-void Value::extractTo(map<string, Value>::iterator it, Value& target, string key, map<string, Value>::const_iterator hint)
+void Value::extractTo(ObjectMap::iterator it, Value& target, string key, ObjectMap::const_iterator hint)
 {
     ensureType(OBJECT);
     target.ensureType(OBJECT);
@@ -685,19 +703,22 @@ vector<JSON::Value>::iterator Value::erase(vector<JSON::Value>::iterator it)
     return arrayValue->erase(it);
 }
 
-void Value::erase(const string& key)
+void Value::erase(string_view key)
 {
     ensureType(OBJECT);
-    objectValue->erase(key);
+    const auto it = objectValue->find(key);
+    if (it != objectValue->end()) {
+        objectValue->erase(it);
+    }
 }
 
-map<string, JSON::Value>::iterator Value::erase(map<string, JSON::Value>::iterator it)
+Value::ObjectMap::iterator Value::erase(ObjectMap::iterator it)
 {
     ensureType(OBJECT);
     return objectValue->erase(it);
 }
 
-pair<map<string, Value>::iterator, bool> Value::insert(const pair<string, Value>& v)
+pair<Value::ObjectMap::iterator, bool> Value::insert(const pair<string, Value>& v)
 {
     ensureType(OBJECT);
     return objectValue->insert(v);
@@ -718,7 +739,7 @@ void Value::merge(Value&& v)
 
     // map::merge doesn't replace existing keys, so we have to merge first v.objectValue into an empty map,
     // and then merge this->objectValue to produce the right result
-    map<string, JSON::Value> mergeResult;
+    ObjectMap mergeResult;
     mergeResult.merge(*v.objectValue);
     mergeResult.merge(*objectValue);
     *objectValue = move(mergeResult);
@@ -864,19 +885,19 @@ void Value::shallowCopy(const Value& v)
     }
 }
 
-void Value::shallowCopy(const string& key, const Value& v)
+void Value::shallowCopy(string_view key, const Value& v)
 {
     ensureType(OBJECT);
-    (*objectValue)[key].shallowCopy(v);
+    getOrInsertMember(key).shallowCopy(v);
 }
 
-bool Value::hasMember(const string& key) const
+bool Value::hasMember(string_view key) const
 {
     try {
         ensureType(OBJECT);
     } catch (TypeError& e) {
         SLogStackTrace(LOG_DEBUG);
-        throw TypeError(string(e.what()) + " key: '" + key + "' method: 'hasMember'");
+        throw TypeError(string(e.what()) + " key: '" + string(key) + "' method: 'hasMember'");
     }
     return objectValue->find(key) != objectValue->end();
 }
@@ -892,7 +913,7 @@ bool Value::hasIndex(size_t index) const
     return index >= 0 && index < arrayValue->size();
 }
 
-bool Value::getBoolMemberWithDefault(const string& key, const bool defaultValue) const
+bool Value::getBoolMemberWithDefault(string_view key, const bool defaultValue) const
 {
     if (!isObject()) {
         return defaultValue;
@@ -907,22 +928,22 @@ bool Value::getBoolMemberWithDefault(const string& key, const bool defaultValue)
     return defaultValue;
 }
 
-string Value::getStringMemberWithDefault(const string& key, string&& defaultValue) &&
+string Value::getStringMemberWithDefault(string_view key, string&& defaultValue) &&
 {
     return static_cast<const JSON::Value*>(this)->getStringMemberWithDefault(key, move(defaultValue));
 }
 
-string Value::getStringMemberWithDefault(const string& key, string&& defaultValue) &
+string Value::getStringMemberWithDefault(string_view key, string&& defaultValue) &
 {
     return static_cast<const JSON::Value*>(this)->getStringMemberWithDefault(key, move(defaultValue));
 }
 
-string Value::getStringMemberWithDefault(const string& key) &&
+string Value::getStringMemberWithDefault(string_view key) &&
 {
     return static_cast<const JSON::Value*>(this)->getStringMemberWithDefault(key, "");
 }
 
-string Value::getStringMemberWithDefault(const string& key, string&& defaultValue) const&
+string Value::getStringMemberWithDefault(string_view key, string&& defaultValue) const&
 {
     if (!isObject()) {
         return move(defaultValue);
@@ -937,27 +958,27 @@ string Value::getStringMemberWithDefault(const string& key, string&& defaultValu
     return move(defaultValue);
 }
 
-string Value::getStringMemberWithDefault(const string& key, const string& defaultValue) &&
+string Value::getStringMemberWithDefault(string_view key, const string& defaultValue) &&
 {
     return static_cast<const JSON::Value*>(this)->getStringMemberWithDefault(key, defaultValue);
 }
 
-string Value::getStringMemberWithDefault(const string& key, const string& defaultValue) &
+string Value::getStringMemberWithDefault(string_view key, const string& defaultValue) &
 {
     return static_cast<const JSON::Value*>(this)->getStringMemberWithDefault(key, defaultValue);
 }
 
-string Value::getStringMemberWithDefault(const string& key) &
+string Value::getStringMemberWithDefault(string_view key) &
 {
     return getStringMemberWithDefault(key, JSON::Utils::EMPTY_STRING.getString());
 }
 
-const string& Value::getStringMemberWithDefault(const string& key) const &
+const string& Value::getStringMemberWithDefault(string_view key) const &
 {
     return getStringMemberWithDefault(key, JSON::Utils::EMPTY_STRING.getString());
 }
 
-const string& Value::getStringMemberWithDefault(const string& key, const string& defaultValue) const &
+const string& Value::getStringMemberWithDefault(string_view key, const string& defaultValue) const &
 {
     if (!isObject()) {
         return defaultValue;
@@ -972,7 +993,7 @@ const string& Value::getStringMemberWithDefault(const string& key, const string&
     return defaultValue;
 }
 
-const int64_t Value::getIntMemberWithDefault(const string& key, const int64_t defaultValue) const
+const int64_t Value::getIntMemberWithDefault(string_view key, const int64_t defaultValue) const
 {
     if (!isObject()) {
         return defaultValue;
@@ -988,7 +1009,7 @@ const int64_t Value::getIntMemberWithDefault(const string& key, const int64_t de
     return defaultValue;
 }
 
-const double Value::getFloatMemberWithDefault(const string& key, const double defaultValue) const
+const double Value::getFloatMemberWithDefault(string_view key, const double defaultValue) const
 {
     if (!isObject()) {
         return defaultValue;
@@ -1010,7 +1031,7 @@ const double Value::getFloatMemberWithDefault(const string& key, const double de
     return defaultValue;
 }
 
-const double Value::getNumericMemberWithDefault(const string& key, const double defaultValue) const
+const double Value::getNumericMemberWithDefault(string_view key, const double defaultValue) const
 {
     if (!isObject()) {
         return defaultValue;
@@ -1076,17 +1097,17 @@ bool Value::hasElement(const JSON::Value& value) const
     return find(arrayValue->begin(), arrayValue->end(), value) != arrayValue->end();
 }
 
-const JSON::Value& Value::getMemberWithDefault(const string& key) const&
+const JSON::Value& Value::getMemberWithDefault(string_view key) const&
 {
     return getMemberWithDefault(key, JSON::Utils::NULL_VALUE);
 }
 
-JSON::Value Value::getMemberWithDefault(const string& key) &&
+JSON::Value Value::getMemberWithDefault(string_view key) &&
 {
     return getMemberWithDefault(key);
 }
 
-JSON::Value Value::getMemberWithDefault(const string& key, const JSON::Value& defaultValue) &&
+JSON::Value Value::getMemberWithDefault(string_view key, const JSON::Value& defaultValue) &&
 {
     if (!isObject()) {
         return defaultValue;
@@ -1100,7 +1121,7 @@ JSON::Value Value::getMemberWithDefault(const string& key, const JSON::Value& de
     return move(it->second);
 }
 
-const JSON::Value& Value::getMemberWithDefault(const string& key, const JSON::Value& defaultValue) const&
+const JSON::Value& Value::getMemberWithDefault(string_view key, const JSON::Value& defaultValue) const&
 {
     if (!isObject()) {
         return defaultValue;
@@ -1295,25 +1316,25 @@ vector<Value>::const_iterator Value::arrayEnd() const
     return arrayValue->end();
 }
 
-map<string, Value>::iterator Value::objectBegin()
+Value::ObjectMap::iterator Value::objectBegin()
 {
     ensureType(OBJECT);
     return objectValue->begin();
 }
 
-map<string, Value>::iterator Value::objectEnd()
+Value::ObjectMap::iterator Value::objectEnd()
 {
     ensureType(OBJECT);
     return objectValue->end();
 }
 
-map<string, Value>::const_iterator Value::objectBegin() const
+Value::ObjectMap::const_iterator Value::objectBegin() const
 {
     ensureType(OBJECT);
     return objectValue->begin();
 }
 
-map<string, Value>::const_iterator Value::objectEnd() const
+Value::ObjectMap::const_iterator Value::objectEnd() const
 {
     ensureType(OBJECT);
     return objectValue->end();
