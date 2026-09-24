@@ -23,6 +23,13 @@ public:
     static const JSON::Value ZERO_FLOAT_VALUE;
 
     /**
+     * Converts an object for APIs that use case-insensitive string fields.
+     * Strings are kept as-is; other values, including null and nested objects, are serialized as JSON.
+     * @throws JSON::TypeError if the value is not an object.
+     */
+    static STable toSTable(const JSON::Value& object);
+
+    /**
      * Recursively replace keys listed in `replace` inside `into` with values from `from`.
      *
      * Commonly used for `bankAccounts.additionalData` where certain keys (e.g., apiResult, errorAttemptsCount, and

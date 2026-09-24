@@ -8,6 +8,8 @@ class JSONUtilsTest : public tpunit::TestFixture
 public:
     JSONUtilsTest();
 
+    void toSTable();
+
     void mergeObjectsOverwritesRightOrder();
     void mergeObjectsHandlesLeftNonObject();
     void mergeObjectsHandlesRightNonObject();
