@@ -55,6 +55,10 @@ protected:   // Child API
 
     // Methods
     unique_ptr<Transaction> _httpsSend(const string& url, const SData& request, bool allowProxy = false);
+
+    // A non-null connection requires an HTTPS URL with a matching host:port.
+    unique_ptr<Transaction> _httpsSend(const string& url, const SData& request, shared_ptr<const MTLSConnection> connection, bool allowProxy = false);
+
     unique_ptr<Transaction> _createErrorTransaction();
     virtual bool _onRecv(Transaction& transaction);
 
