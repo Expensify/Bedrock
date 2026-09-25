@@ -53,6 +53,18 @@ public:
 
     static void afterCommitCallback();
 
+    atomic<uint64_t> stateChangeCount{0};
+    atomic<uint64_t> synchronizeCount{0};
+
+    // Stage three disjoint writes against the same read snapshot before allowing any of them to commit.
+    void waitForBlankCommitGroup();
+
+    mutex blankCommitMutex;
+    condition_variable blankCommitCV;
+    uint64_t blankCommitGeneration = 0;
+    int blankCommitArrivals = 0;
+    bool blankCommitBarrierFailed = false;
+
     // Deletes rows through writeLocalUnreplicated from a long-lived thread of its own. This will be used to
     // test that writeLocalUnreplicated can run while other threads are committing.
     unique_ptr<thread> unreplicatedDeleterThread;

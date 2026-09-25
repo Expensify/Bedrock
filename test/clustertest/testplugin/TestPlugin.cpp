@@ -65,6 +65,27 @@ void BedrockPlugin_TestPlugin::afterCommitCallback()
     afterCommitCount++;
 }
 
+void BedrockPlugin_TestPlugin::waitForBlankCommitGroup()
+{
+    unique_lock<mutex> lock(blankCommitMutex);
+    const uint64_t generation = blankCommitGeneration;
+    if (!blankCommitBarrierFailed && ++blankCommitArrivals == 3) {
+        blankCommitArrivals = 0;
+        ++blankCommitGeneration;
+        blankCommitCV.notify_all();
+        return;
+    }
+    if (!blankCommitCV.wait_for(lock, chrono::seconds(5), [&]() {
+        return blankCommitGeneration != generation || blankCommitBarrierFailed;
+    })) {
+        blankCommitBarrierFailed = true;
+        blankCommitCV.notify_all();
+    }
+    if (blankCommitBarrierFailed) {
+        STHROW("500 Blank commit barrier timed out");
+    }
+}
+
 void BedrockPlugin_TestPlugin::serverStopping()
 {
     {
@@ -137,6 +158,8 @@ unique_ptr<BedrockCommand> BedrockPlugin_TestPlugin::getCommand(SQLiteCommand&& 
     static set<string> supportedCommands = {
         "testcommand",
         "getaftercommitcount",
+        "getjournalteststate",
+        "blankcommitconflict",
         "deletetestrowunreplicated",
         "testescalate",
         "broadcastwithtimeouts",
@@ -299,6 +322,17 @@ bool TestPluginCommand::peek(SQLite& db)
     } else if (SStartsWith(request.methodLine, "getaftercommitcount")) {
         // Peek runs on whichever node received this, so a follower answers for itself instead of escalating.
         response.content = SComposeJSONObject({{"afterCommitCount", SToStr(plugin().afterCommitCount.load())}});
+        response.methodLine = "200 OK";
+        return true;
+    } else if (request.methodLine == "getjournalteststate") {
+        const auto state = db.getCommitState();
+        response.content = SComposeJSONObject({
+            {"stateChangeCount", to_string(plugin().stateChangeCount.load())},
+            {"synchronizeCount", to_string(plugin().synchronizeCount.load())},
+            {"commitCount", to_string(state.commitCount)},
+            {"hashCommitID", to_string(state.hashCommitID)},
+            {"hash", state.hash},
+        });
         response.methodLine = "200 OK";
         return true;
     } else if (SStartsWith(request.methodLine, "testcommand")) {
@@ -619,6 +653,16 @@ void TestPluginCommand::process(SQLite& db)
 
         // Done.
         return;
+    } else if (request.methodLine == "blankcommitconflict") {
+        // End failed attempts without a successful retry, leaving the allocated blank CIDs at the journal's tail.
+        if (processCount > 1) {
+            STHROW("409 Expected read conflict");
+        }
+        SQResult result;
+        SASSERT(db.read("SELECT SUM(value) FROM blankCommitTest;", result));
+        SASSERT(db.write("UPDATE blankCommitTest SET value = value + 1 WHERE id = " + SQ(request.calc("id")) + ";"));
+        plugin().waitForBlankCommitGroup();
+        return;
     } else if (SStartsWith(request.methodLine, "idcollision")) {
         usleep(1001); // for TimingTest to not get 0 values.
         SQResult result;
@@ -778,6 +822,11 @@ void BedrockPlugin_TestPlugin::onPrepareHandler(SQLite& db, int64_t tableID)
 
 void BedrockPlugin_TestPlugin::stateChanged(SQLite& db, SQLiteNodeState newState)
 {
+    stateChangeCount++;
+    if (newState == SQLiteNodeState::SYNCHRONIZING) {
+        synchronizeCount++;
+    }
+
     // We spin this up in another thread because `stateChanged` is called from the `sync` thread in bedrock
     // so this function cannot do any sort of waiting or it will block the sync thread. By offloading this,
     // we can let the code wait for a condition to be met before it actually runs. In our case, we want to
