@@ -621,10 +621,14 @@ void TestPluginCommand::journalTest(SQLite& db)
             SQLite trimmer(db);
             sqlite3_trace_v2(trimmer.getDBHandle(), SQLITE_TRACE_STMT, trace, &trims);
             output["tablesBefore"] = to_string(trimmer.getJournalTableCount());
-            for (int round = 0; round < request.calc("rounds"); ++round) {
-                const size_t tables = trimmer.getJournalTableCount();
-                for (size_t table = 0; table < tables; ++table) {
-                    SASSERT(trimmer.trimJournalTable(table, request.calc64("batchSize")));
+            if (request.isSet("table")) {
+                SASSERT(trimmer.trimJournalTable(request.calcU64("table"), request.calc64("batchSize")));
+            } else {
+                for (int round = 0; round < request.calc("rounds"); ++round) {
+                    const size_t tables = trimmer.getJournalTableCount();
+                    for (size_t table = 0; table < tables; ++table) {
+                        SASSERT(trimmer.trimJournalTable(table, request.calc64("batchSize")));
+                    }
                 }
             }
             output["tablesAfter"] = to_string(trimmer.getJournalTableCount());

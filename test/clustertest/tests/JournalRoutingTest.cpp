@@ -10,6 +10,7 @@ struct JournalRoutingTest : tpunit::TestFixture
                               TEST(JournalRoutingTest::routesReadsAroundCutover),
                               TEST(JournalRoutingTest::freshDatabaseSkipsLegacy),
                               TEST(JournalRoutingTest::trimmingPreservesLegacySnapshot),
+                              TEST(JournalRoutingTest::trimmingPreservesPromotionBoundary),
                               TEST(JournalRoutingTest::legacyWritesRemainVisible))
     {
     }
@@ -182,6 +183,56 @@ struct JournalRoutingTest : tpunit::TestFixture
         EXPECT_TRUE(noHash.at("hash").empty());
         verifySources(noHash, false, false);
         EXPECT_EQUAL(run(node, "trim").at("tablesBefore"), "1");
+    }
+
+    void trimmingPreservesPromotionBoundary()
+    {
+        if (!BedrockTester::ENABLE_HCTREE) {
+            return;
+        }
+        BedrockTester node(args, {}, 0, 0, 0, false);
+        uint64_t boundary = 0;
+        string hash;
+        seedLegacy(node, true, boundary, hash);
+        ASSERT_GREATER_THAN(boundary, 1ull);
+        node.startServer();
+        for (int i = 100; i < 110; ++i) {
+            SData write("Query");
+            write["Query"] = "INSERT INTO routingData VALUES(" + SQ(i) + ", 'advance retention');";
+            node.executeWaitVerifyContent(write);
+        }
+
+        SData trim("journaltest");
+        trim["op"] = "trim";
+        trim["batchSize"] = "100";
+        trim["table"] = "3";
+        node.executeWaitVerifyContent(trim);
+        ASSERT_EQUAL(node.readDB("SELECT MIN(cid) FROM hct_journal;"), to_string(boundary));
+
+        // The shard holding the newest legacy commit must retain that entry until the other shards are empty.
+        const string legacyMax = "SELECT MAX(id) FROM (SELECT id FROM journal UNION ALL SELECT id FROM journal0000 UNION ALL SELECT id FROM journal0001);";
+        trim["table"] = "1";
+        node.executeWaitVerifyContent(trim);
+        ASSERT_EQUAL(node.readDB(legacyMax), to_string(boundary - 1));
+        node.stopServer();
+        node.startServer();
+        ASSERT_TRUE(node.waitForState("LEADING"));
+
+        trim["batchSize"] = "1";
+        for (int batch = 0; batch < 50; ++batch) {
+            trim["table"] = to_string(batch);
+            node.executeWaitVerifyContent(trim);
+            const string lastLegacy = node.readDB(legacyMax);
+            if (!lastLegacy.empty()) {
+                ASSERT_EQUAL(SToUInt64(lastLegacy) + 1, SToUInt64(node.readDB("SELECT MIN(cid) FROM hct_journal;")));
+            }
+        }
+        EXPECT_TRUE(node.readDB(legacyMax).empty());
+        SQResult bounds;
+        ASSERT_TRUE(node.readDB("SELECT MIN(cid) AS oldest, MAX(cid) AS newest, COUNT(*) AS count FROM hct_journal;", bounds));
+        ASSERT_EQUAL(bounds.size(), 1ul);
+        EXPECT_EQUAL(SToUInt64(bounds[0]["oldest"]), SToUInt64(bounds[0]["newest"]) - 5);
+        EXPECT_EQUAL(bounds[0]["count"], "6");
     }
 
     void legacyWritesRemainVisible()

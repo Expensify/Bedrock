@@ -1104,8 +1104,10 @@ bool SQLite::trimJournalTable(size_t journalTableIndex, int64_t batchSize)
     }
 
     const bool experimentalHCTree = _hctree && hctreeExperimentalMode;
+    size_t legacyTablesRemaining = 0;
     if (experimentalHCTree) {
         lock_guard<mutex> lock(_sharedData.journalTrimMutex);
+        legacyTablesRemaining = _sharedData.journalTrimTables.size() - 1;
         journalTableIndex = _sharedData.journalTrimTables[journalTableIndex % _sharedData.journalTrimTables.size()];
     } else {
         journalTableIndex %= _journalNames.size();
@@ -1118,6 +1120,10 @@ bool SQLite::trimJournalTable(size_t journalTableIndex, int64_t batchSize)
     const uint64_t commitCount = state.commitCount;
 
     if (experimentalHCTree && journalTableIndex == _journalNames.size()) {
+        // Keep the cutover contiguous until all legacy history has been removed.
+        if (legacyTablesRemaining) {
+            return true;
+        }
         uint64_t oldestCommitToKeep = commitCount < _maxJournalSize ? 0 : commitCount - _maxJournalSize;
         if (state.hashCommitID) {
             oldestCommitToKeep = min(oldestCommitToKeep, state.hashCommitID);
@@ -1142,7 +1148,11 @@ bool SQLite::trimJournalTable(size_t journalTableIndex, int64_t batchSize)
 
     // We wont delete the newest commit with a hash, even if it's older than the cutoff. This is not a
     // practical concern for real databases, but can come up in test situations.
-    const uint64_t oldestCommitToKeep = min(state.hashCommitID, commitCount < _maxJournalSize ? 0 : commitCount - _maxJournalSize);
+    uint64_t oldestCommitToKeep = min(state.hashCommitID, commitCount < _maxJournalSize ? 0 : commitCount - _maxJournalSize);
+    if (experimentalHCTree && legacyTablesRemaining > 1) {
+        // The last legacy ID remains the bridge to HC-Tree while any other legacy shard is still populated.
+        oldestCommitToKeep = min(oldestCommitToKeep, _sharedData.legacyMaxID);
+    }
     if (!oldestCommitToKeep) {
         return true;
     }
@@ -1162,7 +1172,7 @@ bool SQLite::trimJournalTable(size_t journalTableIndex, int64_t batchSize)
         return true;
     }
 
-    const bool committed = writeLocalUnreplicated("DELETE FROM " + journalName + " WHERE id < " + SQ(oldestCommitToKeep) + " LIMIT " + SQ(batchSize) + ";");
+    const bool committed = writeLocalUnreplicated("DELETE FROM " + journalName + " WHERE id < " + SQ(oldestCommitToKeep) + " ORDER BY id LIMIT " + SQ(batchSize) + ";");
     if (committed && experimentalHCTree && oldestCommitToKeep > _sharedData.legacyMaxID &&
         batchSize > 0 && getLastWriteChangeCount() < static_cast<uint64_t>(batchSize)) {
         retireLegacyJournal(journalTableIndex);
