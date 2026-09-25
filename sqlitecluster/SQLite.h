@@ -504,6 +504,7 @@ private:
     static bool validateDBFormat(const string& filename, bool hctree);
     static sqlite3* initializeDB(const string& filename, int64_t mmapSizeGB, bool hctree);
     static vector<string> initializeJournal(sqlite3* db, int minJournalTables, bool hctree);
+    static void initializeHCTreeJournal(sqlite3* db, const vector<string>& journalNames);
     void commonConstructorInitialization(bool hctree = false);
     static int getCheckpointModeFromString(const string& checkpointModeString);
 
@@ -511,7 +512,6 @@ private:
     // it's not static and depends on several other members being initialized before it.
     SharedData& initializeSharedData();
     uint64_t getLegacyCommitCount() const;
-    void rebaseHCTreeJournal(uint64_t legacyCommitID);
 
     // The filename of this DB, canonicalized to its full path on disk.
     const string _filename;

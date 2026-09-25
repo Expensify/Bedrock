@@ -95,14 +95,8 @@ SQLite::SharedData& SQLite::initializeSharedData()
         }
 
         // Read the highest commit count from the database.
-        string candidates = _getJournalQuery(_journalNames, {"SELECT MAX(id) AS id FROM"}, true);
-        if (_hctree && SQVerifyTableExists(_db, "hct_journal")) {
-            if (!candidates.empty()) {
-                candidates += " UNION ALL ";
-            }
-            candidates += "SELECT MAX(cid) AS id FROM hct_journal";
-        }
-        const string query = "SELECT MAX(id) FROM (" + candidates + ")";
+        const string query = _hctree && hctreeExperimentalMode ? "SELECT MAX(cid) FROM hct_journal" :
+            "SELECT MAX(id) FROM (" + _getJournalQuery(_journalNames, {"SELECT MAX(id) AS id FROM"}, true) + ")";
         SASSERT(!SQuery(_db, query, result));
         CommitState state{result.empty() ? 0 : SToUInt64(result[0][0]), 0, ""};
 
@@ -212,6 +206,16 @@ vector<string> SQLite::initializeJournal(sqlite3* db, int minJournalTables, bool
     // Make sure we don't try and create more journals than we can name.
     SASSERT(minJournalTables < 10'000);
     const bool experimentalHCTree = hctree && hctreeExperimentalMode;
+    const bool hctJournalExists = hctree && SQVerifyTableExists(db, "hct_journal");
+    if (hctJournalExists) {
+        if (!experimentalHCTree) {
+            SERROR("cannot downgrade from hct_journal, restore from backup");
+        }
+        // The anchor is created in the same transaction that transfers the legacy baseline.
+        if (!SQVerifyTableExists(db, "bedrock_hct_journal_anchor")) {
+            SERROR("incomplete hct_journal initialization, restore from backup");
+        }
+    }
 
     // First, we create all of the tables through `minJournalTables` if they don't exist.
     for (int currentJounalTable = -1; !experimentalHCTree && currentJounalTable <= minJournalTables; currentJounalTable++) {
@@ -248,9 +252,8 @@ vector<string> SQLite::initializeJournal(sqlite3* db, int minJournalTables, bool
         }
     }
 
-    const bool hctJournalExists = SQVerifyTableExists(db, "hct_journal");
     // Legacy-only databases need a blank first entry to align with HC-Tree's initial CID.
-    if (!experimentalHCTree && !journalNames.empty() && !hctJournalExists) {
+    if (!experimentalHCTree && !journalNames.empty()) {
         SQResult latest;
         SASSERT(!SQuery(db, "SELECT MAX(id) FROM (" + _getJournalQuery(journalNames, {"SELECT MAX(id) AS id FROM"}, true) + ")", latest));
         if (latest.empty() || latest[0][0].empty()) {
@@ -258,13 +261,8 @@ vector<string> SQLite::initializeJournal(sqlite3* db, int minJournalTables, bool
         }
     }
 
-    if (experimentalHCTree) {
-        SASSERT(sqlite3_hct_journal_init(db) == SQLITE_OK);
-        // HC-Tree does not journal a read-only transaction, even if follower_commit()
-        // succeeds. A small local write makes blank and no-op replicated commits real.
-        SASSERT(!SQuery(db, "CREATE TABLE IF NOT EXISTS bedrock_hct_journal_anchor (n INTEGER NOT NULL)"));
-        SASSERT(!SQuery(db, "INSERT INTO bedrock_hct_journal_anchor (n) "
-                          "SELECT 0 WHERE NOT EXISTS (SELECT 1 FROM bedrock_hct_journal_anchor)"));
+    if (experimentalHCTree && !hctJournalExists) {
+        initializeHCTreeJournal(db, journalNames);
     }
 
     string journalEntriesQuery;
@@ -274,7 +272,7 @@ vector<string> SQLite::initializeJournal(sqlite3* db, int minJournalTables, bool
         }
         journalEntriesQuery += "SELECT id, query, hash FROM " + journalName;
     }
-    if (experimentalHCTree || hctJournalExists) {
+    if (experimentalHCTree) {
         // The query is a BLOB containing a 73-byte GUID:SHA1 hash, a colon, then the
         // original (possibly compressed) query bytes. The initial HC-Tree row has no prefix.
         string hctEntries = "SELECT cid AS id, "
@@ -313,6 +311,48 @@ vector<string> SQLite::initializeJournal(sqlite3* db, int minJournalTables, bool
     }
 
     return journalNames;
+}
+
+void SQLite::initializeHCTreeJournal(sqlite3* db, const vector<string>& journalNames)
+{
+    SQResult legacy;
+    if (!journalNames.empty()) {
+        const string query = "SELECT id, query, hash FROM (" +
+            _getJournalQuery(journalNames, {"SELECT MAX(id) AS id, query, hash FROM"}, true) +
+            ") WHERE id IS NOT NULL ORDER BY id DESC LIMIT 1";
+        SASSERT(!SQuery(db, query, legacy));
+    }
+
+    SASSERT(sqlite3_hct_journal_init(db) == SQLITE_OK);
+    SASSERT(!SQuery(db, "BEGIN IMMEDIATE"));
+    // HC-Tree requires a physical write to record blank and no-op replicated commits.
+    int result = SQuery(db, "CREATE TABLE bedrock_hct_journal_anchor (n INTEGER NOT NULL)");
+    if (!result) {
+        result = SQuery(db, "INSERT INTO bedrock_hct_journal_anchor VALUES (0)");
+    }
+    if (!result && !legacy.empty()) {
+        const uint64_t legacyCommitID = SToUInt64(legacy[0]["id"]);
+        SINFO("Initializing HC-Tree journal at legacy commit " << legacyCommitID);
+        result = SQuery(db, "UPDATE hct_journal SET cid = :cid, query = :query WHERE cid = 1", {
+            {":cid", Parameter::i(legacyCommitID)},
+            {":query", Parameter::blob(legacy[0]["hash"] + ":" + legacy[0]["query"])},
+        });
+        if (!result) {
+            for (const string& journalName : journalNames) {
+                result = SQuery(db, "DELETE FROM " + journalName + " WHERE id = " + SQ(legacyCommitID));
+                if (result) {
+                    break;
+                }
+            }
+        }
+    }
+    if (!result) {
+        result = SQuery(db, "COMMIT");
+    }
+    if (result) {
+        SQuery(db, "ROLLBACK");
+        SERROR("Unable to initialize HC-Tree journal: " << result);
+    }
 }
 
 void SQLite::commonConstructorInitialization(bool hctree)
@@ -381,11 +421,6 @@ SQLite::SQLite(const string& filename, int cacheSize, int maxJournalSize,
 {
     commonConstructorInitialization(_hctree);
     if (_hctree && hctreeExperimentalMode) {
-        const uint64_t legacyCommitID = getLegacyCommitCount();
-        const string hctCommit = read("SELECT MAX(cid) FROM hct_journal");
-        if (legacyCommitID > (hctCommit.empty() ? 0 : SToUInt64(hctCommit))) {
-            rebaseHCTreeJournal(legacyCommitID);
-        }
         // All bootstrap/schema writes are finished, and no other handles exist yet.
         SASSERT(sqlite3_hct_journal_setmode(_db, SQLITE_HCT_FOLLOWER) == SQLITE_OK);
         _sharedData.hctreeFollowerMode = true;
@@ -515,7 +550,7 @@ string SQLite::_getLastNonBlankQuery(uint64_t index) const
 {
     string candidates = _getJournalQuery(_journalNames, {"SELECT MAX(id) AS id, hash FROM",
                                                          "WHERE id <= " + SQ(index) + " AND length(hash) > 0"});
-    if (_hctree && SQVerifyTableExists(_db, "hct_journal")) {
+    if (_hctree && hctreeExperimentalMode) {
         if (!candidates.empty()) {
             candidates += " UNION ";
         }
@@ -534,43 +569,6 @@ uint64_t SQLite::getLegacyCommitCount() const
     const string query = "SELECT MAX(id) FROM (" + _getJournalQuery(_journalNames, {"SELECT MAX(id) AS id FROM"}, true) + ")";
     SASSERT(!SQuery(_db, query, result));
     return result.empty() || result[0][0].empty() ? 0 : SToUInt64(result[0][0]);
-}
-
-void SQLite::rebaseHCTreeJournal(uint64_t legacyCommitID)
-{
-    SASSERT(_hctree && hctreeExperimentalMode && legacyCommitID);
-    SINFO("Rebasing HC-Tree journal to legacy commit " << legacyCommitID);
-    SQResult legacy;
-    SASSERT(!SQuery(_db, "SELECT query, hash FROM journalEntries WHERE id = " + SQ(legacyCommitID), legacy));
-    SASSERT(legacy.size() == 1);
-    const string data = legacy[0][1] + ":" + legacy[0][0];
-
-    // Keep one real baseline row rather than emptying the table: HC-Tree requires a
-    // nonempty, contiguous journal. This also moves its snapshot up to Bedrock's CID.
-    SASSERT(!SQuery(_db, "BEGIN IMMEDIATE"));
-    int result = SQuery(_db, "DELETE FROM hct_journal WHERE cid < (SELECT MAX(cid) FROM hct_journal)");
-    if (!result) {
-        result = SQuery(_db, "UPDATE hct_journal SET cid = :cid, query = :query, snapshot = 0, logptr = NULL", {
-            {":cid", Parameter::i(legacyCommitID)},
-            {":query", Parameter::blob(data)},
-        });
-    }
-    // Move the baseline commit into HC-Tree atomically, preserving all earlier legacy history.
-    if (!result) {
-        for (const string& journalName : _journalNames) {
-            result = SQuery(_db, "DELETE FROM " + journalName + " WHERE id = " + SQ(legacyCommitID));
-            if (result) {
-                break;
-            }
-        }
-    }
-    if (!result) {
-        result = SQuery(_db, "COMMIT");
-    }
-    if (result) {
-        SQuery(_db, "ROLLBACK");
-        SERROR("Unable to rebase HC-Tree journal at Bedrock commit " << legacyCommitID << ": " << result);
-    }
 }
 
 SQLite::~SQLite()
