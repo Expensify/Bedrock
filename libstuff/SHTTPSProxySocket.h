@@ -5,8 +5,11 @@
 
 class SHTTPSProxySocket : public STCPManager::Socket {
 public:
-    // Implement all the same constructors as the base class.
+    // Establishes a plaintext CONNECT tunnel before starting TLS to the target host.
     SHTTPSProxySocket(const string& proxyAddress, const string& host, const string& requestID);
+
+    // `connection` cannot be null.
+    SHTTPSProxySocket(const string& proxyAddress, shared_ptr<const STCPManager::MTLSConnection> connection, const string& requestID);
     SHTTPSProxySocket(SHTTPSProxySocket&& from);
 
     ~SHTTPSProxySocket();
