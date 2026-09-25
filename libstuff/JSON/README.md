@@ -4,6 +4,24 @@ Bedrock owns the `JSON::Value`, parser, writer, SAX handler, and utility impleme
 
 Applications that use these APIs consume Bedrock's copy. They do not maintain another implementation.
 
+## Parsing callers
+
+Use `JSON::Value::parse()` to parse a document once, then access nested objects and arrays directly.
+The former `SParseJSONObject()`, `SParseJSONArray()`, and `SGetJSONArrayFront()` APIs have been removed.
+Parsing invalid JSON throws `JSON::InvalidArgument`; check the root type before reading object members or array elements.
+The parser reads a NUL-terminated stream, so reject raw embedded NUL bytes at input boundaries before parsing.
+Keep values typed until a caller needs a serialized string. At string-only command boundaries, use `getString()` for
+JSON strings and `serialize()` for other values, and choose the null representation required by that boundary.
+
+`SToJSON()` still preserves the original text of valid objects and arrays. It now uses the shared parser to validate
+those values, so malformed JSON is quoted as a string instead of being accepted by the old permissive parser.
+
+## Removing legacy parser dependencies
+
+Auth, FuzzyBot, and ExpensifyBackupManager must migrate and deploy before Bedrock removes the legacy parser exports.
+Dynamically loaded plugins that use `JSON::Value` must link `libjson.a` themselves because Bedrock keeps its JSON
+implementation private. Static consumers must also link that archive alongside `libstuff.a`.
+
 ## Build boundary
 
 Bedrock packages the implementation as `libjson.a`. This archive supports staged deployments for applications that already define the same JSON symbols.

@@ -1,7 +1,7 @@
 #include "Jobs.h"
 
 #include <BedrockServer.h>
-#include <libstuff/JSON/Value.h>
+#include <libstuff/JSON/Utils.h>
 #include <libstuff/SQResult.h>
 #include <sqlitecluster/SQLitePeer.h>
 #include <sqlitecluster/SQLiteUtils.h>
@@ -94,14 +94,65 @@ static string preserveRerunIfDataChangedSQL(const string& newDataExpression)
            newDataExpression + ")";
 }
 
+// These metadata lookups historically used STable's case-insensitive keys.
+static string findJobDataKey(const JSON::Value& data, const string& key)
+{
+    for (const auto& [storedKey, value] : JSON::ConstObjectValue(data)) {
+        if (SIEquals(storedKey, key)) {
+            return storedKey;
+        }
+    }
+    return key;
+}
+
 static string stripRerunIfDataChanged(const string& data)
 {
-    STable publicData = SParseJSONObject(data);
-    if (!SContains(publicData, "_bedrockRerunIfDataChanged")) {
-        return data;
+    JSON::Value publicData = JSON::Value::parse(data);
+    bool removed = false;
+    for (auto member = publicData.objectBegin(); member != publicData.objectEnd();) {
+        if (SIEquals(member->first, "_bedrockRerunIfDataChanged")) {
+            member = publicData.erase(member);
+            removed = true;
+        } else {
+            ++member;
+        }
     }
-    publicData.erase("_bedrockRerunIfDataChanged");
-    return SComposeJSONObject(publicData);
+    return removed ? publicData.serialize() : data;
+}
+
+// Job headers use strings, while CreateJobs accepts JSON values for those same headers.
+static string jobAttribute(const JSON::Value& value)
+{
+    return value.isString() ? value.getString() : value.serialize();
+}
+
+static list<STable> parseJobRequests(const string& jobs, bool requireName)
+{
+    if (jobs.find('\0') != string::npos) {
+        STHROW("401 Invalid JSON");
+    }
+    JSON::Value parsed;
+    try {
+        parsed = JSON::Value::parse(jobs);
+    } catch (const JSON::Error&) {
+        STHROW("401 Invalid JSON");
+    }
+    if (!parsed.isArray() || parsed.size() == 0) {
+        STHROW("401 Invalid JSON");
+    }
+
+    list<STable> requests;
+    for (const auto& job : JSON::ArrayValue(parsed)) {
+        if (!job.isObject() || job.size() == 0) {
+            STHROW("401 Invalid JSON");
+        }
+        STable attributes = JSON::Utils::toSTable(job);
+        if (requireName && !SContains(attributes, "name")) {
+            STHROW("402 Missing name");
+        }
+        requests.push_back(move(attributes));
+    }
+    return requests;
 }
 
 const int64_t BedrockPlugin_Jobs::JOBS_DEFAULT_PRIORITY = 500;
@@ -393,25 +444,7 @@ bool BedrockJobsCommand::peek(SQLite& db)
                 BedrockPlugin::verifyAttributeSize(request, "name", 1, BedrockPlugin_Jobs::MAX_SIZE_SMALL);
                 jsonJobs.push_back(request.nameValueMap);
             } else {
-                list<string> multipleJobs;
-                multipleJobs = SParseJSONArray(request["jobs"]);
-                if (multipleJobs.empty()) {
-                    STHROW("401 Invalid JSON");
-                }
-
-                for (auto& job : multipleJobs) {
-                    STable jobObject = SParseJSONObject(job);
-                    if (jobObject.empty()) {
-                        STHROW("401 Invalid JSON");
-                    }
-
-                    // Verify that name is present for every job
-                    if (!SContains(job, "name")) {
-                        STHROW("402 Missing name");
-                    }
-
-                    jsonJobs.push_back(jobObject);
-                }
+                jsonJobs = parseJobRequests(request["jobs"], true);
             }
 
             for (auto& job : jsonJobs) {
@@ -480,8 +513,8 @@ bool BedrockJobsCommand::peek(SQLite& db)
                     // not. Note that this is the first place we'll look at `mockRequest` while handling this command so
                     // any change made here will happen early enough for all of our existing checks to work correctly, and
                     // everything should be good when we get to `processCommand`.
-                    STable parentData = SParseJSONObject(result[0][1]);
-                    bool parentIsMocked = parentData.find("mockRequest") != parentData.end();
+                    const JSON::Value parentData = JSON::Value::parse(result[0][1]);
+                    bool parentIsMocked = parentData.hasMember(findJobDataKey(parentData, "mockRequest"));
                     bool childIsMocked = request.isSet("mockRequest");
 
                     if (parentIsMocked && !childIsMocked) {
@@ -654,20 +687,7 @@ void BedrockJobsCommand::process(SQLite& db)
         if (SIEquals(requestVerb, "CreateJob")) {
             jsonJobs.push_back(request.nameValueMap);
         } else {
-            list<string> multipleJobs;
-            multipleJobs = SParseJSONArray(request["jobs"]);
-            if (multipleJobs.empty()) {
-                STHROW("401 Invalid JSON");
-            }
-
-            for (auto& job : multipleJobs) {
-                STable jobObject = SParseJSONObject(job);
-                if (jobObject.empty()) {
-                    STHROW("401 Invalid JSON");
-                }
-
-                jsonJobs.push_back(jobObject);
-            }
+            jsonJobs = parseJobRequests(request["jobs"], false);
         }
 
         list<string> jobIDs;
@@ -688,9 +708,9 @@ void BedrockJobsCommand::process(SQLite& db)
                 if (job["data"].empty()) {
                     job["data"] = "{\"mockRequest\":true}";
                 } else {
-                    STable data = SParseJSONObject(job["data"]);
-                    data["mockRequest"] = "true";
-                    job["data"] = SComposeJSONObject(data);
+                    JSON::Value data = JSON::Value::parse(job["data"]);
+                    data[findJobDataKey(data, "mockRequest")] = true;
+                    job["data"] = data.serialize();
                 }
             }
 
@@ -786,8 +806,8 @@ void BedrockJobsCommand::process(SQLite& db)
                     STHROW("405 Can only create child job when parent is RUNNING, RUNQUEUED or PAUSED");
                 }
                 // Verify that the parent and child job have the same `mockRequest` setting.
-                STable parentData = SParseJSONObject(result[0][2]);
-                if (mockRequest != (parentData.find("mockRequest") != parentData.end())) {
+                const JSON::Value parentData = JSON::Value::parse(result[0][2]);
+                if (mockRequest != parentData.hasMember(findJobDataKey(parentData, "mockRequest"))) {
                     STHROW("405 Parent and child jobs must have matching mockRequest setting");
                 }
 
@@ -1120,8 +1140,8 @@ void BedrockJobsCommand::process(SQLite& db)
                 job["cancelledChildJobs"] = SComposeJSONArray(cancelledChildJobArray);
             }
 
-            STable jobData = SParseJSONObject(job["data"]);
-            if (SToInt(jobData["retryAfterCount"]) >= 10) {
+            const JSON::Value jobData = JSON::Value::parse(job["data"]);
+            if (SToInt(jobAttribute(jobData.getMemberWithDefault(findJobDataKey(jobData, "retryAfterCount")))) >= 10) {
                 // We will fail this job, don't return it.
                 continue;
             }
@@ -1142,8 +1162,8 @@ void BedrockJobsCommand::process(SQLite& db)
         if (!retriableJobs.empty()) {
             for (auto job : retriableJobs) {
                 SDEBUG("Updating job with retryAfter " << job["jobID"]);
-                STable jobData = SParseJSONObject(job["data"]);
-                if (SToInt(jobData["retryAfterCount"]) >= 10) {
+                const JSON::Value jobData = JSON::Value::parse(job["data"]);
+                if (SToInt(jobAttribute(jobData.getMemberWithDefault(findJobDataKey(jobData, "retryAfterCount")))) >= 10) {
                     SINFO("Job " << job["jobID"] << " has retried 10 times, marking it as FAILED.");
                     string failQuery = "UPDATE jobs "
                         "SET state='FAILED' "
@@ -1405,8 +1425,8 @@ void BedrockJobsCommand::process(SQLite& db)
                 string dataExpression = "JSON_REMOVE(data, '$.retryAfterCount')";
                 if (!request["data"].empty()) {
                     const string workerData = stripRerunIfDataChanged(request["data"]);
-                    const STable parsedWorkerData = SParseJSONObject(workerData);
-                    const bool workerIsMocked = SContains(parsedWorkerData, "mockRequest");
+                    const JSON::Value parsedWorkerData = JSON::Value::parse(workerData);
+                    const bool workerIsMocked = parsedWorkerData.hasMember(findJobDataKey(parsedWorkerData, "mockRequest"));
                     if (mockRequest != workerIsMocked) {
                         SWARN("Not updating mockRequest field of job data.");
                         STHROW("500 Mock Mismatch");
@@ -1448,11 +1468,12 @@ void BedrockJobsCommand::process(SQLite& db)
             // Remove the internal marker from the worker data. Restore it only if it is set on the stored job.
             data = stripRerunIfDataChanged(data);
             // See if the new data says it's mocked.
-            STable newData = SParseJSONObject(data);
+            const JSON::Value newData = JSON::Value::parse(data);
             if (originalNextRun.empty()) {
-                originalNextRun = newData["originalNextRun"];
+                const string originalNextRunKey = findJobDataKey(newData, "originalNextRun");
+                originalNextRun = newData.hasMember(originalNextRunKey) ? jobAttribute(newData[originalNextRunKey]) : "";
             }
-            bool newMocked = newData.find("mockRequest") != newData.end();
+            bool newMocked = newData.hasMember(findJobDataKey(newData, "mockRequest"));
 
             // If both sets of data don't match each other, this is an error, we don't know who to trust.
             // We don't worry about the state of the request header for mockRequest here, as we expect that the Bedrock
@@ -1463,7 +1484,8 @@ void BedrockJobsCommand::process(SQLite& db)
             }
 
             // If the Job data indicates that this job should be deleted, clear the repeat value so that we delete this job further down.
-            if (SContains(newData, "delete") && newData["delete"] == "true") {
+            const string deleteKey = findJobDataKey(newData, "delete");
+            if (newData.hasMember(deleteKey) && jobAttribute(newData[deleteKey]) == "true") {
                 SINFO("Job was marked for deletion in the data object, clearing repeat value.");
                 repeat = "";
             }
@@ -1914,20 +1936,21 @@ void BedrockJobsCommand::handleFailedReply()
 {
     if (SIEquals(request.methodLine, "GetJob") || SIEquals(request.methodLine, "GetJobs")) {
         list<string> jobIDs;
-        if (SIEquals(request.methodLine, "GetJob")) {
-            STable jobJSON = SParseJSONObject(response.content);
-            if (jobJSON.find("jobID") != jobJSON.end()) {
-                jobIDs.push_back(jobJSON["jobID"]);
-            }
-        } else {
-            STable jobsJSON = SParseJSONObject(response.content);
-            list<string> jobs = SParseJSONArray(jobsJSON["jobs"]);
-            for (auto& job : jobs) {
-                STable jobJSON = SParseJSONObject(job);
-                if (jobJSON.find("jobID") != jobJSON.end()) {
-                    jobIDs.push_back(jobJSON["jobID"]);
+        try {
+            const JSON::Value content = JSON::Value::parse(response.content);
+            if (SIEquals(request.methodLine, "GetJob")) {
+                if (content.hasMember("jobID")) {
+                    jobIDs.push_back(jobAttribute(content["jobID"]));
+                }
+            } else if (content.hasMember("jobs") && content["jobs"].isArray()) {
+                for (const auto& job : JSON::ConstArrayValue(content["jobs"])) {
+                    if (job.isObject() && job.hasMember("jobID")) {
+                        jobIDs.push_back(jobAttribute(job["jobID"]));
+                    }
                 }
             }
+        } catch (const JSON::Error& e) {
+            SWARN("Unable to parse failed job response: " << e.what());
         }
         SINFO("Failed sending response to '" << request.methodLine << "', re-queueing jobs: " << SComposeList(jobIDs));
         SData requeue("RequeueJobs");
