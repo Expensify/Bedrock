@@ -123,6 +123,28 @@ struct GracefulFailoverTest : tpunit::TestFixture
 
         atomic<int> commandID(10000);
         mutex mu;
+        struct ClientThreadCleanup
+        {
+            list<thread>& threads;
+            atomic<bool>& done;
+            BedrockTester* blockedLeader = nullptr;
+            ~ClientThreadCleanup()
+            {
+                done = true;
+                if (blockedLeader) {
+                    try {
+                        blockedLeader->executeWaitMultipleData({SData("UnblockWrites")}, 1, true, true);
+                    } catch (...) {
+                        // Cleanup must still join the clients when the server is already gone.
+                    }
+                }
+                for (auto& client : threads) {
+                    if (client.joinable()) {
+                        client.join();
+                    }
+                }
+            }
+        } cleanup{threads, done};
         startClientThreads(threads, done, counts, commandID, mu, allresults);
 
         // Let the clients get some activity going, we want everything to be busy.
@@ -194,8 +216,27 @@ struct GracefulFailoverTest : tpunit::TestFixture
         // Wait for them to be busy.
         sleep(2);
 
-        // Blow up leader.
+        // An async leader can fork if killed with unreplicated commits. Establish a common checkpoint before
+        // testing crash recovery, while clients continue issuing requests against the blocked leader.
+        BedrockTester& leader = tester->getTester(0);
+        cleanup.blockedLeader = &leader;
+        leader.executeWaitVerifyContent(SData("BlockWrites"), "200 Blocked", true);
+        const string checkpointID = SParseJSONObject(leader.executeWaitVerifyContent(SData("Status"), "200", true))["commitCount"];
+        SData getCheckpoint("GetCommitHash");
+        getCheckpoint["commitCount"] = checkpointID;
+        const SData checkpoint = leader.executeWaitMultipleData({getCheckpoint}, 1, true).front();
+        ASSERT_EQUAL(checkpoint.methodLine, "200 OK");
+        for (size_t i : {1, 2}) {
+            BedrockTester& follower = tester->getTester(i);
+            ASSERT_TRUE(follower.waitForStatusTerm("commitCount", checkpointID));
+            const SData replicated = follower.executeWaitMultipleData({getCheckpoint}, 1, true).front();
+            ASSERT_EQUAL(replicated.methodLine, "200 OK");
+            ASSERT_EQUAL(replicated["hash"], checkpoint["hash"]);
+        }
+
+        // Blow up leader without releasing the write block, so no newer unreplicated commit can slip in.
         tester->getTester(0).stopServer(SIGKILL);
+        cleanup.blockedLeader = nullptr;
 
         // Wait for node 1 to be leader.
         ASSERT_TRUE(tester->getTester(1).waitForState("LEADING"));
@@ -204,6 +245,9 @@ struct GracefulFailoverTest : tpunit::TestFixture
         sleep(2);
         tester->getTester(0).startServer();
         ASSERT_TRUE(tester->getTester(0).waitForState("LEADING"));
+        const SData recovered = leader.executeWaitMultipleData({getCheckpoint}, 1, true).front();
+        ASSERT_EQUAL(recovered.methodLine, "200 OK");
+        ASSERT_EQUAL(recovered["hash"], checkpoint["hash"]);
 
         // Blow up a follower.
         sleep(2);
