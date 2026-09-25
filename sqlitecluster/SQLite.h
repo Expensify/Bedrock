@@ -80,7 +80,7 @@ public:
     // minJournalTables: Creates journal tables through the specified number. If `-1` is passed, only `journal` is
     //                   created. If some value larger than -1 is passed, then journals `journal0000 through
     //                   journalNNNN` are created (or left alone if such tables already exist). If -2 or less is
-    //                   passed, no tables are created.
+    //                   passed, no tables are created. Experimental HC-Tree databases never create legacy journals.
     //
     // mmapSizeGB: address space to use for memory-mapped IO, in GB.
     SQLite(const string& filename, int cacheSize, int maxJournalSize, int minJournalTables,
@@ -524,7 +524,7 @@ private:
     // The underlying sqlite3 DB handle.
     sqlite3* _db;
 
-    // Names of ALL journal tables for this database.
+    // Names of the legacy journal tables for this database. May be empty for experimental HC-Tree databases.
     const vector<string> _journalNames;
 
     // Pointer to our SharedData object, which is shared between all SQLite DB objects for the same file.

@@ -95,11 +95,14 @@ SQLite::SharedData& SQLite::initializeSharedData()
         }
 
         // Read the highest commit count from the database.
-        string query = "SELECT MAX(id) FROM (" + _getJournalQuery(_journalNames, {"SELECT MAX(id) AS id FROM"}, true);
+        string candidates = _getJournalQuery(_journalNames, {"SELECT MAX(id) AS id FROM"}, true);
         if (_hctree && SQVerifyTableExists(_db, "hct_journal")) {
-            query += " UNION ALL SELECT MAX(cid) AS id FROM hct_journal";
+            if (!candidates.empty()) {
+                candidates += " UNION ALL ";
+            }
+            candidates += "SELECT MAX(cid) AS id FROM hct_journal";
         }
-        query += ")";
+        const string query = "SELECT MAX(id) FROM (" + candidates + ")";
         SASSERT(!SQuery(_db, query, result));
         CommitState state{result.empty() ? 0 : SToUInt64(result[0][0]), 0, ""};
 
@@ -211,7 +214,7 @@ vector<string> SQLite::initializeJournal(sqlite3* db, int minJournalTables, bool
     const bool experimentalHCTree = hctree && hctreeExperimentalMode;
 
     // First, we create all of the tables through `minJournalTables` if they don't exist.
-    for (int currentJounalTable = -1; currentJounalTable <= minJournalTables; currentJounalTable++) {
+    for (int currentJounalTable = -1; !experimentalHCTree && currentJounalTable <= minJournalTables; currentJounalTable++) {
         char tableName[27] = {0};
         if (currentJounalTable < 0) {
             // The `-1` entry is just plain "journal".
@@ -246,9 +249,8 @@ vector<string> SQLite::initializeJournal(sqlite3* db, int minJournalTables, bool
     }
 
     const bool hctJournalExists = SQVerifyTableExists(db, "hct_journal");
-    // A blank first entry keeps the Bedrock and HC-Tree commit number spaces aligned on new DBs.
-    // Do not recreate it if promotion previously pruned every legacy entry.
-    if (!journalNames.empty() && !hctJournalExists) {
+    // Legacy-only databases need a blank first entry to align with HC-Tree's initial CID.
+    if (!experimentalHCTree && !journalNames.empty() && !hctJournalExists) {
         SQResult latest;
         SASSERT(!SQuery(db, "SELECT MAX(id) FROM (" + _getJournalQuery(journalNames, {"SELECT MAX(id) AS id FROM"}, true) + ")", latest));
         if (latest.empty() || latest[0][0].empty()) {
@@ -518,7 +520,10 @@ string SQLite::_getLastNonBlankQuery(uint64_t index) const
     string candidates = _getJournalQuery(_journalNames, {"SELECT MAX(id) AS id, hash FROM",
                                                          "WHERE id <= " + SQ(index) + " AND length(hash) > 0"});
     if (_hctree && SQVerifyTableExists(_db, "hct_journal")) {
-        candidates += " UNION SELECT MAX(cid) AS id, CAST(substr(CAST(query AS BLOB), 1, 73) AS TEXT) AS hash "
+        if (!candidates.empty()) {
+            candidates += " UNION ";
+        }
+        candidates += "SELECT MAX(cid) AS id, CAST(substr(CAST(query AS BLOB), 1, 73) AS TEXT) AS hash "
             "FROM hct_journal WHERE cid <= " + SQ(index) + " AND length(CAST(query AS BLOB)) >= 74";
     }
     return "SELECT id, hash FROM (" + candidates + ") WHERE id IS NOT NULL ORDER BY id DESC LIMIT 1";
@@ -1208,7 +1213,7 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash, chrono::m
 
     // Pick a journal for this transaction.
     const int64_t journalID = _sharedData.nextJournalCount++;
-    _journalName = _journalNames[journalID % _journalNames.size()];
+    _journalName = _hctree && hctreeExperimentalMode ? "hct_journal" : _journalNames[journalID % _journalNames.size()];
 
     // Even a blank transaction writes a journal entry. Register before acquiring commitLock.
     beginWriteTransaction();
