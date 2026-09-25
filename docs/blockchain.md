@@ -2,40 +2,30 @@
 layout: default
 ---
 
-# Blockchain -- Bedrock's secret sauce (before it was cool)
-Though the blockchain hype has largely come and gone, it's worth pointing out that the key to Bedrock's [synchronization engine](https://bedrockdb.com/synchronization.html) is a distributed general ledger -- aka, a blockchain.  So it wouldn't be crazy to say that Bedrock is at is core, a blockchain-based database, built in 2007.  (And for those who are keeping score: that's two years before [Bitcoin](https://en.wikipedia.org/wiki/Bitcoin) came onto the scene, and a year before [Satoshi Nakamoto](https://en.wikipedia.org/wiki/Satoshi_Nakamoto) supposedly invented the blockchain.  But hey, who's counting.)
-
-## Public vs Private Blockchains
-To be clear, Bedrock is not a "public" blockchain, like Bitcoin -- it is not designed to synchronize a series of records between thousands or millions of anonymous peers over the open internet.  Rather, Bedrock uses a "private" blockchain, meaning that a small cluster of servers (3-6) operating in a controlled environment connect to each other on an equal footing to synchronize a historical record of commits, and apply them in the same order.
+# Transaction Journal
+Bedrock's [synchronization engine](https://bedrockdb.com/synchronization.html) uses a distributed journal. Nodes replicate committed transactions and apply them contiguously, in order.
 
 ## The Journal
-New local commits use the GUID transaction hashes described below. Existing journals can also contain legacy chained hashes, which work like this:
-
 * Journal entries have three columns:
     * `id` - Simple monotonic index
     * `query` - The query to commit to the database
-    * `hash` - A SHA1 hash of `query`, combined with the previous `hash`
-    
-* Every time a query is committed to the database, a new row is inserted into the journal.  This row records the query, and calculates the new incremental hash -- based on the last row in the database
+    * `hash` - A GUID and SHA1 digest identifying and validating the transaction
 
-* This means that every row is actually a product of every single row that has come before it.
+Every distributed commit adds a journal row. Nodes advertise `CommitCount`, the highest committed ID including blank rows, along with `HashCommitID` and `Hash`, the ID and hash of their latest nonblank entry. If there is no nonblank entry, `HashCommitID` is zero and `Hash` is empty.
 
-* So when a server connects to the cluster, it broadcasts its most recent `id` and `hash`, and then any two servers can confirm that they agree on the history up to that point.  And since all queries are committed in the same order, that means that the two servers are confident that they have the same exact database.
-
-* In the event two servers disagree on what hash corresponds to a given `id`, they know that they have "forked" at some point in the past, and simply refuse to communicate any futher.  This means in a "split brain" scenario, those subsets of the cluster that agree will connect to each other, and refuse to connect to the others.  (And then our Paxos-based election scheme will ensure that only one of "splits" will stand up a new leader, because the others do not have quorum.)
-
-* After two nodes have connected and confirm they agree on the history up to a point, then if one has more data than the other, it will download each commit and apply it in turn -- every time confirming that it still agrees with the hash of the peer.
-
-The sum of all this ensures that all of the cluster stays in perfect sync (and refuses to talk to those nodes that have forked), all without any of them being "in charge".  This is the heart of what makes a distributed ledger so special, and has processed (as of this writing) 4,287,514,530 successful commits on the database to date.
+To check agreement, the node with more journal entries finds its latest nonblank entry at or before the other node's `CommitCount`, then compares that entry's ID and hash with the advertised `HashCommitID` and `Hash`. Matching identities establish agreement on the shared prefix; disagreement identifies a fork. Trailing blanks do not change agreement, but the node with the larger `CommitCount` is ahead. Synchronization transfers every missing row, including blanks.
 
 ## GUID Transaction Hashes
-Local transactions always generate `GUID:SHA1`. The GUID is 16 random bytes encoded as 32 hex characters without hyphens. The digest is the same uppercase, 40-character hex SHA1 used by chained hashes, but its input is the GUID text followed by the current transaction's uncompressed SQL, without a colon or previous hash.
+Local transactions always generate `GUID:SHA1`. The GUID is 16 random bytes encoded as 32 hex characters without hyphens. The digest is an uppercase, 40-character hex SHA1 of the GUID text followed by the current transaction's uncompressed SQL, without a colon or previous hash.
 
 This format checks only the current transaction's integrity. The GUID distinguishes independently created transactions even when their SQL is identical. Fork detection compares the complete stored hash and relies on transactions being applied contiguously, in order; it does not verify a cryptographic chain across GUID entries.
 
-Both formats can appear in the same journal. A chained hash following a GUID hash uses the entire previous `GUID:SHA1` string, followed by the current SQL, as its input. Neither storage nor transmission strips the GUID.
+`SQLite::prepare()` generates a GUID unless replication supplies the received GUID or an explicit empty string for a blank entry. Both live replication and synchronization recompute and validate nonblank GUID hashes. Chained-hash replay is not supported, so a node must have a GUID-only synchronization tail before upgrading.
 
-`SQLite::prepare()` generates a GUID unless replication supplies the received GUID or an explicit empty string for a legacy chained hash. Both live replication and synchronization recompute and validate the complete received hash, preserving either format in the journal. Deploy mixed-format readers everywhere before deploying GUID generation; rollback versions that may need to synchronize must also retain mixed-format reading.
+## Blank Entries
+A blank entry has both an empty query and an empty hash. It consumes an ID without modifying application data. Followers skip SQL execution and commit only the journal row. An empty query with a GUID hash is still a nonblank transaction; an empty hash with a nonempty query is rejected.
+
+Blank entries support future HC-Tree commits that allocate an ID before failing. Local commits do not generate them yet. Deploy blank-aware readers everywhere before enabling blank writers. During this rollout, peers without a `HashCommitID` header are treated as advertising `HashCommitID = CommitCount`.
 
 ## Technical Notes
 The above skips over a couple important details:
@@ -44,4 +34,4 @@ The above skips over a couple important details:
 
 * Bedrock exposes the read-only `journalEntries` view for querying all physical journal tables together. For example, use `SELECT * FROM journalEntries WHERE id = 123;` instead of manually building a `UNION ALL` across `journal`, `journal0000`, `journal0001`, and the remaining shards.
 
-* We don't actually retain all 4B+ rows to the journal.  Rather, we do full backups at least nightly, and instead just keep several days of history in the journal, trimming as we go. 
+* We retain a limited journal history and trim older entries. Trimming always preserves the latest nonblank entry and all rows after it, so a run of blank entries cannot erase the agreement identity needed for synchronization or restart.

@@ -91,15 +91,14 @@ bool SAXHandler::StartObject()
 {
     Value* object = contexts.back();
     object->valueType = OBJECT;
-    object->objectValue = make_shared<map<string, Value>>();
+    object->objectValue = make_shared<Value::ObjectMap>();
     return true;
 }
 
 bool SAXHandler::Key(const char* str, size_t length, bool copy)
 {
     Value* object = contexts.back();
-    const string key(str, length);
-    Value& child = (*object->objectValue)[key];
+    Value& child = object->getOrInsertMember(string_view(str, length));
     child = Value();
 
     // insert new member and set up context

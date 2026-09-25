@@ -16,6 +16,8 @@ struct JournalDeleterTempDBFile
     ~JournalDeleterTempDBFile()
     {
         unlink(filename);
+        unlink((string(filename) + "-pagemap").c_str());
+        unlink((string(filename) + "-log-0").c_str());
     }
 };
 
@@ -27,6 +29,7 @@ struct JournalDeleterTest : tpunit::TestFixture
                               TEST(JournalDeleterTest::trimRemovesEntriesOlderThanTheMax),
                               TEST(JournalDeleterTest::trimKeepsEverythingWhenUnderTheMax),
                               TEST(JournalDeleterTest::trimHonoursTheBatchSize),
+                              TEST(JournalDeleterTest::trimRetainsNonblankAnchor),
                               TEST(JournalDeleterTest::aZeroBatchSizeDeletesNothing))
     {
     }
@@ -133,5 +136,35 @@ struct JournalDeleterTest : tpunit::TestFixture
         }
 
         ASSERT_EQUAL(countJournalRows(db), 30);
+    }
+
+    void trimRetainsNonblankAnchor()
+    {
+        JournalDeleterTempDBFile dbFile;
+        SQLite db(dbFile.filename, 1000, maxJournalSize, 1, 0, BedrockTester::ENABLE_HCTREE);
+        commitTransactions(db, 10);
+        const auto anchor = db.getCommitState();
+        for (int i = 0; i < 12; ++i) {
+            ASSERT_TRUE(db.beginTransaction());
+            ASSERT_TRUE(db.prepare(nullptr, nullptr, chrono::hours(24), nullptr, ""));
+            ASSERT_EQUAL(db.commit(), SQLITE_OK);
+        }
+        trimEverything(db);
+        EXPECT_EQUAL(countJournalRows(db), 13);
+        EXPECT_EQUAL(countJournalRows(db, "id < " + SQ(anchor.hashCommitID)), 0);
+        uint64_t hashID;
+        string hash;
+        db.getLastNonBlankCommit(db.getCommitCount(), hashID, hash);
+        EXPECT_EQUAL(hashID, anchor.hashCommitID);
+        EXPECT_EQUAL(hash, anchor.hash);
+
+        // Once a new nonblank commit exists, the old anchor and its suffix can age out normally.
+        ASSERT_TRUE(db.beginTransaction());
+        ASSERT_TRUE(db.write("INSERT INTO testTable VALUES (100, 1);"));
+        ASSERT_TRUE(db.prepare());
+        ASSERT_EQUAL(db.commit(), SQLITE_OK);
+        trimEverything(db);
+        EXPECT_FALSE(db.getCommit(anchor.hashCommitID));
+        EXPECT_EQUAL(countJournalRows(db), maxJournalSize + 1);
     }
 } __JournalDeleterTest;

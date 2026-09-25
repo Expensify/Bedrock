@@ -11,6 +11,7 @@
 #include <memory>
 #include <set>
 #include <string>
+#include <string_view>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -104,6 +105,8 @@ class Value
     // Allows SAXHandler to build us quickly, from a low level. Coupling++
     friend class SAXHandler;
 public:
+    using ObjectMap = map<string, Value, less<>>;
+
     ///// Constructors
 
     /**
@@ -162,9 +165,20 @@ public:
     // Similar, but for when you want an object with a single entry.
     static Value singleEntryObject(string&& key, Value&& value);
 
+    static Value singleEntryObject(string_view key, Value&& value)
+    {
+        return singleEntryObject(string(key), move(value));
+    }
+
+    // Resolve C-string calls between the string_view and string move overloads.
+    static Value singleEntryObject(const char* key, Value&& value)
+    {
+        return singleEntryObject(string_view(key), move(value));
+    }
+
     // And a constructor for maps of strings to anything else.
     template<typename T>
-    explicit Value(const map<string, T>& values) : startTime(chrono::high_resolution_clock::now()), valueType(OBJECT), objectValue(make_shared<map<string, Value>>())
+    explicit Value(const map<string, T>& values) : startTime(chrono::high_resolution_clock::now()), valueType(OBJECT), objectValue(make_shared<ObjectMap>())
     {
         for (typename map<string, T>::const_iterator valueIt = values.begin(); valueIt != values.end(); ++valueIt) {
             objectValue->emplace(make_pair(valueIt->first, Value(valueIt->second)));
@@ -176,7 +190,7 @@ public:
      *  Construct an object from a map of int64_t to anything else. Note that the keys are converted to strings since JSON values must be keyed by strings.
      */
     template<typename T>
-    explicit Value(const map<int64_t, T>& values) : startTime(chrono::high_resolution_clock::now()), valueType(OBJECT), objectValue(make_shared<map<string, Value>>())
+    explicit Value(const map<int64_t, T>& values) : startTime(chrono::high_resolution_clock::now()), valueType(OBJECT), objectValue(make_shared<ObjectMap>())
     {
         for (typename map<int64_t, T>::const_iterator valueIt = values.begin(); valueIt != values.end(); ++valueIt) {
             objectValue->emplace(make_pair(to_string(valueIt->first), Value(valueIt->second)));
@@ -229,6 +243,13 @@ public:
      * @param s The string value to *COPY*
      */
     Value(const string& s);
+
+    /**
+     * Constructor from string_view
+     *
+     * @param s The string value to *COPY*
+     */
+    Value(string_view s);
 
     /**
      * Constructor from string
@@ -456,20 +477,20 @@ public:
      *
      * @param key key of the object to access
      */
-    Value& operator[](const string& key) &;
+    Value& operator[](string_view key) &;
 
     /**
      * Subscript operator, access an element from a r-value by key.
      *
      * @param key key of the object to access
      */
-    Value operator[](const string& key) &&;
+    Value operator[](string_view key) &&;
 
     /** Subscript operator, access an element by key.
      *
      * @param key key of the object to access
      */
-    const Value& operator[](const string& key) const&;
+    const Value& operator[](string_view key) const&;
 
     /** Subscript operator, access an element from a r-value by index.
      *
@@ -492,7 +513,7 @@ public:
     /**
      * Implement `emplace` for Object values.
      */
-    pair<map<string, Value>::iterator, bool> emplace(const string& key, Value&& v);
+    pair<ObjectMap::iterator, bool> emplace(string_view key, Value&& v);
 
     /**
      * Assignment operator.
@@ -527,27 +548,38 @@ public:
     ///// Modifiers
 
     vector<JSON::Value>::iterator erase(vector<JSON::Value>::iterator it);
-    void erase(const string& key);
-    map<string, JSON::Value>::iterator erase(map<string, JSON::Value>::iterator it);
+    void erase(string_view key);
+    ObjectMap::iterator erase(ObjectMap::iterator it);
 
     /**
      * Returns a string, or a default if no member is found for the given key, or the member at the given key is not
      * string, and then deletes the original object member.
      */
-    string extractStringWithDefault(const string& key, const string& defaultValue = "");
+    string extractStringWithDefault(string_view key, string_view defaultValue = "");
 
     /**
      * Extracts and moves a node to target object.
      * Note: Extracting a node invalidates its iterator.
      */
-    void extractTo(map<string, JSON::Value>::iterator it, JSON::Value& v);
+    void extractTo(ObjectMap::iterator it, JSON::Value& v);
 
     /**
      * Transfers and renames a member without allocating a replacement map node. An existing target key is overwritten.
      * Source and target must have distinct backing objects. The source iterator must be dereferenceable;
      * hint must belong to target. Only the extracted source iterator is invalidated.
      */
-    void extractTo(map<string, Value>::iterator it, Value& target, string key, map<string, Value>::const_iterator hint);
+    void extractTo(ObjectMap::iterator it, Value& target, string key, ObjectMap::const_iterator hint);
+
+    void extractTo(ObjectMap::iterator it, Value& target, string_view key, ObjectMap::const_iterator hint)
+    {
+        extractTo(it, target, string(key), hint);
+    }
+
+    // Resolve C-string calls between the borrowed and owned key overloads.
+    void extractTo(ObjectMap::iterator it, Value& target, const char* key, ObjectMap::const_iterator hint)
+    {
+        extractTo(it, target, string_view(key), hint);
+    }
 
     /**
      * Inserts an element in the array.
@@ -602,7 +634,7 @@ public:
      * @param v pair <key, value> to insert
      * @return an iterator to the inserted object
      */
-    pair<map<string, Value>::iterator, bool> insert(const pair<string, Value>& v);
+    pair<ObjectMap::iterator, bool> insert(const pair<string, Value>& v);
 
     /**
      * Performs a shallow merge. only works with objects. Updates this* inline.
@@ -646,7 +678,7 @@ public:
     /**
      * If the given Value is an object or array it aliases the same backing storage at `key`, otherwise it copies the value to the given key.
      */
-    void shallowCopy(const string& key, const Value& v);
+    void shallowCopy(string_view key, const Value& v);
 
     ///// metadata
 
@@ -739,7 +771,7 @@ public:
      *
      * @return true/false
      */
-    bool hasMember(const string& key) const;
+    bool hasMember(string_view key) const;
 
     /**
      * Checks if the array has a value at the index
@@ -752,7 +784,7 @@ public:
      * Returns a bool, or a default if no member is found for the given key, or the member at the given key is not
      * boolean.
      */
-    bool getBoolMemberWithDefault(const string& key, const bool defaultValue = false) const;
+    bool getBoolMemberWithDefault(string_view key, const bool defaultValue = false) const;
 
     /**
      * Returns the string member for a given key, if none is found then a default value is returned.
@@ -761,62 +793,62 @@ public:
      * caller holds a const JSON::Value (safe because the referenced storage won't be
      * mutated through a const object).
      */
-    const string& getStringMemberWithDefault(const string& key, const string& defaultValue) const&;
-    const string& getStringMemberWithDefault(const string& key) const&;
+    const string& getStringMemberWithDefault(string_view key, const string& defaultValue) const&;
+    const string& getStringMemberWithDefault(string_view key) const&;
 
     /**
      * This overload has to return by value even if the lvalue is const to avoid returning a reference to a temporary (the moved defaultValue).
      */
-    string getStringMemberWithDefault(const string& key, string&& defaultValue) const&;
+    string getStringMemberWithDefault(string_view key, string&& defaultValue) const&;
 
     /**
      * Non-const (mutable) lvalue overloads return by value to avoid exposing an
      * internal reference that could dangle if the caller later reassigns or moves
      * the JSON::Value.
      */
-    string getStringMemberWithDefault(const string& key, const string& defaultValue) &;
-    string getStringMemberWithDefault(const string& key, string&& defaultValue) &;
-    string getStringMemberWithDefault(const string& key) &;
+    string getStringMemberWithDefault(string_view key, const string& defaultValue) &;
+    string getStringMemberWithDefault(string_view key, string&& defaultValue) &;
+    string getStringMemberWithDefault(string_view key) &;
 
     /**
      * rvalue overloads return by value to avoid returning reference that would dangle.
      */
-    string getStringMemberWithDefault(const string& key, const string& defaultValue) &&;
-    string getStringMemberWithDefault(const string& key, string&& defaultValue) &&;
-    string getStringMemberWithDefault(const string& key) &&;
+    string getStringMemberWithDefault(string_view key, const string& defaultValue) &&;
+    string getStringMemberWithDefault(string_view key, string&& defaultValue) &&;
+    string getStringMemberWithDefault(string_view key) &&;
 
     /**
      * Returns the integer member for a given key, if none is found then a default value is returned.
      */
-    const int64_t getIntMemberWithDefault(const string& key, const int64_t defaultValue = 0) const;
+    const int64_t getIntMemberWithDefault(string_view key, const int64_t defaultValue = 0) const;
 
     /**
      * Returns the float member for a given key, if none is found then a default value is returned.
      */
-    const double getFloatMemberWithDefault(const string& key, const double defaultValue = 0.0) const;
+    const double getFloatMemberWithDefault(string_view key, const double defaultValue = 0.0) const;
 
     /**
      * Returns the member as a double, coercing from FLOAT, INT, or STRING types.
      * Useful when clients may send numeric values as strings (e.g. OldDot form-encoded requests).
      */
-    const double getNumericMemberWithDefault(const string& key, const double defaultValue = 0.0) const;
+    const double getNumericMemberWithDefault(string_view key, const double defaultValue = 0.0) const;
 
     /**
      * Returns the Value member for a given key, if none is found then defaultValue is returned.
      */
-    const JSON::Value& getMemberWithDefault(const string& key, const JSON::Value& defaultValue) const&;
-    JSON::Value getMemberWithDefault(const string& key, const JSON::Value& defaultValue) &&;
+    const JSON::Value& getMemberWithDefault(string_view key, const JSON::Value& defaultValue) const&;
+    JSON::Value getMemberWithDefault(string_view key, const JSON::Value& defaultValue) &&;
 
     /**
      * Returns the Value member for a given key, if none is found then NULL is returned.
      */
-    const JSON::Value& getMemberWithDefault(const string& key) const&;
-    JSON::Value getMemberWithDefault(const string& key) &&;
+    const JSON::Value& getMemberWithDefault(string_view key) const&;
+    JSON::Value getMemberWithDefault(string_view key) &&;
 
     /**
      * Delete r-value version of getMemberWithDefault to prevent accidental use which would result in a dangling reference.
      */
-    const JSON::Value& getMemberWithDefault(const string& key, JSON::Value&& defaultValue) const = delete;
+    const JSON::Value& getMemberWithDefault(string_view key, JSON::Value&& defaultValue) const = delete;
 
     /**
      * Checks if the array has a member
@@ -924,28 +956,28 @@ public:
      *
      * @return a map iterator
      */
-    map<string, Value>::iterator objectBegin();
+    ObjectMap::iterator objectBegin();
 
     /**
      * Gets an iterator to the end member position in the object (one past the last member)
      *
      * @return a map iterator
      */
-    map<string, Value>::iterator objectEnd();
+    ObjectMap::iterator objectEnd();
 
     /**
      * Gets a const iterator to the first member in the object
      *
      * @return a map iterator
      */
-    map<string, Value>::const_iterator objectBegin() const;
+    ObjectMap::const_iterator objectBegin() const;
 
     /**
      * Gets a const iterator to the end member position in the object (one past the last member)
      *
      * @return a map iterator
      */
-    map<string, Value>::const_iterator objectEnd() const;
+    ObjectMap::const_iterator objectEnd() const;
 
     /**
      * Returns the keys of the object
@@ -1067,7 +1099,7 @@ protected:
     bool boolValue;
     string stringValue;
 
-    shared_ptr<map<string, Value>> objectValue;
+    shared_ptr<ObjectMap> objectValue;
     shared_ptr<vector<Value>> arrayValue;
 
     /**
@@ -1076,6 +1108,9 @@ protected:
     bool usingUnsigned;
 
 private:
+    // Requires an object; copies the key only when inserting a missing member.
+    Value& getOrInsertMember(string_view key);
+
     // Returns a borrowed node or nullptr, without inserting missing members.
     const Value* findValueAtPath(initializer_list<string> path) const;
 
@@ -1205,17 +1240,22 @@ ostream& operator<<(ostream& output, const _ObjectValue<T>& val)
 class KeyValue {
 public:
     // This version copies the two values since we cannot move
-    KeyValue(const string& a, const Value& b) : key(a), value(b)
+    KeyValue(string_view a, const Value& b) : key(a), value(b)
     {
     }
 
     // This version copies the key and move the value
-    KeyValue(const string& a, Value&& b) : key(a), value(move(b))
+    KeyValue(string_view a, Value&& b) : key(a), value(move(b))
     {
     }
 
     // This version moves both the key and value
     KeyValue(string&& a, Value&& b) : key(move(a)), value(move(b))
+    {
+    }
+
+    // Resolve C-string calls between the string_view and string move overloads.
+    KeyValue(const char* a, Value&& b) : KeyValue(string_view(a), move(b))
     {
     }
 

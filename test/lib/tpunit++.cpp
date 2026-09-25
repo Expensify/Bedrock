@@ -61,21 +61,23 @@ void tpunit::_TestFixture::registerTests(method* m0,  method* m1,  method* m2,  
                          method* m50, method* m51, method* m52, method* m53, method* m54,
                          method* m55, method* m56, method* m57, method* m58, method* m59,
                          method* m60, method* m61, method* m62, method* m63, method* m64,
-                         method* m65, method* m66, method* m67, method* m68, method* m69)
+                         method* m65, method* m66, method* m67, method* m68, method* m69,
+                         method* m70, method* m71, method* m72, method* m73, method* m74)
 {
     tpunit_detail_fixture_list()->push_back(this);
 
-    // DO NOT modify this over 70, you're holding it wrong if you do.
+    // DO NOT modify this over 75, you're holding it wrong if you do.
     // Split your test suites/files if you need to!
-    method* methods[70] = { m0,  m1,  m2,  m3,  m4,  m5,  m6,  m7,  m8,  m9,
+    method* methods[75] = { m0,  m1,  m2,  m3,  m4,  m5,  m6,  m7,  m8,  m9,
                             m10, m11, m12, m13, m14, m15, m16, m17, m18, m19,
                             m20, m21, m22, m23, m24, m25, m26, m27, m28, m29,
                             m30, m31, m32, m33, m34, m35, m36, m37, m38, m39,
                             m40, m41, m42, m43, m44, m45, m46, m47, m48, m49,
                             m50, m51, m52, m53, m54, m55, m56, m57, m58, m59,
-                            m60, m61, m62, m63, m64, m65, m66, m67, m68, m69 };
+                            m60, m61, m62, m63, m64, m65, m66, m67, m68, m69,
+                            m70, m71, m72, m73, m74 };
 
-    for(int i = 0; i < 70; i++) {
+    for(int i = 0; i < 75; i++) {
        if(methods[i]) {
           method** m = 0;
           switch(methods[i]->_type) {
