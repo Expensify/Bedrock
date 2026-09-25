@@ -135,8 +135,7 @@ struct GetJobTest : tpunit::TestFixture
         command["name"] = jobName;
         const string data = R"({"object":{},"array":[],"nested":{"items":[{},[],null]},"bigint":18446744073709551615,"float":1.0,"text":"日本語 \u00e9 \" \\ \/ \n"})";
         command["data"] = data;
-        STable response = tester->executeWaitVerifyContentTable(command);
-        string jobID = response["jobID"];
+        string jobID = tester->executeWaitVerifyContentTable(command)["jobID"];
         ASSERT_GREATER_THAN(stol(jobID), 0);
         SQResult originalJob;
         tester->readDB("SELECT created, jobID, state, name, nextRun, lastRun, repeat, data, priority, parentJobID FROM jobs WHERE jobID = " + jobID + ";", originalJob);
@@ -145,17 +144,16 @@ struct GetJobTest : tpunit::TestFixture
         command.clear();
         command.methodLine = "GetJob / HTTP/1.1";
         command["name"] = jobName;
-        const string content = tester->executeWaitVerifyContent(command);
-        response = SParseJSONObject(content);
+        const JSON::Value response = JSON::Value::parse(tester->executeWaitVerifyContent(command));
 
         uint64_t end = STimeNow();
 
         ASSERT_EQUAL(response.size(), 10);
-        ASSERT_EQUAL(response["jobID"], jobID);
-        ASSERT_EQUAL(response["name"], jobName);
-        ASSERT_EQUAL(response["data"], data);
-        ASSERT_EQUAL(JSON::Value::parse(content)["expectedData"].getString(), data);
-        SASSERT(!response["created"].empty());
+        ASSERT_EQUAL(response["jobID"].getInt(), stoll(jobID));
+        ASSERT_EQUAL(response["name"].getString(), jobName);
+        ASSERT_EQUAL(response["data"], JSON::Value::parse(data));
+        ASSERT_EQUAL(response["expectedData"].getString(), data);
+        SASSERT(!response["created"].getString().empty());
 
         // Check that nothing changed after we created the job except for the state and lastRun value
         SQResult currentJob;
