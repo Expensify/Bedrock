@@ -18,6 +18,17 @@ using namespace std;
 // buffers, completing connections, performing graceful shutdowns, etc.
 struct STCPManager
 {
+    struct MTLSConnection
+    {
+        const string hostname;
+        const string certificate;
+        const string privateKey;
+
+        // Temporary testing bypass: disables all server certificate verification, including hostname and expiry checks.
+        // An attacker could impersonate the server and read or modify transmitted data, including bearer tokens.
+        const bool allowUntrustedCA = false;
+    };
+
     // Captures all the state for a single socket
     class Socket {
 public:
@@ -28,6 +39,9 @@ public:
 
         // Resolves `host` off-thread, which may leave the socket in the RESOLVING state.
         Socket(const string& host, bool https = false, int resolveGraceMS = DEFAULT_RESOLVE_GRACE_MS);
+
+        // `connection` cannot be null.
+        Socket(shared_ptr<const MTLSConnection> connection, int resolveGraceMS = DEFAULT_RESOLVE_GRACE_MS);
 
         // Connects to an already-resolved address, so no DNS resolution is required.
         Socket(const sockaddr_in& addr, bool https = false, const string& hostname = "");
@@ -87,6 +101,10 @@ protected:
         // a slow DNS lookup.
         const shared_ptr<SResolution> dnsResolution;
         string hostToResolve;
+
+        Socket(const string& host, bool https, int resolveGraceMS, shared_ptr<const MTLSConnection> connection);
+
+        shared_ptr<const MTLSConnection> _mtlsConnection;
     };
 
     class Port {

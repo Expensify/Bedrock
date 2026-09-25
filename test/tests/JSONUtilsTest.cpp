@@ -9,6 +9,7 @@ const set<string> SENSITIVE_KEYS = {"ssn"};
 }
 
 JSONUtilsTest::JSONUtilsTest() : tpunit::TestFixture("JSONUtils",
+                                                     TEST(JSONUtilsTest::toSTable),
                                                      TEST(JSONUtilsTest::mergeObjectsOverwritesRightOrder),
                                                      TEST(JSONUtilsTest::mergeObjectsHandlesLeftNonObject),
                                                      TEST(JSONUtilsTest::mergeObjectsHandlesRightNonObject),
@@ -28,6 +29,19 @@ JSONUtilsTest::JSONUtilsTest() : tpunit::TestFixture("JSONUtils",
                                                      TEST(JSONUtilsTest::parseJSONPath)
 )
 {
+}
+
+void JSONUtilsTest::toSTable()
+{
+    const STable fields = JSON::Utils::toSTable(JSON::Value::parse(R"({"AccountID":"0042","amount":42,"enabled":true,"missing":null,"nested":{"key":1},"items":[1,"2"]})"));
+    ASSERT_EQUAL(fields.at("accountID"), "0042");
+    ASSERT_EQUAL(fields.at("amount"), "42");
+    ASSERT_EQUAL(fields.at("enabled"), "true");
+    ASSERT_EQUAL(fields.at("missing"), "null");
+    ASSERT_EQUAL(fields.at("nested"), R"({"key":1})");
+    ASSERT_EQUAL(fields.at("items"), R"([1,"2"])");
+    ASSERT_TRUE(JSON::Utils::toSTable(JSON::Value(JSON::OBJECT)).empty());
+    ASSERT_THROW(JSON::Utils::toSTable(JSON::Value(JSON::ARRAY)), JSON::TypeError);
 }
 
 void JSONUtilsTest::mergeObjectsOverwritesRightOrder()

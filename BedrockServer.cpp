@@ -653,8 +653,10 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
             SERROR("Can't run a command with no DB pool");
         }
         {
+            uint64_t dbHandleStartTime = STimeNow();
             SQLiteScopedHandle dbScope(*_dbPool, _dbPool->getIndex());
             SQLite& db = dbScope.db();
+            command->recordTiming(BedrockCommand::DB_HANDLE, dbHandleStartTime);
             BedrockCore core(db, *this);
 
             // If the command has already timed out when we get it, we can return early here without peeking it.
@@ -2488,9 +2490,11 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
                             // Running the command in a separate thread allows this thread to poll the client socket and if it is
                             // disconnected, abort the command.
                             atomic<bool>& commandShouldAbortFlag = command->shouldAbort;
+                            uint64_t commandThreadStartTime = STimeNow();
                             thread commandThread(
-                                [&]() {
+                                [&, commandThreadStartTime]() {
                                 SInitialize(threadName + "_cmd");
+                                command->recordTiming(BedrockCommand::COMMAND_THREAD, commandThreadStartTime);
                                 runCommand(move(command));
                             });
 
