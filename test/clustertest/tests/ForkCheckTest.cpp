@@ -27,7 +27,6 @@ struct ForkCheckTest : tpunit::TestFixture
         tester.readDB("SELECT name FROM sqlite_schema WHERE type ='table' AND name LIKE 'journal%';", journals, online);
         for (auto& row : journals) {
             if (!tester.readDB("SELECT id FROM " + row[0] + " WHERE id = " + SQ(commitID) + ";", online).empty()) {
-                // journalEntries prefers the legacy row if the two journals overlap.
                 return row[0];
             }
         }

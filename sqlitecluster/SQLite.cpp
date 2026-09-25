@@ -280,11 +280,7 @@ vector<string> SQLite::initializeJournal(sqlite3* db, int minJournalTables, bool
         string hctEntries = "SELECT cid AS id, "
             "CASE WHEN length(CAST(query AS BLOB)) >= 74 THEN substr(CAST(query AS BLOB), 75) ELSE X'' END AS query, "
             "CASE WHEN length(CAST(query AS BLOB)) >= 74 THEN CAST(substr(CAST(query AS BLOB), 1, 73) AS TEXT) ELSE '' END AS hash "
-            "FROM hct_journal WHERE 1";
-        for (const string& journalName : journalNames) {
-            // The baseline row is shared with the legacy journal. Return it only once.
-            hctEntries += " AND NOT EXISTS (SELECT 1 FROM " + journalName + " WHERE id = hct_journal.cid)";
-        }
+            "FROM hct_journal";
         if (!journalEntriesQuery.empty()) {
             journalEntriesQuery += " UNION ALL ";
         }
@@ -559,6 +555,15 @@ void SQLite::rebaseHCTreeJournal(uint64_t legacyCommitID)
             {":query", Parameter::blob(data)},
         });
     }
+    // Move the baseline commit into HC-Tree atomically, preserving all earlier legacy history.
+    if (!result) {
+        for (const string& journalName : _journalNames) {
+            result = SQuery(_db, "DELETE FROM " + journalName + " WHERE id = " + SQ(legacyCommitID));
+            if (result) {
+                break;
+            }
+        }
+    }
     if (!result) {
         result = SQuery(_db, "COMMIT");
     }
@@ -651,35 +656,15 @@ void SQLite::prepareHCTreeLeadership()
     SQResult result;
     SASSERT(!SQuery(_db, "SELECT MIN(cid), MAX(cid), COUNT(*) FROM hct_journal", result));
     SASSERT(result.size() == 1 && !result[0][0].empty());
-    uint64_t oldest = SToUInt64(result[0][0]);
-    uint64_t newest = SToUInt64(result[0][1]);
-    uint64_t count = SToUInt64(result[0][2]);
-    uint64_t legacyCommitID = getLegacyCommitCount();
-    if (legacyCommitID > newest) {
-        SERROR("Legacy journal advanced beyond HC-Tree journal after initialization");
-    } else if (newest - oldest + 1 != count) {
+    const uint64_t oldest = SToUInt64(result[0][0]);
+    const uint64_t newest = SToUInt64(result[0][1]);
+    const uint64_t count = SToUInt64(result[0][2]);
+    const uint64_t legacyCommitID = getLegacyCommitCount();
+    if (legacyCommitID && legacyCommitID != oldest - 1) {
+        SERROR("Unsupported journal configuration: newest legacy commit " << legacyCommitID << ", oldest HC-Tree commit " << oldest);
+    }
+    if (newest - oldest + 1 != count) {
         SERROR("Cannot lead with a non-contiguous HC-Tree journal");
-    }
-    if (oldest <= 1) {
-        return;
-    }
-    // The HC-Tree journal now supplies these older commits. This can leave a
-    // shorter synchronization window than peers previously had.
-    SINFO("Removing legacy journal entries before HC-Tree commit " << oldest);
-    SASSERT(!SQuery(_db, "BEGIN IMMEDIATE"));
-    int rc = SQLITE_OK;
-    for (const string& journalName : _journalNames) {
-        rc = SQuery(_db, "DELETE FROM " + journalName + " WHERE id < " + SQ(oldest));
-        if (rc) {
-            break;
-        }
-    }
-    if (!rc) {
-        rc = sqlite3_hct_journal_local_commit(_db);
-    }
-    if (rc) {
-        SQuery(_db, "ROLLBACK");
-        SERROR("Unable to prune legacy journal before leadership: " << rc);
     }
 }
 
