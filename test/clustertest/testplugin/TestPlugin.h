@@ -94,6 +94,8 @@ public:
     virtual void deserializeData(const string& data) override;
 
 private:
+    void journalTest(SQLite& db);
+
     BedrockPlugin_TestPlugin& plugin()
     {
         return static_cast<BedrockPlugin_TestPlugin&>(*_plugin);
