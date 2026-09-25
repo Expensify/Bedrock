@@ -175,8 +175,8 @@ public:
     // commit conflicts.
     bool trimJournalTable(size_t journalTableIndex, int64_t batchSize);
 
-    // The number of journal tables to trim, including the HC-Tree journal in experimental mode.
-    // Any index passed to `trimJournalTable` is taken modulo this.
+    // The number of active journal tables to trim. Empty legacy tables are retired in experimental HC-Tree mode.
+    // Any index passed to `trimJournalTable` is taken modulo the current count.
     size_t getJournalTableCount() const;
 
     // Enable or disable update-noop mode.
@@ -488,6 +488,14 @@ public:
         atomic<uint64_t> openWriteTransactionCount{0};
         atomic<bool> hctreeFollowerMode{false};
 
+        // Captured after initialization, before other handles exist. These conservative read bounds never change.
+        uint64_t legacyMaxID = 0;
+        uint64_t hctMinID = 0;
+
+        // Physical table indexes eligible for trimming. Never used to exclude tables from older read snapshots.
+        mutex journalTrimMutex;
+        vector<size_t> journalTrimTables;
+
 private:
         // The data required to replicate transactions, in two lists, depending on whether this has only been prepared
         // or if it's been committed.
@@ -604,7 +612,10 @@ private:
 
     // Static version for initializers.
     static string _getJournalQuery(const vector<string>& journalNames, const list<string>& queryParts, bool append = false);
-    string _getLastNonBlankQuery(uint64_t index) const;
+    static string _getHCTreeJournalQuery();
+    string _getJournalEntriesQuery(uint64_t fromIndex, uint64_t toIndex) const;
+    string _getLastNonBlankQuery(uint64_t index, bool legacy, bool hct) const;
+    void retireLegacyJournal(size_t journalTableIndex);
 
     // Callback function that we'll register for authorizing queries in sqlite.
     static int _sqliteAuthorizerCallback(void*, int, const char*, const char*, const char*, const char*);

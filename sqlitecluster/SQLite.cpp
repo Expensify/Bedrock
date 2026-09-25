@@ -94,8 +94,23 @@ SQLite::SharedData& SQLite::initializeSharedData()
             SASSERT(!SQuery(_db, "PRAGMA journal_mode = WAL2;", result));
         }
 
+        const bool experimentalHCTree = _hctree && hctreeExperimentalMode;
+        if (experimentalHCTree) {
+            for (size_t i = 0; i < _journalNames.size(); ++i) {
+                SASSERT(!SQuery(_db, "SELECT MAX(id) AS id FROM " + _journalNames[i], result));
+                if (!result[0]["id"].empty()) {
+                    sharedData->legacyMaxID = max(sharedData->legacyMaxID, SToUInt64(result[0]["id"]));
+                    sharedData->journalTrimTables.push_back(i);
+                }
+            }
+            SASSERT(!SQuery(_db, "SELECT MIN(cid) AS cid FROM hct_journal", result));
+            SASSERT(!result[0]["cid"].empty());
+            sharedData->hctMinID = SToUInt64(result[0]["cid"]);
+            sharedData->journalTrimTables.push_back(_journalNames.size());
+        }
+
         // Read the highest commit count from the database.
-        const string query = _hctree && hctreeExperimentalMode ? "SELECT MAX(cid) FROM hct_journal" :
+        const string query = experimentalHCTree ? "SELECT MAX(cid) FROM hct_journal" :
             "SELECT MAX(id) FROM (" + _getJournalQuery(_journalNames, {"SELECT MAX(id) AS id FROM"}, true) + ")";
         SASSERT(!SQuery(_db, query, result));
         CommitState state{result.empty() ? 0 : SToUInt64(result[0][0]), 0, ""};
@@ -103,7 +118,7 @@ SQLite::SharedData& SQLite::initializeSharedData()
         // Blank rows advance the highest commit ID but not the agreement identity.
         // _sharedData is not initialized until this function returns, so query directly here.
         SQResult lastNonBlank;
-        SASSERT(!SQuery(_db, _getLastNonBlankQuery(state.commitCount), lastNonBlank));
+        SASSERT(!SQuery(_db, _getLastNonBlankQuery(state.commitCount, !experimentalHCTree || sharedData->legacyMaxID, experimentalHCTree), lastNonBlank));
         if (!lastNonBlank.empty()) {
             state.hashCommitID = SToUInt64(lastNonBlank[0][0]);
             state.hash = lastNonBlank[0][1];
@@ -273,16 +288,10 @@ vector<string> SQLite::initializeJournal(sqlite3* db, int minJournalTables, bool
         journalEntriesQuery += "SELECT id, query, hash FROM " + journalName;
     }
     if (experimentalHCTree) {
-        // The query is a BLOB containing a 73-byte GUID:SHA1 hash, a colon, then the
-        // original (possibly compressed) query bytes. The initial HC-Tree row has no prefix.
-        string hctEntries = "SELECT cid AS id, "
-            "CASE WHEN length(CAST(query AS BLOB)) >= 74 THEN substr(CAST(query AS BLOB), 75) ELSE X'' END AS query, "
-            "CASE WHEN length(CAST(query AS BLOB)) >= 74 THEN CAST(substr(CAST(query AS BLOB), 1, 73) AS TEXT) ELSE '' END AS hash "
-            "FROM hct_journal";
         if (!journalEntriesQuery.empty()) {
             journalEntriesQuery += " UNION ALL ";
         }
-        journalEntriesQuery += hctEntries;
+        journalEntriesQuery += _getHCTreeJournalQuery();
     }
     const string journalEntriesViewQuery = "CREATE VIEW journalEntries AS " + journalEntriesQuery;
 
@@ -546,18 +555,47 @@ string SQLite::_getJournalQuery(const vector<string>& journalNames, const list<s
     return query;
 }
 
-string SQLite::_getLastNonBlankQuery(uint64_t index) const
+string SQLite::_getHCTreeJournalQuery()
 {
-    string candidates = _getJournalQuery(_journalNames, {"SELECT MAX(id) AS id, hash FROM",
-                                                         "WHERE id <= " + SQ(index) + " AND length(hash) > 0"});
-    if (_hctree && hctreeExperimentalMode) {
+    // The BLOB contains a 73-byte GUID:SHA1 hash, a colon, then the possibly compressed query.
+    // Initial and failed leader commits have no prefix and are exposed as blank entries.
+    return "SELECT cid AS id, "
+           "CASE WHEN length(CAST(query AS BLOB)) >= 74 THEN substr(CAST(query AS BLOB), 75) ELSE X'' END AS query, "
+           "CASE WHEN length(CAST(query AS BLOB)) >= 74 THEN CAST(substr(CAST(query AS BLOB), 1, 73) AS TEXT) ELSE '' END AS hash "
+           "FROM hct_journal";
+}
+
+string SQLite::_getJournalEntriesQuery(uint64_t fromIndex, uint64_t toIndex) const
+{
+    const bool experimentalHCTree = _hctree && hctreeExperimentalMode;
+    list<string> sources;
+    if (!_journalNames.empty() && (!experimentalHCTree || (_sharedData.legacyMaxID && fromIndex <= _sharedData.legacyMaxID))) {
+        sources.push_back(_getJournalQuery(_journalNames, {"SELECT id, query, hash FROM",
+            "WHERE id >= " + SQ(fromIndex) + (toIndex ? " AND id <= " + SQ(toIndex) : "")}));
+    }
+    if (experimentalHCTree && (!toIndex || toIndex >= _sharedData.hctMinID)) {
+        sources.push_back(_getHCTreeJournalQuery() + " WHERE cid >= " + SQ(fromIndex) +
+                          (toIndex ? " AND cid <= " + SQ(toIndex) : ""));
+    }
+    return sources.empty() ? "SELECT NULL AS id, X'' AS query, '' AS hash WHERE 0" : SComposeList(sources, " UNION ALL ");
+}
+
+string SQLite::_getLastNonBlankQuery(uint64_t index, bool legacy, bool hct) const
+{
+    string candidates;
+    if (legacy) {
+        candidates = _getJournalQuery(_journalNames, {"SELECT MAX(id) AS id, hash FROM",
+            "WHERE id <= " + SQ(index) + " AND length(hash) > 0"});
+    }
+    if (hct) {
         if (!candidates.empty()) {
             candidates += " UNION ";
         }
         candidates += "SELECT MAX(cid) AS id, CAST(substr(CAST(query AS BLOB), 1, 73) AS TEXT) AS hash "
             "FROM hct_journal WHERE cid <= " + SQ(index) + " AND length(CAST(query AS BLOB)) >= 74";
     }
-    return "SELECT id, hash FROM (" + candidates + ") WHERE id IS NOT NULL ORDER BY id DESC LIMIT 1";
+    return candidates.empty() ? "SELECT NULL AS id, '' AS hash WHERE 0" :
+           "SELECT id, hash FROM (" + candidates + ") WHERE id IS NOT NULL ORDER BY id DESC LIMIT 1";
 }
 
 uint64_t SQLite::getLegacyCommitCount() const
@@ -1626,7 +1664,7 @@ bool SQLite::getCommit(uint64_t id, string* query, string* hash)
 {
     // Look up the query and/or hash (whichever are supplied) for the given commit
     string firstQueryPart = "SELECT "s + (query ? "decompress(query)" : "1") + ", " + (hash ? "hash" : "1") + " FROM";
-    string internalQuery = firstQueryPart + " journalEntries WHERE id = " + SQ(id);
+    string internalQuery = firstQueryPart + " (" + _getJournalEntriesQuery(id, id) + ")";
     SQResult result;
     SASSERT(!SQuery(_db, internalQuery, result));
     if (result.empty()) {
@@ -1644,9 +1682,34 @@ bool SQLite::getCommit(uint64_t id, string* query, string* hash)
 
 void SQLite::getLastNonBlankCommit(uint64_t index, uint64_t& commitID, string& hash)
 {
-    // Look up the highest nonblank row in each journal using its primary key.
+    const bool experimentalHCTree = _hctree && hctreeExperimentalMode;
+    const bool legacy = !experimentalHCTree || _sharedData.legacyMaxID;
+    const bool hct = experimentalHCTree && index >= _sharedData.hctMinID;
     SQResult result;
-    SASSERT(!SQuery(_db, _getLastNonBlankQuery(index), result));
+    if (legacy && hct && _sharedData.legacyMaxID < _sharedData.hctMinID) {
+        // The legacy fallback must see the same snapshot as the HC-Tree lookup, even while trimming runs.
+        const bool ownSnapshot = !_insideTransaction;
+        if (ownSnapshot) {
+            SASSERT(beginTransaction());
+        }
+        struct SnapshotGuard
+        {
+            SQLite& db;
+            bool owned;
+            ~SnapshotGuard()
+            {
+                if (owned) {
+                    db.rollback();
+                }
+            }
+        } guard{*this, ownSnapshot};
+        SASSERT(!SQuery(_db, _getLastNonBlankQuery(index, false, true), result));
+        if (result.empty()) {
+            SASSERT(!SQuery(_db, _getLastNonBlankQuery(index, true, false), result));
+        }
+    } else {
+        SASSERT(!SQuery(_db, _getLastNonBlankQuery(index, legacy, hct), result));
+    }
     commitID = result.empty() ? 0 : SToUInt64(result[0][0]);
     hash = commitID ? result[0][1] : "";
 }
@@ -1665,8 +1728,7 @@ int SQLite::getCompressedCommits(uint64_t fromIndex, uint64_t toIndex, SQResult&
 {
     // Look up all the queries within that range. Returns raw query data which may be compressed.
     SASSERTWARN(SWITHIN(1, fromIndex, toIndex));
-    string query = "SELECT hash, query FROM journalEntries WHERE id >= " + SQ(fromIndex) +
-        (toIndex ? " AND id <= " + SQ(toIndex) : "") + " ORDER BY id";
+    string query = "SELECT hash, query FROM (" + _getJournalEntriesQuery(fromIndex, toIndex) + ") ORDER BY id";
     SDEBUG("Getting commits #" << fromIndex << "-" << toIndex);
     if (timeoutLimitUS) {
         setTimeout(timeoutLimitUS);
