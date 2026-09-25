@@ -1127,7 +1127,6 @@ void BedrockJobsCommand::process(SQLite& db)
                 continue;
             }
             string jobResponse = SComposeJSONObject(job);
-            // Force the snapshot to a JSON string without re-encoding the existing data object.
 
             // expectedData is the job's data as a string; workers send it back so we can tell if the data changed while
             // they ran. It can't be an object: clients parse and re-serialize the response, which can turn {} into [].
