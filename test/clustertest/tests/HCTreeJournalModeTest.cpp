@@ -293,8 +293,7 @@ struct HCTreeJournalModeTest : tpunit::TestFixture
             ASSERT_EQUAL(sqlite3_open(follower.getArg("-db").c_str(), &handle), SQLITE_OK);
             unique_ptr<sqlite3, decltype(& sqlite3_close)> db(handle, sqlite3_close);
             ASSERT_EQUAL(SQuery(db.get(), "CREATE TABLE journal(id INTEGER PRIMARY KEY, query TEXT, hash TEXT);"), SQLITE_OK);
-            ASSERT_EQUAL(SQuery(db.get(), "INSERT INTO journal SELECT cid, substr(CAST(query AS BLOB), 75), "
-                               "CAST(substr(CAST(query AS BLOB), 1, 73) AS TEXT) FROM hct_journal WHERE cid <= " + SQ(newestLegacy)), SQLITE_OK);
+            ASSERT_EQUAL(SQuery(db.get(), "INSERT INTO journal SELECT id, query, hash FROM journalEntries WHERE id <= " + SQ(newestLegacy)), SQLITE_OK);
             ASSERT_EQUAL(SQuery(db.get(), "DELETE FROM hct_journal WHERE cid < " + SQ(oldestHCTree)), SQLITE_OK);
         }
 

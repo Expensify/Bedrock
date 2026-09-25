@@ -87,9 +87,7 @@ public:
            int64_t mmapSizeGB = 0, bool hctree = false, const string& checkpointMode = "PASSIVE",
            vector<function<void()>> afterCommitCallbacks = {});
 
-    // This constructor is not exactly a copy constructor. It creates an other SQLite object based on the first except
-    // with a *different* journal table. This avoids a lot of locking around creating structures that we know already
-    // exist because we already have a SQLite object for this file.
+    // Opens a separate connection to the same database, sharing commit metadata and journal configuration.
     SQLite(const SQLite& from);
     virtual ~SQLite();
 
@@ -439,8 +437,7 @@ public:
         string lastCommittedHash;
         uint64_t hashCommitID = 0;
 
-        // An identifier used to choose the next journal table to use with this set of DB handles. Only used to
-        // initialize new objects.
+        // Round-robin journal selection for transactions across all handles.
         atomic<int64_t> nextJournalCount;
 
         // When `SQLite::prepare` is called, we need to save a set of info that will be broadcast to peers when the
@@ -538,7 +535,7 @@ private:
     // Pointer to our SharedData object, which is shared between all SQLite DB objects for the same file.
     SharedData& _sharedData;
 
-    // The name of the journal table that this particular DB handle with write to.
+    // The journal table selected for the current transaction.
     string _journalName;
 
     // Stored whenever we begin a transaction to allow stopping and restarting with the same transaction type.
@@ -558,9 +555,6 @@ private:
     // otherwise unchanged. This single representation is then both stored on disk and shipped to followers.
     string _uncommittedQuery;
     string _uncommittedHash;
-
-    // Returns the name of a journal table based on it's index.
-    static string getJournalTableName(vector<string>& journalNames, int64_t journalTableID, bool create = false);
 
     // Timing information.
     mutable uint64_t _beginElapsed = 0;
@@ -589,28 +583,8 @@ private:
     void beginWriteTransaction();
     void finishWriteTransaction();
 
-    // Constructs a UNION query from a list of 'query parts' over each of our journal tables.
-    // Fore each table, queryParts will be joined with that table's name as a separator. I.e., if you have a tables
-    // named 'journal', 'journal00, and 'journal01', and queryParts of {"SELECT * FROM", "WHERE id > 1"}, we'll create
-    // the following subqueries from query parts:
-    //
-    // "SELECT * FROM journal WHERE id > 1"
-    // "SELECT * FROM journal00 WHERE id > 1"
-    // "SELECT * FROM journal01 WHERE id > 1"
-    //
-    // And then we'll join then using UNION into:
-    // "SELECT * FROM journal WHERE id > 1
-    //  UNION
-    //  SELECT * FROM journal00 WHERE id > 1
-    //  UNION
-    //  SELECT * FROM journal01 WHERE id > 1;"
-    //
-    //  Note that this wont work if you have a query like "SELECT * FROM journal", with no trailing WHERE clause, as we
-    //  only insert the table name *between* adjacent entries in queryParts. We provide the 'append' flag to get around
-    //  this limitation.
-    string _getJournalQuery(const list<string>& queryParts, bool append = false);
-
-    // Static version for initializers.
+    // Builds a UNION across legacy journals, inserting each table name between query parts.
+    // Set append when the table name belongs at the end, e.g. {"SELECT MAX(id) FROM"}.
     static string _getJournalQuery(const vector<string>& journalNames, const list<string>& queryParts, bool append = false);
     static string _getHCTreeJournalQuery();
     string _getJournalEntriesQuery(uint64_t fromIndex, uint64_t toIndex) const;

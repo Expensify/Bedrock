@@ -81,7 +81,7 @@ struct ForkCheckTest : tpunit::TestFixture
             ASSERT_GREATER_THAN(followerMaxCommit, SToUInt64(result[0]["id"]));
 
             // A failed HC-Tree leader commit can leave a blank final entry, so corrupt the latest nonblank hash.
-            ASSERT_EQUAL(SQuery(db, "SELECT MAX(id) AS id FROM journalEntries WHERE length(hash) > 0;", result), SQLITE_OK);
+            ASSERT_EQUAL(SQuery(db, "SELECT MAX(id) AS id, hash FROM journalEntries WHERE length(hash) > 0;", result), SQLITE_OK);
             ASSERT_EQUAL(result.size(), 1ul);
             ASSERT_FALSE(result[0]["id"].empty());
             const uint64_t corruptCommit = SToUInt64(result[0]["id"]);
@@ -92,8 +92,9 @@ struct ForkCheckTest : tpunit::TestFixture
                 ASSERT_EQUAL(sqlite3_step(stmt), SQLITE_ROW);
                 const char* data = static_cast<const char*>(sqlite3_column_blob(stmt, 0));
                 const int size = sqlite3_column_bytes(stmt, 0);
-                ASSERT_TRUE(data && size >= 74);
+                ASSERT_TRUE(data && size >= static_cast<int>(result[0]["hash"].size() + 1));
                 string changed(data, size);
+                ASSERT_EQUAL(changed.substr(0, result[0]["hash"].size()), result[0]["hash"]);
                 changed[0] = changed[0] == '0' ? '1' : '0';
                 ASSERT_EQUAL(sqlite3_finalize(stmt), SQLITE_OK);
 

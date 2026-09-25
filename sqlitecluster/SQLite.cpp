@@ -22,6 +22,9 @@ atomic<bool> SQLite::enableTrace(false);
 atomic<int64_t> SQLite::journalZstdDictionaryID(0);
 atomic<bool> SQLite::hctreeExperimentalMode(false);
 
+// Bedrock stores GUID:SHA1 followed by a colon and the query bytes in HC-Tree's opaque journal payload.
+static constexpr size_t HCTREE_JOURNAL_HASH_BYTES = 32 + 1 + 40;
+
 sqlite3* SQLite::getDBHandle()
 {
     return _db;
@@ -540,11 +543,6 @@ int SQLite::_sqliteTraceCallback(unsigned int traceCode, void* c, void* p, void*
     return 0;
 }
 
-string SQLite::_getJournalQuery(const list<string>& queryParts, bool append)
-{
-    return _getJournalQuery(_journalNames, queryParts, append);
-}
-
 string SQLite::_getJournalQuery(const vector<string>& journalNames, const list<string>& queryParts, bool append)
 {
     list<string> queries;
@@ -557,12 +555,11 @@ string SQLite::_getJournalQuery(const vector<string>& journalNames, const list<s
 
 string SQLite::_getHCTreeJournalQuery()
 {
-    // The BLOB contains a 73-byte GUID:SHA1 hash, a colon, then the possibly compressed query.
     // Initial and failed leader commits have no prefix and are exposed as blank entries.
-    return "SELECT cid AS id, "
-           "CASE WHEN length(CAST(query AS BLOB)) >= 74 THEN substr(CAST(query AS BLOB), 75) ELSE X'' END AS query, "
-           "CASE WHEN length(CAST(query AS BLOB)) >= 74 THEN CAST(substr(CAST(query AS BLOB), 1, 73) AS TEXT) ELSE '' END AS hash "
-           "FROM hct_journal";
+    return format("SELECT cid AS id, "
+                  "CASE WHEN length(CAST(query AS BLOB)) >= {0} THEN substr(CAST(query AS BLOB), {1}) ELSE X'' END AS query, "
+                  "CASE WHEN length(CAST(query AS BLOB)) >= {0} THEN CAST(substr(CAST(query AS BLOB), 1, {2}) AS TEXT) ELSE '' END AS hash "
+                  "FROM hct_journal", HCTREE_JOURNAL_HASH_BYTES + 1, HCTREE_JOURNAL_HASH_BYTES + 2, HCTREE_JOURNAL_HASH_BYTES);
 }
 
 string SQLite::_getJournalEntriesQuery(uint64_t fromIndex, uint64_t toIndex) const
@@ -593,8 +590,9 @@ string SQLite::_getLastNonBlankQuery(uint64_t index, bool legacy, bool hct) cons
         if (!candidates.empty()) {
             candidates += " UNION ";
         }
-        candidates += "SELECT MAX(cid) AS id, CAST(substr(CAST(query AS BLOB), 1, 73) AS TEXT) AS hash "
-            "FROM hct_journal WHERE cid <= " + SQ(index) + " AND length(CAST(query AS BLOB)) >= 74";
+        candidates += format("SELECT MAX(cid) AS id, CAST(substr(CAST(query AS BLOB), 1, {}) AS TEXT) AS hash "
+                             "FROM hct_journal WHERE cid <= {} AND length(CAST(query AS BLOB)) >= {}",
+                             HCTREE_JOURNAL_HASH_BYTES, index, HCTREE_JOURNAL_HASH_BYTES + 1);
     }
     return candidates.empty() ? "SELECT NULL AS id, '' AS hash WHERE 0" :
            "SELECT id, hash FROM (" + candidates + ") WHERE id IS NOT NULL ORDER BY id DESC LIMIT 1";
@@ -1500,9 +1498,7 @@ int SQLite::commit(bool& commitIDAllocated, const string& description, const str
     _lastConflictLocation = _conflictLocation;
 
     // If there were conflicting commits, will return SQLITE_BUSY_SNAPSHOT
-    if (result != SQLITE_OK && result != SQLITE_BUSY_SNAPSHOT) {
-        SWARN("SQLite commit failed: " << result << " (" << sqlite3_errmsg(_db) << ")");
-    }
+    SASSERT(result == SQLITE_OK || result == SQLITE_BUSY_SNAPSHOT);
     if (result == SQLITE_OK) {
         char time[16];
         snprintf(time, 16, "%.2fms", (double) (STimeNow() - beforeCommit) / 1000.0);
