@@ -143,7 +143,7 @@ struct ConflictSpamTest : tpunit::TestFixture
             list<string> lines = SParseList(result, '\n');
             list<string> output;
             for (auto line : lines) {
-                if (SStartsWith(line, "journal")) {
+                if (SStartsWith(line, "journal") || line == "hct_journal") {
                     output.push_back(line);
                 }
             }
@@ -156,24 +156,15 @@ struct ConflictSpamTest : tpunit::TestFixture
         // replicated yet.
         int tries = 0;
         while (tries++ < 60) {
-            // Now lets compose a query for the journal of each node.
+            // Wait for both legacy and HC-Tree commits to reach all three nodes.
             allResults.clear();
             allResults.resize(3);
             for (int i : {0, 1, 2}) {
-                threads.emplace_back([this, i, &allResults, &tables, &m](){
+                threads.emplace_back([this, i, &allResults, &m](){
                     BedrockTester& brtester = tester->getTester(i);
 
-                    auto journals = tables[i];
-                    list<string> queries;
-                    for (auto journal : journals) {
-                        queries.push_back("SELECT MAX(id) as maxIDs FROM " + journal);
-                    }
-
-                    string query = "SELECT MAX(maxIDs) FROM (" + SComposeList(queries, " UNION ");
-                    query += ");";
-
                     SData cmd("Query");
-                    cmd["query"] = query;
+                    cmd["query"] = "SELECT MAX(id) FROM journalEntries;";
                     // Ok, send them all!
                     auto result = brtester.executeWaitVerifyContent(cmd);
 
@@ -207,7 +198,7 @@ struct ConflictSpamTest : tpunit::TestFixture
             auto journals = tables[0];
             vector<SData> commands;
             for (auto journal : journals) {
-                string query = "SELECT COUNT(id) FROM " + journal + ";";
+                string query = "SELECT COUNT(" + string(journal == "hct_journal" ? "cid" : "id") + ") FROM " + journal + ";";
 
                 SData cmd("Query");
                 cmd["query"] = query;
