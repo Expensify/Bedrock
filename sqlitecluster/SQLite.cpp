@@ -570,8 +570,10 @@ string SQLite::_getJournalEntriesQuery(uint64_t fromIndex, uint64_t toIndex) con
     const bool experimentalHCTree = _hctree && hctreeExperimentalMode;
     list<string> sources;
     if (!_journalNames.empty() && (!experimentalHCTree || (_sharedData.legacyMaxID && fromIndex <= _sharedData.legacyMaxID))) {
-        sources.push_back(_getJournalQuery(_journalNames, {"SELECT id, query, hash FROM",
-            "WHERE id >= " + SQ(fromIndex) + (toIndex ? " AND id <= " + SQ(toIndex) : "")}));
+        const string where = " WHERE id >= " + SQ(fromIndex) + (toIndex ? " AND id <= " + SQ(toIndex) : "");
+        for (const string& name : _journalNames) {
+            sources.push_back("SELECT id, query, hash FROM " + name + where);
+        }
     }
     if (experimentalHCTree && (!toIndex || toIndex >= _sharedData.hctMinID)) {
         sources.push_back(_getHCTreeJournalQuery() + " WHERE cid >= " + SQ(fromIndex) +
@@ -585,7 +587,7 @@ string SQLite::_getLastNonBlankQuery(uint64_t index, bool legacy, bool hct) cons
     string candidates;
     if (legacy) {
         candidates = _getJournalQuery(_journalNames, {"SELECT MAX(id) AS id, hash FROM",
-            "WHERE id <= " + SQ(index) + " AND length(hash) > 0"});
+                                                      "WHERE id <= " + SQ(index) + " AND length(hash) > 0"});
     }
     if (hct) {
         if (!candidates.empty()) {
@@ -1713,25 +1715,10 @@ void SQLite::getLastNonBlankCommit(uint64_t index, uint64_t& commitID, string& h
     const bool hct = experimentalHCTree && index >= _sharedData.hctMinID;
     SQResult result;
     if (legacy && hct && _sharedData.legacyMaxID < _sharedData.hctMinID) {
-        // The legacy fallback must see the same snapshot as the HC-Tree lookup, even while trimming runs.
-        const bool ownSnapshot = !_insideTransaction;
-        if (ownSnapshot) {
-            SASSERT(beginTransaction());
-        }
-        struct SnapshotGuard
-        {
-            SQLite& db;
-            bool owned;
-            ~SnapshotGuard()
-            {
-                if (owned) {
-                    db.rollback();
-                }
-            }
-        } guard{*this, ownSnapshot};
         SASSERT(!SQuery(_db, _getLastNonBlankQuery(index, false, true), result));
         if (result.empty()) {
-            SASSERT(!SQuery(_db, _getLastNonBlankQuery(index, true, false), result));
+            // Recheck both sources in one statement so the fallback has a consistent snapshot during trimming.
+            SASSERT(!SQuery(_db, _getLastNonBlankQuery(index, true, true), result));
         }
     } else {
         SASSERT(!SQuery(_db, _getLastNonBlankQuery(index, legacy, hct), result));
@@ -1753,7 +1740,7 @@ string SQLite::getCommittedHash()
 int SQLite::getCompressedCommits(uint64_t fromIndex, uint64_t toIndex, SQResult& result, uint64_t timeoutLimitUS)
 {
     // Look up all the queries within that range. Returns raw query data which may be compressed.
-    SASSERTWARN(SWITHIN(1, fromIndex, toIndex));
+    SASSERTWARN(fromIndex >= 1 && (!toIndex || fromIndex <= toIndex));
     string query = "SELECT hash, query FROM (" + _getJournalEntriesQuery(fromIndex, toIndex) + ") ORDER BY id";
     SDEBUG("Getting commits #" << fromIndex << "-" << toIndex);
     if (timeoutLimitUS) {
