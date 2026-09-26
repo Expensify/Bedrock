@@ -32,8 +32,6 @@ To see a full list of Bedrock's configuration options, just run `bedrock -?` on 
 	-maxJournalSize <#commits>  Number of commits to retainin the historical journal (default 1000000)
 	-hctreeExperimentalMode        Enable HC-Tree journal commits for both leaders and followers
 
-	With `-hctreeExperimentalMode`, HC-Tree nodes write leader and follower commits to `hct_journal` and do not create legacy journal tables. This is a one-way transition: once `hct_journal` exists, starting without the flag aborts with "cannot downgrade from hct_journal, restore from backup". Existing legacy tables remain readable for synchronization. On first initialization, the newest legacy commit is moved atomically into `hct_journal`, preserving older legacy history. With no legacy history, HC-Tree starts at its initial CID 1; legacy-only databases create a blank legacy entry at commit 1 to keep numbering aligned. Subsequent startups reuse the journal without rebasing it. A no-op transaction writes `bedrock_hct_journal_anchor` so SQLite records its journal row. This table is created atomically with the initial legacy-entry transfer; an interrupted initialization that leaves it missing is rejected on startup. Before becoming leader, the node requires a contiguous HC-Tree journal and, if any legacy entries remain, the newest legacy ID must be exactly one less than the oldest HC-Tree CID. An unsupported boundary aborts the node; promotion does not prune journal entries. Use the flag only on nodes intended to participate in this rollout.
-
 	Quick Start Tips:
 	-----------------
 	In a hurry?  Just run 'bedrock -clean' the first time, and it'll create a new database called 'bedrock.db', then use all the defaults listed above.  (After the first time, leave out the '-clean' to reuse the same database.)  Once running, you can verify it's working using NetCat to manualy send a Ping request as follows:
@@ -51,3 +49,13 @@ To see a full list of Bedrock's configuration options, just run `bedrock -?` on 
 	- Put each Bedrock node on a different server.
 
 	- Assign each node a different priority (greater than 0).  The highest priority node will be the 'leader', which will coordinate distributed transactions.
+
+## HC-Tree experimental mode
+
+With `-hctreeExperimentalMode`, HC-Tree nodes write leader and follower commits to `hct_journal` and do not create legacy journal tables. Existing legacy tables remain readable for synchronization. This is a one-way transition: once `hct_journal` exists, starting without the flag aborts with "cannot downgrade from hct_journal, restore from backup". To run without the flag again, restore a backup that has no `hct_journal`.
+
+On first initialization, the newest legacy commit is moved atomically into `hct_journal`, preserving older legacy history. With no legacy history, HC-Tree starts at its initial CID 1. Legacy-only databases also create a blank entry at ID 1, so new databases in either mode start normal commits at ID 2. Subsequent startups reuse the journal without rebasing it.
+
+Blank and no-op transactions update `bedrock_hct_journal_anchor` so SQLite records their journal entries. This table is created atomically with the initial legacy-entry transfer; an interrupted initialization that leaves it missing is rejected on startup.
+
+Before becoming leader, the node requires a contiguous HC-Tree journal and, if legacy entries remain, the newest legacy ID must be exactly one less than the oldest HC-Tree CID. An unsupported boundary aborts the node. The background deleter preserves that boundary until legacy history is fully drained, then trims HC-Tree history in CID order. Promotion itself does not prune journal entries.
