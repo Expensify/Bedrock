@@ -161,6 +161,7 @@ unique_ptr<BedrockCommand> BedrockPlugin_TestPlugin::getCommand(SQLiteCommand&& 
         "getjournalteststate",
         "journaltest",
         "blankcommitconflict",
+        "failcommit",
         "deletetestrowunreplicated",
         "testescalate",
         "broadcastwithtimeouts",
@@ -737,6 +738,14 @@ void TestPluginCommand::process(SQLite& db)
         }
 
         // Done.
+        return;
+    } else if (request.methodLine == "failcommit") {
+        // Reject COMMIT itself, after all SQL has succeeded, to exercise unexpected commit-error handling.
+        SASSERT(db.write("INSERT INTO test VALUES(876570000, 'rejected commit');"));
+        const auto rejectCommit = [](void*) {
+            return 1;
+        };
+        sqlite3_commit_hook(db.getDBHandle(), rejectCommit, nullptr);
         return;
     } else if (request.methodLine == "blankcommitconflict") {
         // End failed attempts without a successful retry, leaving the allocated blank CIDs at the journal's tail.

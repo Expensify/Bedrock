@@ -556,10 +556,11 @@ string SQLite::_getJournalQuery(const vector<string>& journalNames, const list<s
 string SQLite::_getHCTreeJournalQuery()
 {
     // Initial and failed leader commits have no prefix and are exposed as blank entries.
-    return format("SELECT cid AS id, "
+    static const string query = format("SELECT cid AS id, "
                   "CASE WHEN length(CAST(query AS BLOB)) >= {0} THEN substr(CAST(query AS BLOB), {1}) ELSE X'' END AS query, "
                   "CASE WHEN length(CAST(query AS BLOB)) >= {0} THEN CAST(substr(CAST(query AS BLOB), 1, {2}) AS TEXT) ELSE '' END AS hash "
                   "FROM hct_journal", HCTREE_JOURNAL_HASH_BYTES + 1, HCTREE_JOURNAL_HASH_BYTES + 2, HCTREE_JOURNAL_HASH_BYTES);
+    return query;
 }
 
 string SQLite::_getJournalEntriesQuery(uint64_t fromIndex, uint64_t toIndex) const
@@ -1462,6 +1463,10 @@ int SQLite::commit(bool& commitIDAllocated, const string& description, const str
                 } else {
                     SASSERT(result != SQLITE_OK);
                 }
+            }
+            // Match SQuery's extended conflict result before another SQLite call replaces the error state.
+            if (result == SQLITE_BUSY && sqlite3_extended_errcode(_db) == SQLITE_BUSY_SNAPSHOT) {
+                result = SQLITE_BUSY_SNAPSHOT;
             }
         }
     } else {
