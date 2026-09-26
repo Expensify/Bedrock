@@ -2074,6 +2074,7 @@ void SQLiteNode::_handleBeginTransaction(SQLite& db, SQLitePeer* peer, const SDa
         STHROW("blank journal entry has a nonblank query");
     }
 
+    // TODO: Parallel replication will require disabling beginOnly, after which we can remove the parameter entirely.
     if (!db.beginTransaction(SQLite::TRANSACTION_TYPE::EXCLUSIVE, true)) {
         STHROW("failed to begin transaction");
     }
