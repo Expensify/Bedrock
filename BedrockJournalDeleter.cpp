@@ -100,7 +100,8 @@ void BedrockJournalDeleter::stop()
 
 void BedrockJournalDeleter::trimNextTable(SQLite& db)
 {
-    const size_t tableIndex = _nextTable++ % db.getJournalTableCount();
+    // SQLite resolves this against the current set of active tables.
+    const size_t tableIndex = _nextTable++;
     const uint64_t start = STimeNow();
     if (!db.trimJournalTable(tableIndex, deleterBatchSize)) {
         // A commit landing underneath us surfaces as a failed COMMIT, which is expected under load.
