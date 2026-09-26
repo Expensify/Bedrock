@@ -1,10 +1,9 @@
-#include "test/lib/BedrockTester.h"
+#include <test/lib/BedrockTester.h>
 #include <sys/wait.h>
 
 #include <libstuff/SData.h>
 #include <libstuff/SQResult.h>
-#include <sqlitecluster/SQLite.h>
-#include <sqlitecluster/SQLiteNode.h>
+#include <libstuff/sqlite3.h>
 #include <test/clustertest/BedrockClusterTester.h>
 
 struct ForkCheckTest : tpunit::TestFixture
@@ -15,16 +14,16 @@ struct ForkCheckTest : tpunit::TestFixture
     {
     }
 
-    vector<thread> createThreads(size_t num, BedrockClusterTester& tester, atomic<bool>& stop, atomic<bool>& leaderIsUp)
+    vector<thread> createThreads(BedrockClusterTester& tester, atomic<bool>& stop, atomic<bool>& leaderIsUp)
     {
         // Just use a bunch of copies of the same command.
         vector<thread> threads;
-        for (size_t num = 0; num < 9; num++) {
-            threads.emplace_back([&tester, num, &stop, &leaderIsUp](){
+        for (size_t client = 0; client < 9; client++) {
+            threads.emplace_back([&tester, client, &stop, &leaderIsUp](){
                 const vector<SData> commands(100, SData("idcollision"));
                 while (!stop) {
                     // Pick a tester, send, don't care about the result.
-                    size_t testerNum = num % 5;
+                    size_t testerNum = client % 5;
                     if (testerNum == 0 && !leaderIsUp) {
                         // If leader's off, don't use it.
                         testerNum = 1;
@@ -50,8 +49,8 @@ struct ForkCheckTest : tpunit::TestFixture
         // We want to not spam a stopped leader.
         atomic<bool> leaderIsUp(true);
 
-        // Now create 15 threads spamming 100 commands at a time, each. 15 because we have five nodes.
-        vector<thread> threads = createThreads(15, tester, stop, leaderIsUp);
+        // Spam all five nodes with batches of 100 commands.
+        vector<thread> threads = createThreads(tester, stop, leaderIsUp);
 
         // Let them spam for a second.
         sleep(1);
@@ -118,21 +117,16 @@ struct ForkCheckTest : tpunit::TestFixture
         }
 
         // Start the broken leader back up. We expect it will fail to synchronize.
-        tester.getTester(0).startServer(false);
+        tester.getTester(0).startServerInBackground();
 
         // We expect it to die shortly.
         int status = 0;
-        waitpid(tester.getTester(0).getPID(), &status, 0);
+        ASSERT_TRUE(tester.getTester(0).waitForExit(status));
 
         // Should have gotten a signal when it died.
         ASSERT_TRUE(WIFSIGNALED(status));
 
         // And that signal should have been ABORT.
         ASSERT_EQUAL(SIGABRT, WTERMSIG(status));
-
-        // We call stopServer on the forked leader because it crashed, but the cluster tester doesn't realize, so shutting down
-        // normally will time out after a minute. Calling `stopServer` explicitly will clear the server PID, and we won't need
-        // to wait for this timeout.
-        tester.getTester(0).stopServer();
     }
 } __ForkCheckTest;

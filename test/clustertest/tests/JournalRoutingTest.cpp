@@ -1,7 +1,7 @@
 #include <libstuff/SData.h>
 #include <libstuff/SQResult.h>
-#include <sqlitecluster/SQLite.h>
 #include <test/lib/BedrockTester.h>
+#include <test/clustertest/JournalTestHelper.h>
 
 struct JournalRoutingTest : tpunit::TestFixture
 {
@@ -22,26 +22,9 @@ struct JournalRoutingTest : tpunit::TestFixture
         {"-journalDeleterBatchSize", "0"},
     };
 
-    void seedLegacy(BedrockTester& node, bool hctree, uint64_t& boundary, string& hash)
+    JournalTestHelper::LegacyHistory seedLegacy(BedrockTester& node, bool hctree)
     {
-        ASSERT_FALSE(SQLite::hctreeExperimentalMode);
-        SQLite db(node.getArg("-db"), 1000, 1000, 1, 0, hctree);
-        ASSERT_TRUE(db.beginTransaction());
-        ASSERT_TRUE(db.write("CREATE TABLE routingData(id INTEGER PRIMARY KEY, value TEXT);"));
-        ASSERT_TRUE(db.prepare());
-        ASSERT_EQUAL(db.commit(), SQLITE_OK);
-        for (int i = 0; i < 10; ++i) {
-            ASSERT_TRUE(db.beginTransaction());
-            ASSERT_TRUE(db.write("INSERT INTO routingData VALUES(" + SQ(i) + ", 'legacy');"));
-            ASSERT_TRUE(db.prepare());
-            ASSERT_EQUAL(db.commit(), SQLITE_OK);
-        }
-        hash = db.getCommittedHash();
-        // Moving this blank baseline must leave the agreement hash in legacy history.
-        ASSERT_TRUE(db.beginTransaction());
-        ASSERT_TRUE(db.prepare(nullptr, nullptr, chrono::hours(24), nullptr, ""));
-        ASSERT_EQUAL(db.commit(), SQLITE_OK);
-        boundary = db.getCommitCount();
+        return JournalTestHelper::seedLegacyHistory(node.getArg("-db"), hctree, "routingData", 10, true);
     }
 
     STable run(BedrockTester& node, const string& op, uint64_t from = 1, uint64_t to = 0, int rounds = 1, int batchSize = 1)
@@ -79,9 +62,9 @@ struct JournalRoutingTest : tpunit::TestFixture
             return;
         }
         BedrockTester node(args, {}, 0, 0, 0, false);
-        uint64_t boundary = 0;
-        string legacyHash;
-        seedLegacy(node, true, boundary, legacyHash);
+        const auto history = seedLegacy(node, true);
+        const uint64_t boundary = history.lastCommitID;
+        const string& legacyHash = history.lastHash;
         ASSERT_GREATER_THAN(boundary, 1ull);
         node.startServer();
         const uint64_t latest = SToUInt64(node.readDB("SELECT MAX(id) FROM journalEntries;"));
@@ -140,9 +123,9 @@ struct JournalRoutingTest : tpunit::TestFixture
             return;
         }
         BedrockTester node(args, {}, 0, 0, 0, false);
-        uint64_t boundary = 0;
-        string legacyHash;
-        seedLegacy(node, true, boundary, legacyHash);
+        const auto history = seedLegacy(node, true);
+        const uint64_t boundary = history.lastCommitID;
+        const string& legacyHash = history.lastHash;
         ASSERT_GREATER_THAN(boundary, 1ull);
         node.startServer();
         const uint64_t before = SToUInt64(node.readDB("SELECT COUNT(*) FROM journalEntries WHERE id < " + SQ(boundary) + ";"));
@@ -191,9 +174,8 @@ struct JournalRoutingTest : tpunit::TestFixture
             return;
         }
         BedrockTester node(args, {}, 0, 0, 0, false);
-        uint64_t boundary = 0;
-        string hash;
-        seedLegacy(node, true, boundary, hash);
+        const auto history = seedLegacy(node, true);
+        const uint64_t boundary = history.lastCommitID;
         ASSERT_GREATER_THAN(boundary, 1ull);
         node.startServer();
         for (int i = 100; i < 110; ++i) {
@@ -238,10 +220,8 @@ struct JournalRoutingTest : tpunit::TestFixture
     void legacyWritesRemainVisible()
     {
         BedrockTester node(args, {}, 0, 0, 0, false);
-        uint64_t boundary = 0;
-        string hash;
-        seedLegacy(node, false, boundary, hash);
-        ASSERT_GREATER_THAN(boundary, 1ull);
+        const auto history = seedLegacy(node, false);
+        ASSERT_GREATER_THAN(history.lastCommitID, 1ull);
         node.startServer();
         const uint64_t start = SToUInt64(node.readDB("SELECT MAX(id) FROM journalEntries;"));
         for (int i = 100; i < 103; ++i) {

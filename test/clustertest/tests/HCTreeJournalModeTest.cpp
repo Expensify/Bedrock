@@ -1,9 +1,10 @@
 #include <libstuff/SData.h>
 #include <libstuff/SQResult.h>
-#include <sqlitecluster/SQLite.h>
+#include <libstuff/sqlite3.h>
 #include <libstuff/sqlite3hct.h>
 #include <sys/wait.h>
 #include <test/clustertest/BedrockClusterTester.h>
+#include <test/clustertest/JournalTestHelper.h>
 
 struct HCTreeJournalModeTest : tpunit::TestFixture
 {
@@ -82,24 +83,6 @@ struct HCTreeJournalModeTest : tpunit::TestFixture
         EXPECT_EQUAL(first.readDB("SELECT COUNT(*) FROM sqlite_schema WHERE type='table' AND name LIKE 'journal%';"), "0");
     }
 
-    void createLegacyHistory(BedrockTester& node, SQResult& history)
-    {
-        // The test process uses legacy commits; the server enables experimental HC-Tree on startup.
-        ASSERT_FALSE(SQLite::hctreeExperimentalMode);
-        SQLite legacy(node.getArg("-db"), 1000, 25000, 1, 0, true);
-        ASSERT_TRUE(legacy.beginTransaction());
-        ASSERT_TRUE(legacy.write("CREATE TABLE legacyData(id INTEGER PRIMARY KEY, value TEXT);"));
-        ASSERT_TRUE(legacy.prepare());
-        ASSERT_EQUAL(legacy.commit(), SQLITE_OK);
-        for (int i = 0; i < 20; ++i) {
-            ASSERT_TRUE(legacy.beginTransaction());
-            ASSERT_TRUE(legacy.write("INSERT INTO legacyData VALUES (" + SQ(i) + ", 'preserve this history');"));
-            ASSERT_TRUE(legacy.prepare());
-            ASSERT_EQUAL(legacy.commit(), SQLITE_OK);
-        }
-        ASSERT_TRUE(legacy.read("SELECT id, hex(query) AS query, hash FROM journalEntries ORDER BY id;", history));
-    }
-
     void initializationPreservesHistory()
     {
         if (!BedrockTester::ENABLE_HCTREE) {
@@ -107,10 +90,8 @@ struct HCTreeJournalModeTest : tpunit::TestFixture
         }
 
         BedrockTester node({{"-journalTables", "4"}, {"-journalDeleterBatchSize", "0"}}, {}, 0, 0, 0, false);
-        SQResult history;
-        createLegacyHistory(node, history);
-        ASSERT_FALSE(history.empty());
-        const uint64_t lastLegacyID = SToUInt64(history[history.size() - 1]["id"]);
+        const auto history = JournalTestHelper::seedLegacyHistory(node.getArg("-db"), true, "legacyData", 20);
+        const uint64_t lastLegacyID = history.lastCommitID;
         SQResult hctHistory;
         uint64_t lastHCTreeID = 0;
 
@@ -124,7 +105,7 @@ struct HCTreeJournalModeTest : tpunit::TestFixture
 
             SQResult retained;
             ASSERT_TRUE(node.readDB("SELECT id, hex(query) AS query, hash FROM journalEntries WHERE id <= " + SQ(lastLegacyID) + " ORDER BY id;", retained));
-            EXPECT_EQUAL(retained.serializeToText(), history.serializeToText());
+            EXPECT_EQUAL(retained.serializeToText(), history.entries.serializeToText());
             EXPECT_EQUAL(node.readDB("SELECT MAX(id) FROM (SELECT id FROM journal UNION ALL SELECT id FROM journal0000 UNION ALL SELECT id FROM journal0001);"),
                          to_string(lastLegacyID - 1));
             verifyHCTreeCommit(node, lastLegacyID);
@@ -190,19 +171,7 @@ struct HCTreeJournalModeTest : tpunit::TestFixture
         }
 
         int status = 0;
-        pid_t exited = 0;
-        const uint64_t deadline = STimeNow() + 15'000'000;
-        while (!exited && STimeNow() < deadline) {
-            exited = waitpid(child, &status, WNOHANG);
-            if (!exited) {
-                usleep(50'000);
-            }
-        }
-        if (!exited) {
-            kill(child, SIGKILL);
-            waitpid(child, &status, 0);
-        }
-        ASSERT_EQUAL(exited, child);
+        ASSERT_TRUE(BedrockTester::waitForProcessExit(child, status));
         ASSERT_TRUE(WIFSIGNALED(status));
         EXPECT_EQUAL(WTERMSIG(status), SIGABRT);
 
@@ -242,9 +211,7 @@ struct HCTreeJournalModeTest : tpunit::TestFixture
             return;
         }
         BedrockTester node({}, {}, 0, 0, 0, false);
-        SQResult history;
-        createLegacyHistory(node, history);
-        ASSERT_FALSE(history.empty());
+        JournalTestHelper::seedLegacyHistory(node.getArg("-db"), true, "legacyData", 20);
         {
             sqlite3* handle = nullptr;
             ASSERT_EQUAL(sqlite3_open(node.getArg("-db").c_str(), &handle), SQLITE_OK);
@@ -303,16 +270,7 @@ struct HCTreeJournalModeTest : tpunit::TestFixture
         cluster.stopNode(0);
 
         int status = 0;
-        pid_t exited = 0;
-        const uint64_t deadline = STimeNow() + 15'000'000;
-        while (!exited && STimeNow() < deadline) {
-            exited = waitpid(follower.getPID(), &status, WNOHANG);
-            if (!exited) {
-                usleep(50'000);
-            }
-        }
-        ASSERT_EQUAL(exited, follower.getPID());
-        follower.stopServer();
+        ASSERT_TRUE(follower.waitForExit(status));
         ASSERT_TRUE(WIFSIGNALED(status));
         EXPECT_EQUAL(WTERMSIG(status), SIGABRT);
 
