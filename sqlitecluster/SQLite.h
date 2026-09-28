@@ -169,9 +169,8 @@ public:
     bool writeLocalUnreplicated(const string& query);
 
     // Deletes up to `batchSize` rows from one journal table, keeping the newest `-maxJournalSize` commits.
-    // `journalTableIndex` is taken modulo the current number of active journal tables to trim.
-    // A `batchSize` of zero deletes nothing. Returns false if the delete did not commit, which happens
-    // when another commit conflicts.
+    // If `journalTableIndex` exceeds the number of trimmable tables, the table trimmed will be `journalTableIndex` modulo the number of relevant tables. 
+    // A `batchSize` of zero deletes nothing. Returns false if the delete did not commit, which happens when another commit conflicts.
     bool trimJournalTable(size_t journalTableIndex, int64_t batchSize);
 
     // The number of active journal tables to trim. Empty legacy tables are retired in experimental HC-Tree mode.
