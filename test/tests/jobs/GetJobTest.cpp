@@ -1,6 +1,7 @@
 #include <iostream>
 #include <unistd.h>
 
+#include <libstuff/JSON/Value.h>
 #include <libstuff/SData.h>
 #include <libstuff/SQResult.h>
 #include <test/lib/BedrockTester.h>
@@ -96,7 +97,7 @@ struct GetJobTest : tpunit::TestFixture
         response = tester->executeWaitVerifyContentTable(command);
         uint64_t end = STimeNow();
 
-        ASSERT_EQUAL(response.size(), 9);
+        ASSERT_EQUAL(response.size(), 10);
         ASSERT_EQUAL(response["jobID"], jobID);
         ASSERT_EQUAL(response["name"], jobName);
         ASSERT_EQUAL(response["data"], "{}");
@@ -132,8 +133,9 @@ struct GetJobTest : tpunit::TestFixture
         SData command("CreateJob");
         string jobName = "job";
         command["name"] = jobName;
-        STable response = tester->executeWaitVerifyContentTable(command);
-        string jobID = response["jobID"];
+        const string data = R"({"object":{},"array":[],"nested":{"items":[{},[],null]},"bigint":18446744073709551615,"float":1.0,"text":"日本語 \u00e9 \" \\ \/ \n"})";
+        command["data"] = data;
+        string jobID = tester->executeWaitVerifyContentTable(command)["jobID"];
         ASSERT_GREATER_THAN(stol(jobID), 0);
         SQResult originalJob;
         tester->readDB("SELECT created, jobID, state, name, nextRun, lastRun, repeat, data, priority, parentJobID FROM jobs WHERE jobID = " + jobID + ";", originalJob);
@@ -142,15 +144,16 @@ struct GetJobTest : tpunit::TestFixture
         command.clear();
         command.methodLine = "GetJob / HTTP/1.1";
         command["name"] = jobName;
-        response = tester->executeWaitVerifyContentTable(command);
+        const JSON::Value response = JSON::Value::parse(tester->executeWaitVerifyContent(command));
 
         uint64_t end = STimeNow();
 
-        ASSERT_EQUAL(response.size(), 9);
-        ASSERT_EQUAL(response["jobID"], jobID);
-        ASSERT_EQUAL(response["name"], jobName);
-        ASSERT_EQUAL(response["data"], "{}");
-        SASSERT(!response["created"].empty());
+        ASSERT_EQUAL(response.size(), 10);
+        ASSERT_EQUAL(response["jobID"].getInt(), stoll(jobID));
+        ASSERT_EQUAL(response["name"].getString(), jobName);
+        ASSERT_EQUAL(response["data"], JSON::Value::parse(data));
+        ASSERT_EQUAL(response["expectedData"].getString(), data);
+        SASSERT(!response["created"].getString().empty());
 
         // Check that nothing changed after we created the job except for the state and lastRun value
         SQResult currentJob;
@@ -434,7 +437,7 @@ struct GetJobTest : tpunit::TestFixture
         tester->executeWaitVerifyContent(command);
 
         // Confirm the child has data about the parent in the response
-        ASSERT_EQUAL(response.size(), 11);
+        ASSERT_EQUAL(response.size(), 12);
         ASSERT_EQUAL(response["jobID"], finishedChildID);
         ASSERT_EQUAL(response["name"], "child_finished");
         ASSERT_EQUAL(response["data"], finishedChildData);
@@ -465,7 +468,7 @@ struct GetJobTest : tpunit::TestFixture
         response = tester->executeWaitVerifyContentTable(command);
 
         // Confirm data on the children are in the response
-        ASSERT_EQUAL(response.size(), 11);
+        ASSERT_EQUAL(response.size(), 12);
         ASSERT_EQUAL(response["jobID"], parentID);
         ASSERT_EQUAL(response["name"], "parent");
         ASSERT_EQUAL(response["data"], parentData);

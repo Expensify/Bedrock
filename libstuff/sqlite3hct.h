@@ -30,15 +30,15 @@ extern "C" {
 */
 int sqlite3_hct_journal_init(sqlite3 *db);
 
-/*
-** Candidate values for second arg to sqlite3_hct_journal_setmode()
+/* 
+** Candidate values for second arg to sqlite3_hct_journal_setmode() 
 */
 #define SQLITE_HCT_NORMAL   0
 #define SQLITE_HCT_FOLLOWER 1
 #define SQLITE_HCT_LEADER   2
 
 /*
-** Query the NORMAL/FOLLOWER/LEADER setting of the db passed as the
+** Query the NORMAL/FOLLOWER/LEADER setting of the db passed as the 
 ** only argument.
 */
 int sqlite3_hct_journal_mode(sqlite3 *db);
@@ -74,7 +74,7 @@ int sqlite3_hct_journal_follower_commit(
 );
 
 /*
-** Set output variable (*piCid) to the CID of the newest available
+** Set output variable (*piCid) to the CID of the newest available 
 ** database snapshot. Return SQLITE_OK if successful, or an SQLite
 ** error code if something goes wrong.
 */

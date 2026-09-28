@@ -100,6 +100,11 @@ void BedrockCommand::stopTiming(TIMING_INFO type)
     get<2>(_inProgressTiming) = 0;
 }
 
+void BedrockCommand::recordTiming(TIMING_INFO type, uint64_t startTime)
+{
+    timingInfo.emplace_back(type, startTime, STimeNow());
+}
+
 bool BedrockCommand::areHttpsRequestsComplete() const
 {
     auto requestIt = (_lastContiguousCompletedTransaction == httpsRequests.end()) ? httpsRequests.begin() : _lastContiguousCompletedTransaction;
@@ -248,6 +253,8 @@ void BedrockCommand::finalizeTimingInfo()
     uint64_t queueWorkerTotal = 0;
     uint64_t queueBlockingTotal = 0;
     uint64_t queuePageLockTotal = 0;
+    uint64_t commandThreadTotal = 0;
+    uint64_t dbHandleTotal = 0;
     for (const auto& entry: timingInfo) {
         if (get<0>(entry) == PREPEEK) {
             prePeekTotal += get<2>(entry) - get<1>(entry);
@@ -280,6 +287,10 @@ void BedrockCommand::finalizeTimingInfo()
             queueBlockingTotal += get<2>(entry) - get<1>(entry);
         } else if (get<0>(entry) == QUEUE_PAGE_LOCK) {
             queuePageLockTotal += get<2>(entry) - get<1>(entry);
+        } else if (get<0>(entry) == COMMAND_THREAD) {
+            commandThreadTotal += get<2>(entry) - get<1>(entry);
+        } else if (get<0>(entry) == DB_HANDLE) {
+            dbHandleTotal += get<2>(entry) - get<1>(entry);
         }
     }
 
@@ -288,7 +299,7 @@ void BedrockCommand::finalizeTimingInfo()
 
     // Time that wasn't accounted for in all the other metrics.
     uint64_t unaccountedTime = totalTime - (prePeekTotal + peekTotal + processTotal + postProcessTotal + commitWorkerTotal +
-        escalationTimeUS + queueWorkerTotal + queueBlockingTotal + queuePageLockTotal);
+        escalationTimeUS + queueWorkerTotal + queueBlockingTotal + queuePageLockTotal + commandThreadTotal + dbHandleTotal);
 
     uint64_t exclusiveTransactionLockTime = blockingPeekTotal + blockingProcessTotal + blockingCommitWorkerTotal;
     uint64_t blockingCommitThreadTime = exclusiveTransactionLockTime + blockingPrePeekTotal + blockingPostProcessTotal;
@@ -299,6 +310,8 @@ void BedrockCommand::finalizeTimingInfo()
         {"peekTime", peekTotal},
         {"processTime", processTotal},
         {"postProcessTime", postProcessTotal},
+        {"commandThreadTime", commandThreadTotal},
+        {"dbHandleTime", dbHandleTotal},
         {"totalTime", totalTime},
         {"unaccountedTime", unaccountedTime},
     };
@@ -348,6 +361,8 @@ void BedrockCommand::finalizeTimingInfo()
           "postProcess:" << postProcessTotal / 1000 << " (count:" << postProcessCount << "), "
           "total:" << totalTime / 1000 << ", "
           "unaccounted:" << unaccountedTime / 1000 << ", "
+          "commandThread:" << commandThreadTotal / 1000 << ", "
+          "dbHandle:" << dbHandleTotal / 1000 << ", "
           "blockingCommitThreadTime:" << blockingCommitThreadTime / 1000 << ", "
           "exclusiveTransactionLockTime:" << exclusiveTransactionLockTime / 1000 <<
           ". Commit: "

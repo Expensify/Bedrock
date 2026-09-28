@@ -12,6 +12,15 @@ const JSON::Value JSON::Utils::ZERO_INT_VALUE = JSON::Value(0);
 const JSON::Value JSON::Utils::MAX_INT_VALUE = JSON::Value(INT_MAX);
 const JSON::Value JSON::Utils::ZERO_FLOAT_VALUE = JSON::Value(0.0);
 
+STable JSON::Utils::toSTable(const JSON::Value& object)
+{
+    STable fields;
+    for (const auto& [key, value] : JSON::ConstObjectValue(object)) {
+        fields[key] = value.isString() ? value.getString() : value.serialize();
+    }
+    return fields;
+}
+
 void JSON::Utils::recursiveReplaceJSONKeys(JSON::Value& into, const JSON::Value& from, const unordered_set<string>& keysToReplace)
 {
     // We only bother merging/replacing in objects. Otherwise the "merged" item is just a copy of "from".

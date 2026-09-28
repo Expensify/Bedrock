@@ -18,7 +18,7 @@
 ** separate file. This file contains only code for the core SQLite library.
 **
 ** The content in this amalgamation comes from Fossil check-in
-** eedd80c1a974930025bf713a44457f51e1f1 with changes in files:
+** 095887b665921b2aa55140933d6445ede7f9 with changes in files:
 **
 **    
 */
@@ -476,10 +476,10 @@ extern "C" {
 */
 #define SQLITE_VERSION        "3.54.0"
 #define SQLITE_VERSION_NUMBER 3054000
-#define SQLITE_SOURCE_ID      "2026-09-07 15:24:37 eedd80c1a974930025bf713a44457f51e1f18998d371f6920f97220e20b561fb"
+#define SQLITE_SOURCE_ID      "2026-09-26 16:10:38 095887b665921b2aa55140933d6445ede7f9a559e100fda86811fb8afbbdfe43"
 #define SQLITE_SCM_BRANCH     "hctree-bedrock-lcd-ex"
 #define SQLITE_SCM_TAGS       ""
-#define SQLITE_SCM_DATETIME   "2026-09-07T15:24:37.507Z"
+#define SQLITE_SCM_DATETIME   "2026-09-26T16:10:38.211Z"
 
 /*
 ** CAPI3REF: Run-Time Library Version Numbers
@@ -94810,9 +94810,10 @@ static int hctBtreeMovetoUnpacked(
           *pRes = -1;
         }else if( pIdxKey==0 ){
           *pRes = 1;
-        }else{
-          u32 nKey;
-          const void *a = sqlite3HctBtreePayloadFetch((BtCursor*)pCur, &nKey);
+        }else if( rc==SQLITE_OK ){
+          int nKey;
+          const void *a = 0;
+          rc = hctBtreePayloadData((BtCursor*)pCur, &nKey, (const u8**)&a);
           *pRes = sqlite3VdbeRecordCompareWithSkip(nKey, a, pIdxKey, 0);
         }
       }else{
@@ -94826,9 +94827,12 @@ static int hctBtreeMovetoUnpacked(
   if( bResetRc ){
     pIdxKey->default_rc = 0;
     if( sqlite3HctBtreeEof((BtCursor*)pCur)==0 ){
-      u32 nKey;
-      const void *a = sqlite3HctBtreePayloadFetch((BtCursor*)pCur, &nKey);
-      *pRes = sqlite3VdbeRecordCompareWithSkip(nKey, a, pIdxKey, 0);
+      int nKey = 0;
+      const void *a = 0;
+      rc = hctBtreePayloadData((BtCursor*)pCur, &nKey, (const u8**)&a);
+      if( rc==SQLITE_OK ){
+        *pRes = sqlite3VdbeRecordCompareWithSkip(nKey, a, pIdxKey, 0);
+      }
     }
   }
 
@@ -95176,18 +95180,20 @@ SQLITE_PRIVATE int sqlite3HctBtreeDelete(BtCursor *pCursor, u8 flags){
     i64 iKey = sqlite3HctBtreeIntegerKey((BtCursor*)pCur);
     rc = sqlite3HctTreeDeleteKey(pCur->pHctTreeCsr, 0, iKey, 0, 0);
   }else{
-    u32 nKey;
-    const u8 *aKey = (u8*)sqlite3HctBtreePayloadFetch((BtCursor*)pCur, &nKey);
+    int nKey;
+    const u8 *aKey = 0;
     UnpackedRecord *pRec = sqlite3VdbeAllocUnpackedRecord(pCur->pKeyInfo);
-
     if( pRec==0 ){
       rc = SQLITE_NOMEM_BKPT;
     }else{
+      rc = hctBtreePayloadData((BtCursor*)pCur, &nKey, &aKey);
+    }
+    if( rc==SQLITE_OK ){
       assert( pCur->pKeyInfo==pRec->pKeyInfo );
       sqlite3VdbeRecordUnpack(nKey, aKey, pRec);
       rc = sqlite3HctTreeDeleteKey(pCur->pHctTreeCsr, pRec, 0, nKey, aKey);
-      sqlite3DbFree(pCur->pBtree->config.db, pRec);
     }
+    sqlite3DbFree(pCur->pBtree->config.db, pRec);
   }
   return rc;
 }
@@ -275661,7 +275667,7 @@ static void fts5SourceIdFunc(
 ){
   assert( nArg==0 );
   UNUSED_PARAM2(nArg, apUnused);
-  sqlite3_result_text(pCtx, "fts5: 2026-09-07 15:24:37 eedd80c1a974930025bf713a44457f51e1f18998d371f6920f97220e20b561fb", -1, SQLITE_TRANSIENT);
+  sqlite3_result_text(pCtx, "fts5: 2026-09-26 16:10:38 095887b665921b2aa55140933d6445ede7f9a559e100fda86811fb8afbbdfe43", -1, SQLITE_TRANSIENT);
 }
 
 /*
@@ -285344,8 +285350,8 @@ SQLITE_PRIVATE void sqlite3HctFileClose(HctFile *pFile){
     /* It if was removed from the global list, clean up the HctFileServer
     ** object.  */
     if( pDel ){
-      int szChunkData = pDel->nPagePerChunk*pDel->szPage;
-      int szChunkMap = pDel->nPagePerChunk*sizeof(u64);
+      i64 szChunkData = (i64)pDel->nPagePerChunk*pDel->szPage;
+      i64 szChunkMap = (i64)pDel->nPagePerChunk*sizeof(u64);
       HctMapping *pMapping = pDel->pMapping;
 
       sqlite3HctTMapServerFree(pDel->pTMapServer);
@@ -285356,10 +285362,18 @@ SQLITE_PRIVATE void sqlite3HctFileClose(HctFile *pFile){
 
       if( pMapping ){
         pDel->pMapping = 0;
+        /* Both files are mapped in regions of HCT_MMAP_QUANTA chunks (see
+        ** hctFileAllocateMapping() and hctFileMmapXXXChunk()), each starting
+        ** at a chunk that is a multiple of HCT_MMAP_QUANTA within its file.
+        ** Unmap each such region in its entirety.  */
         for(i=0; i<pMapping->nChunk; i++){
           HctMappingChunk *pChunk = &pMapping->aChunk[i];
-          if( pChunk->aMap ) hctFileMunmap(pChunk->aMap, szChunkMap);
-          if( pChunk->pData ) hctFileMunmap(pChunk->pData, szChunkData);
+          if( pChunk->aMap && (i % HCT_MMAP_QUANTA)==0 ){
+            hctFileMunmap(pChunk->aMap, szChunkMap*HCT_MMAP_QUANTA);
+          }
+          if( pChunk->pData && ((i / pDel->nFdDb) % HCT_MMAP_QUANTA)==0 ){
+            hctFileMunmap(pChunk->pData, szChunkData*HCT_MMAP_QUANTA);
+          }
         }
         hctMappingUnref(pMapping);
       }
@@ -287748,7 +287762,8 @@ static void hctPutU32(u8 *a, u32 val){
 */
 static int hctDbTidIsVisible(HctDatabase *pDb, u64 iTid, int bNosnap){
 
-  // if( (iTid & HCT_TID_MASK)<=pDb->iLocalMinTid ) return 1;
+  /* It is tempting to return early if (iTid < pDb->iLocalMinTid) here.
+  ** See comment in hctDbIsConflict() for why that is not possible. */
 
   while( 1 ){
     u64 eState = 0;
@@ -287792,7 +287807,16 @@ static int hctDbTidIsVisible(HctDatabase *pDb, u64 iTid, int bNosnap){
 ** false if the write should proceed.
 */
 static int hctDbTidIsConflict(HctDatabase *pDb, u64 iTid){
-  if( iTid==pDb->iTid /* || iTid<=pDb->iLocalMinTid */ || iTid==LARGEST_TID ){
+
+  /* It is tempting to return early if (iTid < pDb->iLocalMinTid) here.
+  ** But that would leave HctDatabase.iReqSnapshotId unset in some cases.
+  ** This means extra lookups on the transaction-map (calls to
+  ** hctDbTMapLookup()), which is sub-optimal. Although, the transaction-map
+  ** has its own "min-min" value, so unless there are very long-lived
+  ** readers, most calls to hctDbTMapLookup() do not require a real lookup
+  ** anyway.  */
+
+  if( iTid==pDb->iTid || iTid==LARGEST_TID ){
     return 0;
   }else{
     u64 eState = 0;
@@ -287800,26 +287824,16 @@ static int hctDbTidIsConflict(HctDatabase *pDb, u64 iTid){
 
     /* This should only be called while writing or validating. */
     assert( pDb->iTid );
+
     if( (iTid & HCT_TID_ROLLBACK_OVERRIDE) && eState==HCT_TMAP_ROLLBACK ){
       eState = HCT_TMAP_COMMITTED;
     }
 
     pDb->iReqSnapshotId = MAX(pDb->iReqSnapshotId, iCid);
     if( eState==HCT_TMAP_COMMITTED && iCid<=pDb->iSnapshotId ) return 0;
-
-    return 1;
-
-    if( eState==HCT_TMAP_WRITING || eState==HCT_TMAP_VALIDATING ) return 1;
-
-    /* It's tempting to return 0 here - how can a key that has been rolled
-    ** back be a conflict? The problem is that the previous version of the
-    ** key - the one before this rolled back version - may be a write/write
-    ** conflict. Ideally, this code would check that and return accordingly. */
-    if( eState==HCT_TMAP_ROLLBACK ) return 1;
-
-    assert( eState==HCT_TMAP_COMMITTED );
-    return (iCid > pDb->iSnapshotId);
   }
+
+  return 1;
 }
 
 
@@ -298751,6 +298765,12 @@ SQLITE_API int sqlite3_hct_journal_setmode(sqlite3 *db, int eMode){
   rc = sqlite3_exec(db, "SELECT 1 FROM sqlite_schema LIMIT 1", 0, 0, 0);
   if( rc!=SQLITE_OK ) return rc;
   pJrnl = sqlite3HctJrnlFind(db);
+
+  if( pJrnl==0 ){
+    hctJournalSetDbError(db, SQLITE_ERROR, "not an hct database");
+    return SQLITE_ERROR;
+  }
+
   pServer = pJrnl->pServer;
   pFile = sqlite3HctDbFile(pJrnl->pDb);
 
@@ -299086,7 +299106,7 @@ SQLITE_API int sqlite3_hct_journal_leader_commit(
   int rc = SQLITE_OK;
 
   /* Check the db really is in LEADER mode */
-  if( pJrnl->pServer->eMode!=SQLITE_HCT_LEADER ){
+  if( pJrnl==0 || pJrnl->pServer->eMode!=SQLITE_HCT_LEADER ){
     hctJournalSetDbError(db, SQLITE_ERROR, "not a LEADER mode db");
     return SQLITE_ERROR;
   }
@@ -299122,13 +299142,30 @@ SQLITE_API int sqlite3_hct_journal_follower_commit(
   sqlite3_int64 iCid,             /* CID of committed transaction */
   sqlite3_int64 iSnapshot         /* Value for hct_journal.snapshot field */
 ){
+  Btree *pBt = db->aDb[0].pBt;
   HctJournal *pJrnl = sqlite3HctJrnlFind(db);
   int rc = SQLITE_OK;
 
-  /* Check the db really is in FOLLOWER mode */
-  if( pJrnl->pServer->eMode!=SQLITE_HCT_FOLLOWER ){
+  /* Check the db really is an hctree database in FOLLOWER mode */
+  if( pJrnl==0 || pJrnl->pServer->eMode!=SQLITE_HCT_FOLLOWER ){
     hctJournalSetDbError(db, SQLITE_ERROR, "not a FOLLOWER mode db");
     return SQLITE_ERROR;
+  }
+
+  /* Check that there is at least a transaction open at the db level. */
+  if( sqlite3_get_autocommit(db) ){
+    hctJournalSetDbError(
+        db, SQLITE_ERROR, "cannot commit - no transaction is open"
+    );
+    return SQLITE_ERROR;
+  }
+
+  /* If there is not a write transaction open on the main db, open one
+  ** now.  */
+  if( sqlite3HctBtreeTxnState(pBt)!=SQLITE_TXN_WRITE ){
+    int dummy = 0;
+    rc = sqlite3HctBtreeBeginTrans(pBt, 1, &dummy);
+    if( rc!=SQLITE_OK ) return rc;
   }
 
   /* Check if the transaction was prepared against a snapshot new enough
