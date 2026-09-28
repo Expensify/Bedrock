@@ -61,7 +61,7 @@ Set *rerunIfDataChanged=true* to enable this behavior. The option has these requ
 
 * Set *unique=true*. Bedrock must reuse one job row with the same name.
 * Keep *overwrite* enabled. Bedrock must merge the data from each new enqueue into that row.
-* Pass the immutable data returned by `GetJob` or `GetJobs` as *expectedData* to `FinishJob`, `RetryJob`, or `FailJob`.
+* Pass the *expectedData* string returned by `GetJob` or `GetJobs` unchanged to `FinishJob`, `RetryJob`, or `FailJob`.
 * Do not create child jobs from a job that uses `rerunIfDataChanged`. If the job's data changes, children created during that run may contain stale work. Bedrock cannot determine whether to keep those children for the next run, so it does not support this combination. Nevertheless, a job that uses this option can still be a child of another job.
 
 The normal *data* completion field remains the worker's final output. Do not use the worker's modified output as *expectedData*.
