@@ -56,6 +56,4 @@ With `-hctreeExperimentalMode`, HC-Tree nodes write leader and follower commits 
 
 On first initialization, the newest legacy commit is moved atomically into `hct_journal`, preserving older legacy history. With no legacy history, HC-Tree starts at its initial CID 1. Legacy-only databases also create a blank entry at ID 1, so new databases in either mode start normal commits at ID 2. Subsequent startups reuse the journal without rebasing it.
 
-Blank and no-op transactions update `bedrock_hct_journal_anchor` so SQLite records their journal entries. This table is created atomically with the initial legacy-entry transfer; an interrupted initialization that leaves it missing is rejected on startup.
-
 Before becoming leader, the node requires a contiguous HC-Tree journal and, if legacy entries remain, the newest legacy ID must be exactly one less than the oldest HC-Tree CID. An unsupported boundary aborts the node. The background deleter preserves that boundary until legacy history is fully drained, then trims HC-Tree history in CID order. Promotion itself does not prune journal entries.

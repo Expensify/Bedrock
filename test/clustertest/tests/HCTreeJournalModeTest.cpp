@@ -1,7 +1,6 @@
 #include <libstuff/SData.h>
 #include <libstuff/SQResult.h>
 #include <libstuff/sqlite3.h>
-#include <libstuff/sqlite3hct.h>
 #include <sys/wait.h>
 #include <test/clustertest/BedrockClusterTester.h>
 #include <test/clustertest/JournalTestHelper.h>
@@ -13,7 +12,6 @@ struct HCTreeJournalModeTest : tpunit::TestFixture
                               TEST(HCTreeJournalModeTest::leaderFailover),
                               TEST(HCTreeJournalModeTest::initializationPreservesHistory),
                               TEST(HCTreeJournalModeTest::rejectsDowngrade),
-                              TEST(HCTreeJournalModeTest::rejectsIncompleteInitialization),
                               TEST(HCTreeJournalModeTest::rejectsJournalGap),
                               TEST(HCTreeJournalModeTest::rejectsJournalOverlap),
                               TEST(HCTreeJournalModeTest::trimsOldestEntries))
@@ -135,7 +133,7 @@ struct HCTreeJournalModeTest : tpunit::TestFixture
         return rc == SQLITE_OK && SQuery(db.get(), query, result) == SQLITE_OK;
     }
 
-    void verifyStartupRejected(BedrockTester& node, bool experimental)
+    void verifyStartupRejected(BedrockTester& node)
     {
         const vector<string> queries = {
             "SELECT name, sql FROM sqlite_schema ORDER BY name;",
@@ -154,9 +152,6 @@ struct HCTreeJournalModeTest : tpunit::TestFixture
         for (const string arg : {"-db", "-serverHost", "-nodeHost", "-controlPort", "-commandPortPrivate"}) {
             args.push_back(arg);
             args.push_back(node.getArg(arg));
-        }
-        if (experimental) {
-            args.push_back("-hctreeExperimentalMode");
         }
         vector<char*> argv;
         for (string& arg : args) {
@@ -196,30 +191,13 @@ struct HCTreeJournalModeTest : tpunit::TestFixture
         node.executeWaitVerifyContent(write);
         const uint64_t cid = commitCount(node);
         node.stopServer();
-        verifyStartupRejected(node, false);
+        verifyStartupRejected(node);
 
         node.startServer();
         ASSERT_TRUE(node.waitForState("LEADING"));
         EXPECT_EQUAL(node.readDB("SELECT value FROM downgradeTest;"), "123");
         verifyHCTreeCommit(node, cid);
         EXPECT_EQUAL(node.readDB("SELECT COUNT(*) FROM sqlite_schema WHERE type='table' AND name LIKE 'journal%';"), "0");
-    }
-
-    void rejectsIncompleteInitialization()
-    {
-        if (!BedrockTester::ENABLE_HCTREE) {
-            return;
-        }
-        BedrockTester node({}, {}, 0, 0, 0, false);
-        JournalTestHelper::seedLegacyHistory(node.getArg("-db"), true, "legacyData", 20);
-        {
-            sqlite3* handle = nullptr;
-            ASSERT_EQUAL(sqlite3_open(node.getArg("-db").c_str(), &handle), SQLITE_OK);
-            unique_ptr<sqlite3, decltype(& sqlite3_close)> db(handle, sqlite3_close);
-            // SQLite commits journal creation before Bedrock can transfer the baseline and create the anchor.
-            ASSERT_EQUAL(sqlite3_hct_journal_init(db.get()), SQLITE_OK);
-        }
-        verifyStartupRejected(node, true);
     }
 
     void rejectsJournalGap()

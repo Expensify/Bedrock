@@ -225,14 +225,8 @@ vector<string> SQLite::initializeJournal(sqlite3* db, int minJournalTables, bool
     SASSERT(minJournalTables < 10'000);
     const bool experimentalHCTree = hctree && hctreeExperimentalMode;
     const bool hctJournalExists = hctree && SQVerifyTableExists(db, "hct_journal");
-    if (hctJournalExists) {
-        if (!experimentalHCTree) {
-            SERROR("cannot downgrade from hct_journal, restore from backup");
-        }
-        // The anchor is created in the same transaction that transfers the legacy baseline.
-        if (!SQVerifyTableExists(db, "bedrock_hct_journal_anchor")) {
-            SERROR("incomplete hct_journal initialization, restore from backup");
-        }
+    if (hctJournalExists && !experimentalHCTree) {
+        SERROR("cannot downgrade from hct_journal, restore from backup");
     }
 
     // First, we create all of the tables through `minJournalTables` if they don't exist.
@@ -337,12 +331,8 @@ void SQLite::initializeHCTreeJournal(sqlite3* db, const vector<string>& journalN
 
     SASSERT(sqlite3_hct_journal_init(db) == SQLITE_OK);
     SASSERT(!SQuery(db, "BEGIN IMMEDIATE"));
-    // HC-Tree requires a physical write to record blank and no-op replicated commits.
-    int result = SQuery(db, "CREATE TABLE bedrock_hct_journal_anchor (n INTEGER NOT NULL)");
-    if (!result) {
-        result = SQuery(db, "INSERT INTO bedrock_hct_journal_anchor VALUES (0)");
-    }
-    if (!result && !legacy.empty()) {
+    int result = SQLITE_OK;
+    if (!legacy.empty()) {
         const uint64_t legacyCommitID = SToUInt64(legacy[0]["id"]);
         SINFO("Initializing HC-Tree journal at legacy commit " << legacyCommitID);
         result = SQuery(db, "UPDATE hct_journal SET cid = :cid, query = :query WHERE cid = 1", {
@@ -1438,36 +1428,31 @@ int SQLite::commit(bool& commitIDAllocated, const string& description, const str
     }
     if (_hctree && hctreeExperimentalMode) {
         const string journalData = _uncommittedHash + ":" + _uncommittedQuery;
-        if (sqlite3_txn_state(_db, "main") != SQLITE_TXN_WRITE) {
-            result = SQuery(_db, "UPDATE bedrock_hct_journal_anchor SET n = n + 1");
-        }
-        if (!result) {
-            if (_sharedData.hctreeFollowerMode) {
-                result = sqlite3_hct_journal_follower_commit(_db,
-                    reinterpret_cast<const unsigned char*>(journalData.data()), journalData.size(),
-                    _sharedData.commitCount + 1, _sharedData.commitCount);
-            } else {
-                sqlite3_int64 cid = 0;
-                sqlite3_int64 snapshot = 0;
-                result = sqlite3_hct_journal_leader_commit(_db,
-                    reinterpret_cast<const unsigned char*>(journalData.data()), journalData.size(), &cid, &snapshot);
-                commitIDAllocated = cid != 0;
-                if (cid) {
-                    SASSERT(cid == _sharedData.commitCount + 1);
-                    if (result) {
-                        // SQLite allocated a CID but rolled back this transaction. The
-                        // corresponding HC-Tree journal row is an empty commit.
-                        _sharedData.prepareTransactionInfo(cid, "", "");
-                        _sharedData.incrementCommit("");
-                    }
-                } else {
-                    SASSERT(result != SQLITE_OK);
+        if (_sharedData.hctreeFollowerMode) {
+            result = sqlite3_hct_journal_follower_commit(_db,
+                reinterpret_cast<const unsigned char*>(journalData.data()), journalData.size(),
+                _sharedData.commitCount + 1, _sharedData.commitCount);
+        } else {
+            sqlite3_int64 cid = 0;
+            sqlite3_int64 snapshot = 0;
+            result = sqlite3_hct_journal_leader_commit(_db,
+                reinterpret_cast<const unsigned char*>(journalData.data()), journalData.size(), &cid, &snapshot);
+            commitIDAllocated = cid != 0;
+            if (cid) {
+                SASSERT(cid == _sharedData.commitCount + 1);
+                if (result) {
+                    // SQLite allocated a CID but rolled back this transaction. The
+                    // corresponding HC-Tree journal row is an empty commit.
+                    _sharedData.prepareTransactionInfo(cid, "", "");
+                    _sharedData.incrementCommit("");
                 }
+            } else {
+                SASSERT(result != SQLITE_OK);
             }
-            // Match SQuery's extended conflict result before another SQLite call replaces the error state.
-            if (result == SQLITE_BUSY && sqlite3_extended_errcode(_db) == SQLITE_BUSY_SNAPSHOT) {
-                result = SQLITE_BUSY_SNAPSHOT;
-            }
+        }
+        // Match SQuery's extended conflict result before another SQLite call replaces the error state.
+        if (result == SQLITE_BUSY && sqlite3_extended_errcode(_db) == SQLITE_BUSY_SNAPSHOT) {
+            result = SQLITE_BUSY_SNAPSHOT;
         }
     } else {
         result = SQuery(_db, "COMMIT");
