@@ -231,7 +231,7 @@ vector<string> SQLite::initializeJournal(sqlite3* db, int minJournalTables, bool
 
     // First, we create all of the tables through `minJournalTables` if they don't exist.
     // Skip this when using HC-Tree journals.
-    if (!hctreeExperimentalMode) {
+    if (!experimentalHCTree) {
         for (int currentJounalTable = -1; currentJounalTable <= minJournalTables; currentJounalTable++) {
             char tableName[27] = {0};
             if (currentJounalTable < 0) {
@@ -274,7 +274,7 @@ vector<string> SQLite::initializeJournal(sqlite3* db, int minJournalTables, bool
     if (!experimentalHCTree) {
         SQResult latest;
         SASSERT(!SQuery(db, "SELECT MAX(id) FROM (" + _getJournalQuery(journalNames, {"SELECT MAX(id) AS id FROM"}, true) + ")", latest));
-        if (latest.empty()) {
+        if (latest.empty() || latest[0][0].empty()) {
             SASSERT(!SQuery(db, "INSERT INTO " + journalNames.front() + " (id, query, hash) VALUES (1, X'', '')"));
         }
     }
