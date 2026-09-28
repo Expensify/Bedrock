@@ -238,9 +238,8 @@ public:
     // The main purpose of this is to allow replications in SQLiteNode to notify other waiting threads that the commit has finished even before the checkpoint is done.
     int commit(const string& description = "UNSPECIFIED", const string& commandName = "", function<void()>* preCheckpointCallback = nullptr);
 
-    // Also reports whether the HC-Tree leader API allocated a CID for this transaction,
-    // including when SQLite commits an empty journal entry after the transaction fails.
-    // Always false for WAL2 and HC-Tree followers.
+    // commitIDAllocated reports whether the HC-Tree leader API allocated a CID for this transaction, including when SQLite commits an empty
+    // journal entry after the transaction fails. Always false for WAL2 and HC-Tree followers.
     int commit(bool& commitIDAllocated, const string& description = "UNSPECIFIED", const string& commandName = "", function<void()>* preCheckpointCallback = nullptr);
 
     // Cancels the current transaction and rolls it back.
@@ -376,7 +375,7 @@ public:
     // The zstd dictionary ID to use when compressing journal entries. 0 means no compression.
     static atomic<int64_t> journalZstdDictionaryID;
 
-    // Set once at startup to enable experimental HC-Tree behavior on HC-Tree databases.
+    // This is set only once at startup to enable experimental HC-Tree behavior on HC-Tree databases.
     static atomic<bool> hctreeExperimentalMode;
 
     int64_t getLastConflictIdentifier() const;
@@ -483,9 +482,10 @@ public:
 
         // Count transactions that may still write after releasing writeLock.
         atomic<uint64_t> openWriteTransactionCount{0};
-        atomic<bool> hctreeFollowerMode{false};
+        atomic<bool> hctreeFollowerMode{true};
 
-        // Captured after initialization, before other handles exist. These conservative read bounds never change.
+        // These are set just after initialization of the DB and are used for deciding which journal tables we will need
+        // to read from/trim from as newer hct_journal DBs expire old entries from the journal.
         uint64_t legacyMaxID = 0;
         uint64_t hctMinID = 0;
 
