@@ -118,8 +118,8 @@ SQLite::SharedData& SQLite::initializeSharedData()
         SASSERT(!SQuery(_db, query, result));
         CommitState state{result.empty() ? 0 : SToUInt64(result[0][0]), 0, ""};
 
-        // Blank rows advance the highest commit ID but not the agreement identity.
-        // _sharedData is not initialized until this function returns, so query directly here.
+        // Blank rows advance the highest commit ID but do not change the point in the journal that determines if two
+        // journals agree or are forked from one another.
         SQResult lastNonBlank;
         SASSERT(!SQuery(_db, _getLastNonBlankQuery(state.commitCount, !experimentalHCTree || sharedData->legacyMaxID, experimentalHCTree), lastNonBlank));
         if (!lastNonBlank.empty()) {
@@ -230,16 +230,19 @@ vector<string> SQLite::initializeJournal(sqlite3* db, int minJournalTables, bool
     }
 
     // First, we create all of the tables through `minJournalTables` if they don't exist.
-    for (int currentJounalTable = -1; !experimentalHCTree && currentJounalTable <= minJournalTables; currentJounalTable++) {
-        char tableName[27] = {0};
-        if (currentJounalTable < 0) {
-            // The `-1` entry is just plain "journal".
-            snprintf(tableName, 27, "journal");
-        } else {
-            snprintf(tableName, 27, "journal%04i", currentJounalTable);
-        }
-        if (SQVerifyTable(db, tableName, "CREATE TABLE " + string(tableName) + " ( id INTEGER PRIMARY KEY, query TEXT, hash TEXT )")) {
-            SHMMM("Created " << tableName << " table.");
+    // Skip this when using HC-Tree journals.
+    if (!hctreeExperimentalMode) {
+        for (int currentJounalTable = -1; currentJounalTable <= minJournalTables; currentJounalTable++) {
+            char tableName[27] = {0};
+            if (currentJounalTable < 0) {
+                // The `-1` entry is just plain "journal".
+                snprintf(tableName, 27, "journal");
+            } else {
+                snprintf(tableName, 27, "journal%04i", currentJounalTable);
+            }
+            if (SQVerifyTable(db, tableName, "CREATE TABLE " + string(tableName) + " ( id INTEGER PRIMARY KEY, query TEXT, hash TEXT )")) {
+                SHMMM("Created " << tableName << " table.");
+            }
         }
     }
 
@@ -264,11 +267,14 @@ vector<string> SQLite::initializeJournal(sqlite3* db, int minJournalTables, bool
         }
     }
 
-    // Legacy-only databases need a blank first entry to align with HC-Tree's initial CID.
-    if (!experimentalHCTree && !journalNames.empty()) {
+    // This allows us to create a blank HC-Tree journal DB and sync it from any other DB that still contains commit 1.
+    // Because hct_journal always contains an empty entry for CID 1, any other DB that it might sync from (even if it's WAL2) must have a matching
+    // emtpy entry for CID 1, or we won't be able to sync correctly.
+    // hct_journal DBs will create this anyway, so we do it explicitly for other DB types.
+    if (!experimentalHCTree) {
         SQResult latest;
         SASSERT(!SQuery(db, "SELECT MAX(id) FROM (" + _getJournalQuery(journalNames, {"SELECT MAX(id) AS id FROM"}, true) + ")", latest));
-        if (latest.empty() || latest[0][0].empty()) {
+        if (latest.empty()) {
             SASSERT(!SQuery(db, "INSERT INTO " + journalNames.front() + " (id, query, hash) VALUES (1, X'', '')"));
         }
     }
@@ -330,7 +336,7 @@ void SQLite::initializeHCTreeJournal(sqlite3* db, const vector<string>& journalN
     }
 
     SASSERT(sqlite3_hct_journal_init(db) == SQLITE_OK);
-    SASSERT(!SQuery(db, "BEGIN IMMEDIATE"));
+    SASSERT(!SQuery(db, "BEGIN"));
     int result = SQLITE_OK;
     if (!legacy.empty()) {
         const uint64_t legacyCommitID = SToUInt64(legacy[0]["id"]);
@@ -618,13 +624,20 @@ SQLite::~SQLite()
 
 void SQLite::exclusiveLockDB()
 {
-    // Block new writers, then let existing transactions finish. They no longer need
-    // writeLock after their first write, and all potential writers register before
-    // acquiring commitLock, so we must not hold commitLock while waiting for them.
-    _sharedData.writeLock.lock();
-    uint64_t count;
-    while ((count = _sharedData.openWriteTransactionCount.load())) {
-        _sharedData.openWriteTransactionCount.wait(count);
+    // After locking writeLock, we wait for all existing writers to finish. They will likely require commitLock
+    // as well, which we only acquire once they all complete. No new writes can start once we lock writeLock.
+    // This function blocks until in-progress writes finish.
+    try {
+        SINFO("Locking writeLock");
+        _sharedData.writeLock.lock();
+        SINFO("writeLock Locked");
+        uint64_t count;
+        while ((count = _sharedData.openWriteTransactionCount.load())) {
+            _sharedData.openWriteTransactionCount.wait(count);
+        }
+    } catch (const system_error& e) {
+        SWARN("Caught system_error calling _sharedData.writeLock, code: " << e.code() << ", message: " << e.what());
+        throw;
     }
     try {
         SINFO("Locking commitLock");
