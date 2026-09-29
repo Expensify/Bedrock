@@ -102,7 +102,12 @@ void BedrockCommand::stopTiming(TIMING_INFO type)
 
 void BedrockCommand::recordTiming(TIMING_INFO type, uint64_t startTime)
 {
-    timingInfo.emplace_back(type, startTime, STimeNow());
+    recordTiming(type, startTime, STimeNow());
+}
+
+void BedrockCommand::recordTiming(TIMING_INFO type, uint64_t startTime, uint64_t endTime)
+{
+    timingInfo.emplace_back(type, startTime, endTime);
 }
 
 bool BedrockCommand::areHttpsRequestsComplete() const
@@ -254,6 +259,8 @@ void BedrockCommand::finalizeTimingInfo()
     uint64_t queueBlockingTotal = 0;
     uint64_t queuePageLockTotal = 0;
     uint64_t commandThreadTotal = 0;
+    uint64_t commandThreadEntryTotal = 0;
+    uint64_t commandThreadInitializeTotal = 0;
     uint64_t dbHandleTotal = 0;
     for (const auto& entry: timingInfo) {
         if (get<0>(entry) == PREPEEK) {
@@ -289,6 +296,10 @@ void BedrockCommand::finalizeTimingInfo()
             queuePageLockTotal += get<2>(entry) - get<1>(entry);
         } else if (get<0>(entry) == COMMAND_THREAD) {
             commandThreadTotal += get<2>(entry) - get<1>(entry);
+        } else if (get<0>(entry) == COMMAND_THREAD_ENTRY) {
+            commandThreadEntryTotal += get<2>(entry) - get<1>(entry);
+        } else if (get<0>(entry) == COMMAND_THREAD_INITIALIZE) {
+            commandThreadInitializeTotal += get<2>(entry) - get<1>(entry);
         } else if (get<0>(entry) == DB_HANDLE) {
             dbHandleTotal += get<2>(entry) - get<1>(entry);
         }
@@ -311,6 +322,8 @@ void BedrockCommand::finalizeTimingInfo()
         {"processTime", processTotal},
         {"postProcessTime", postProcessTotal},
         {"commandThreadTime", commandThreadTotal},
+        {"commandThreadEntryTime", commandThreadEntryTotal},
+        {"commandThreadInitializeTime", commandThreadInitializeTotal},
         {"dbHandleTime", dbHandleTotal},
         {"totalTime", totalTime},
         {"unaccountedTime", unaccountedTime},
@@ -362,6 +375,8 @@ void BedrockCommand::finalizeTimingInfo()
           "total:" << totalTime / 1000 << ", "
           "unaccounted:" << unaccountedTime / 1000 << ", "
           "commandThread:" << commandThreadTotal / 1000 << ", "
+          "commandThreadEntry:" << commandThreadEntryTotal / 1000 << ", "
+          "commandThreadInitialize:" << commandThreadInitializeTotal / 1000 << ", "
           "dbHandle:" << dbHandleTotal / 1000 << ", "
           "blockingCommitThreadTime:" << blockingCommitThreadTime / 1000 << ", "
           "exclusiveTransactionLockTime:" << exclusiveTransactionLockTime / 1000 <<

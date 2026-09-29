@@ -2491,12 +2491,23 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
                             // disconnected, abort the command.
                             atomic<bool>& commandShouldAbortFlag = command->shouldAbort;
                             uint64_t commandThreadStartTime = STimeNow();
+                            auto commandThreadConstructorStartTime = chrono::steady_clock::now();
                             thread commandThread(
                                 [&, commandThreadStartTime]() {
+                                uint64_t commandThreadEntryTime = STimeNow();
                                 SInitialize(threadName + "_cmd");
-                                command->recordTiming(BedrockCommand::COMMAND_THREAD, commandThreadStartTime);
+                                uint64_t commandThreadInitializeTime = STimeNow();
+                                command->recordTiming(BedrockCommand::COMMAND_THREAD_ENTRY, commandThreadStartTime, commandThreadEntryTime);
+                                command->recordTiming(BedrockCommand::COMMAND_THREAD_INITIALIZE, commandThreadEntryTime, commandThreadInitializeTime);
+                                command->recordTiming(BedrockCommand::COMMAND_THREAD, commandThreadStartTime, commandThreadInitializeTime);
                                 runCommand(move(command));
                             });
+                            auto commandThreadConstructorTime = chrono::duration_cast<chrono::microseconds>(chrono::steady_clock::now() - commandThreadConstructorStartTime).count();
+                            if (commandThreadConstructorTime > 20'000) {
+                                SINFO("Slow command thread construction", {
+                                    {"commandThreadConstructorTimeUS", to_string(commandThreadConstructorTime)},
+                                });
+                            }
 
                             // Now that the command is running, we wait for it to complete (if it has a socket, and hasn't finished by the time we get to this point).
                             // When this happens, destructionCallback fires, sets `finished` to true, and we can move on to the next request.
