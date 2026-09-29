@@ -114,8 +114,7 @@ struct NcursesOutputWriter::Impl
         << " completed (" << (current.empty() ? 100 : 100 * done / current.size()) << "%)"
         << "  Failed: " << failedTests << "  Passed: " << passes;
         line(0, header.str());
-        int failureHeight = std::min(height - 1, std::max(2, height / 3));
-        int failureStart = height - failureHeight;
+        int failureHeight = currentFailures.empty() ? 0 : std::min(height - 2, std::max(2, height / 3));
         std::vector<Fixture> active;
         for (const auto& fixture : current) {
             if (fixture.running) {
@@ -125,21 +124,23 @@ struct NcursesOutputWriter::Impl
         std::sort(active.begin(), active.end(), [](const auto& a, const auto& b) {
             return a.started < b.started;
         });
-        int visible = std::max(0, failureStart - 2);
-        int shown = static_cast<int>(active.size()) > visible ? std::max(0, visible - 1) : visible;
-        for (int i = 0; i < std::min(shown, static_cast < int > (active.size())); ++i) {
+        int availableRows = std::max(0, height - 2 - (failureHeight ? failureHeight + 1 : 0));
+        bool overflow = static_cast<int>(active.size()) > availableRows && availableRows > 0;
+        int shown = std::min(static_cast<int>(active.size()), availableRows - (overflow ? 1 : 0));
+        for (int i = 0; i < shown; ++i) {
             const auto& fixture = active[i];
             std::ostringstream row;
             row << clockText(duration_cast<seconds>(now - fixture.started)) << "  " << fixture.completed
             << '/' << fixture.total << "  " << fixture.name;
             line(i + 2, row.str());
         }
-        if (static_cast<int>(active.size()) > visible && visible > 0) {
-            line(failureStart - 1, "+" + std::to_string(active.size() - shown) + " more running");
+        if (overflow) {
+            line(2 + shown, "+" + std::to_string(active.size() - shown) + " more running");
         }
         if (failureHeight) {
+            int failureStart = shown || overflow ? 3 + shown + (overflow ? 1 : 0) : 2;
             line(failureStart, "Failed tests (" + std::to_string(currentFailures.size()) + "):");
-            int slots = failureHeight - 1;
+            int slots = height - failureStart - 1;
             size_t offset = currentFailures.size() > static_cast<size_t>(slots) ? currentFailures.size() - slots : 0;
             for (int i = 0; i < slots && offset + i < currentFailures.size(); ++i) {
                 line(failureStart + 1 + i, currentFailures[offset + i]);
