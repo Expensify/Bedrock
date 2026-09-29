@@ -779,7 +779,7 @@ bool SConstantTimeIEquals(const string& secret, const string& userInput)
 }
 
 // --------------------------------------------------------------------------
-list<int64_t> SParseIntegerList(const string& value, char separator)
+list<int64_t> SParseIntegerList(string_view value, char separator)
 {
     list<int64_t> valueList;
     list<string> strings = SParseList(value, separator);
@@ -790,7 +790,7 @@ list<int64_t> SParseIntegerList(const string& value, char separator)
 }
 
 // --------------------------------------------------------------------------
-set<int64_t> SParseIntegerSet(const string& value, char separator)
+set<int64_t> SParseIntegerSet(string_view value, char separator)
 {
     set<int64_t> valueSet;
     list<string> strings = SParseList(value, separator);
@@ -801,7 +801,7 @@ set<int64_t> SParseIntegerSet(const string& value, char separator)
 }
 
 // --------------------------------------------------------------------------
-vector<int64_t> SParseIntegerVector(const string& value, char separator)
+vector<int64_t> SParseIntegerVector(string_view value, char separator)
 {
     vector<int64_t> valueVector;
     list<string> strings = SParseList(value, separator);
@@ -851,7 +851,7 @@ bool SParseList(string_view value, list<string>& valueList, char separator)
 }
 
 // --------------------------------------------------------------------------
-set<string> SParseSet(const string& value, char separator)
+set<string> SParseSet(string_view value, char separator)
 {
     set<string> valueSet;
     list<string> strings = SParseList(value, separator);
