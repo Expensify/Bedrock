@@ -31,7 +31,7 @@ A summary of the client protocol. Sections 3 to 11 give the full detail.
 A message is a method line, some `name: value` fields, a blank line, and an
 optional body. A request:
 
-```
+```bwp
 Status
 Content-Length: 0
 
@@ -39,7 +39,7 @@ Content-Length: 0
 
 A response has the same shape, with a status in place of the method line:
 
-```
+```bwp
 200 OK
 Content-Length: 55
 commitCount: 1409377
@@ -1415,7 +1415,7 @@ A request typed by hand into `netcat`. Both lines end with a bare LF, and
 `Content-Length` is absent. Section 4.4 requires a sender to send it; a
 receiver accepts its absence so that a command can be typed this way.
 
-```
+```bwp
 Status
 
 ```
@@ -1423,7 +1423,7 @@ Status
 The response. `Content-Length`, `commitCount`, and `nodeName` are always
 present. Do not read anything into the field order; see section 3.3.
 
-```
+```bwp
 200 OK
 Content-Length: 55
 commitCount: 1409377
@@ -1436,7 +1436,7 @@ nodeName: bedrock1
 
 A write command. The body is empty, so every parameter travels as a field:
 
-```
+```bwp
 CreateThing
 Content-Length: 0
 name: widget
@@ -1445,7 +1445,7 @@ writeConsistency: 2
 
 ```
 
-```
+```bwp
 200 OK
 Content-Length: 19
 commitCount: 1409378
@@ -1459,13 +1459,13 @@ nodeName: bedrock1
 The method-line shorthand of section 8.1, with the default human-readable
 rendering:
 
-```
+```bwp
 Query: SELECT 1 AS foo, 2 AS bar;
 Content-Length: 0
 
 ```
 
-```
+```bwp-lf
 200 OK
 Content-Length: 16
 commitCount: 1409377
@@ -1477,7 +1477,7 @@ foo | bar
 
 The same query with `Format: json`, using the field form of the query:
 
-```
+```bwp
 Query
 Content-Length: 0
 Format: json
@@ -1485,7 +1485,7 @@ query: SELECT 1 AS foo, 2 AS bar;
 
 ```
 
-```
+```bwp
 200 OK
 Content-Length: 40
 commitCount: 1409377
@@ -1505,7 +1505,7 @@ A JSON document carried in a field value. The logical value is:
 On the wire it is one physical line. Every literal backslash is doubled, so the
 JSON's own `\\` becomes `\\\\` and its `\n` becomes `\\n`:
 
-```
+```bwp
 CreateThing
 Content-Length: 0
 data: {"path":"C:\\\\tmp","note":"line one\\nline two"}
@@ -1516,7 +1516,7 @@ A bound parameter in the same style. The parameter `:name` becomes the field
 name `sql-param-#3Aname`, because `:` is 0x3A and section 6.2 encodes it as
 `#3A`. The value is a type tag followed by a base64 payload, `T` for text:
 
-```
+```bwp
 Query
 Content-Length: 0
 query: SELECT * FROM thing WHERE name = :name;
@@ -1526,7 +1526,7 @@ sql-param-#3Aname: TZm9vYmFy
 
 ### A.5 Fire and Forget
 
-```
+```bwp
 SomeSlowCommand
 Connection: forget
 Content-Length: 0
@@ -1536,7 +1536,7 @@ Content-Length: 0
 The response is sent before the command runs, and the node closes the connection
 immediately after. The real outcome is never delivered:
 
-```
+```bwp
 202 Successfully queued
 Connection: close
 Content-Length: 0
@@ -1548,7 +1548,7 @@ Content-Length: 0
 A `402` from the `Query` command, with the `error` field and a caret diagram in
 the body:
 
-```
+```bwp-lf
 402 Bad query
 Content-Length: 52
 commitCount: 1409377
@@ -1565,7 +1565,7 @@ SELCT 1;
 A `SYNCHRONIZE_RESPONSE` carrying two commits (section 13.5). The body is two
 complete messages, each self-delimited by its own `Content-Length`:
 
-```
+```bwp-crlf
 SYNCHRONIZE_RESPONSE
 CommitCount: 1409377
 Content-Length: 218
