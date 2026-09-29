@@ -5,7 +5,7 @@
 #include <libstuff/libstuff.h>
 #include <test/lib/BedrockTester.h>
 #include <test/lib/ConsoleOutputWriter.h>
-#include <test/lib/NcursesOutputWriter.h>
+#include <test/output/NcursesOutputWriter.h>
 #include <libstuff/SSSLState.h>
 
 /*

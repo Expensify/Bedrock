@@ -1,4 +1,4 @@
-#include <test/lib/NcursesOutputWriter.h>
+#include <test/output/NcursesOutputWriter.h>
 #include <test/lib/ConsoleOutputWriter.h>
 #include <ncurses.h>
 #include <algorithm>
@@ -181,7 +181,8 @@ NcursesOutputWriter::NcursesOutputWriter() : impl(std::make_unique<Impl>())
     if (!impl->screen) {
         // A local terminal may advertise a newer TERM than the VM has in its terminfo database.
         // Modern terminals support the xterm-256color control sequences we use here.
-        impl->screen = newterm("xterm-256color", impl->tty, stdin);
+        static char fallbackTerm[] = "xterm-256color";
+        impl->screen = newterm(fallbackTerm, impl->tty, stdin);
     }
     if (!impl->screen) {
         fclose(impl->tty);

@@ -6,7 +6,7 @@
 #include <libstuff/SData.h>
 #include <test/lib/BedrockTester.h>
 #include <test/lib/ConsoleOutputWriter.h>
-#include <test/lib/NcursesOutputWriter.h>
+#include <test/output/NcursesOutputWriter.h>
 
 /*
  * This is based on the 'test' application in the parent directory to this one, but specifically aims to test the
