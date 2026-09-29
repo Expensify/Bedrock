@@ -19,8 +19,6 @@ public:
         QUEUE_BLOCKING,
         QUEUE_PAGE_LOCK,
         COMMAND_THREAD,
-        COMMAND_THREAD_ENTRY,
-        COMMAND_THREAD_INITIALIZE,
         DB_HANDLE,
 
         // Time spent in the blockingCommit thread (not the same as "commit lock time")
@@ -145,7 +143,9 @@ public:
 
     // Record an interval that began outside the command's execution thread.
     void recordTiming(TIMING_INFO type, uint64_t startTime);
-    void recordTiming(TIMING_INFO type, uint64_t startTime, uint64_t endTime);
+
+    // Record the phases between constructing a command thread and finishing its initialization.
+    void recordCommandThreadTiming(uint64_t startTime, uint64_t entryTime, uint64_t initializeTime);
 
     // Add a summary of our timing info to our response object.
     void finalizeTimingInfo();
@@ -365,6 +365,9 @@ private:
 
     // used as a temporary variable for startTiming and stopTiming.
     tuple<TIMING_INFO, uint64_t, uint64_t> _inProgressTiming;
+
+    uint64_t _commandThreadEntryTime = 0;
+    uint64_t _commandThreadInitializeTime = 0;
 
     // Get the absolute timeout value for this command based on it's request. This is used to initialize _timeout.
     static int64_t _getTimeout(const SData& request, const uint64_t scheduledTime);
