@@ -19,15 +19,14 @@ codes, and connection semantics, for three uses of the same envelope:
 3. Cluster replication.
 
 This document describes the protocol as deployed. Section 15 lists behaviour
-that appears to be defective; that behaviour is documented but is not normative,
-and implementations should not rely on it.
+that appears to be defective. That behaviour is recorded so it is not mistaken
+for design, and is subject to change without notice.
 
 ---
 
 ## The Protocol in Brief
 
-Everything needed to write a working client. The rest of the document is
-reference detail.
+A summary of the client protocol. Sections 3 to 11 give the full detail.
 
 A message is a method line, some `name: value` fields, a blank line, and an
 optional body. A request:
@@ -65,7 +64,7 @@ Six rules cover almost all of it:
 6. **Connections are persistent.** Send `Connection: close` when finished, or
    the server waits for another request.
 
-Two things that surprise newcomers:
+Two further properties, both unlike HTTP:
 
 - Field order carries no meaning, and a response will not echo the order you
   sent.
@@ -615,12 +614,9 @@ application's responsibility.
 BWP has no `Content-Type` negotiation, and Bedrock never sets the field. A
 client determines the body format from the command it invoked.
 
-In practice:
-
 - Most commands return a JSON object.
-- The `Query` command is the notable exception. By default it returns a
-  human-readable table, and returns JSON only when the request sets
-  `Format: json`.
+- The `Query` command returns a human-readable table by default, and JSON only
+  when the request sets `Format: json`.
 
 A client that must handle an unfamiliar command SHOULD attempt a JSON parse and
 treat failure as "this body is not JSON" rather than as an error. The correct handling of a body like this is undefined.
@@ -794,9 +790,9 @@ below follow from what a node did before it answered.
 | `500 Refused` | **no** | the command matched one that previously crashed a node (section 14.6). Retrying spreads the crash. |
 | any other error, request fully sent | only if the command is idempotent by its own semantics | the outcome is unknown |
 
-The post-commit case is the subtle one, and it is why section 8.4 insists the
-reason phrase is load-bearing. All three timeout statuses share the code `555`;
-only the words distinguish a rolled-back timeout from a post-commit one.
+All three timeout statuses share the code `555`. Only the reason phrase
+distinguishes a rolled-back timeout from a post-commit one, which is why
+section 8.4 treats the reason phrase as part of the protocol.
 
 A client MAY attach its own bookkeeping fields to a request, such as a flag
 recording that a command is safe to replay. A node ignores fields it does not
@@ -1302,7 +1298,7 @@ scope for this document.
 
 Escaping and unescaping operate on NUL-terminated strings. A field value
 containing an embedded NUL is silently truncated at that octet, on both send and
-receive. No error is raised; the value simply arrives short.
+receive. No error is raised, and the value arrives short.
 
 This is why bound parameters base64-encode their text and blob payloads rather
 than placing them in a field directly.
