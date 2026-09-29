@@ -514,7 +514,7 @@ bool SIContains(const string& haystack, const string& needle);
 // Prefix comparison retains the length check and strncmp semantics of the buffer overload.
 bool SStartsWith(string_view haystack, string_view needle);
 bool SStartsWith(const char* haystack, size_t haystackSize, const char* needle, size_t needleSize);
-bool SEndsWith(const string& haystack, const string& needle);
+bool SEndsWith(string_view haystack, string_view needle);
 bool SConstantTimeEquals(const string& secret, const string& userInput);
 bool SConstantTimeIEquals(const string& secret, const string& userInput);
 
@@ -570,7 +570,7 @@ string SToUpper(string value);
 
 // String alteration
 string SCollapse(const string& lhs);
-string STrim(const string& lhs);
+string STrim(string_view lhs);
 string SStrip(const string& lhs);
 string SStrip(const string& lhs, const string& chars, bool charsAreSafe);
 string SStripAllBut(const string& lhs, const string& chars);
@@ -586,7 +586,7 @@ string SBefore(const string& value, const string& needle);
 string SAfter(const string& value, const string& needle);
 string SAfterLastOf(const string& value, const string& needle);
 string SAfterUpTo(const string& value, const string& after, const string& upTo);
-string SReplace(const string& value, const string& find, const string& replace);
+string SReplace(string_view value, string_view find, string_view replace);
 string SReplaceAllBut(const string& value, const string& safeChars, char replaceChar);
 string SReplaceAll(const string& value, const string& unsafeChars, char replaceChar);
 int SStateNameToInt(const char* states[], const string& stateName, unsigned int numStates);

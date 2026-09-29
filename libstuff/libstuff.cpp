@@ -466,21 +466,18 @@ bool SStartsWith(const char* haystack, size_t haystackSize, const char* needle, 
 }
 
 // --------------------------------------------------------------------------
-string STrim(const string& lhs)
+string STrim(string_view lhs)
 {
     // Just trim off the front and back whitespace
-    if (!lhs.empty()) {
-        const char* front(lhs.data());
-        const char* back(&lhs.back());
-        while (*front && isspace(*front)) {
-            ++front;
-        }
-        while (back > front && isspace(*back)) {
-            --back;
-        }
-        return string(front, ++back);
+    size_t front = 0;
+    size_t back = lhs.size();
+    while (front < back && isspace(static_cast<unsigned char>(lhs[front]))) {
+        ++front;
     }
-    return "";
+    while (back > front && isspace(static_cast<unsigned char>(lhs[back - 1]))) {
+        --back;
+    }
+    return string(lhs.substr(front, back - front));
 }
 
 // --------------------------------------------------------------------------
@@ -665,18 +662,18 @@ string SUnescape(const char* lhs, char escaper)
 }
 
 // --------------------------------------------------------------------------
-string SReplace(const string& value, const string& find, const string& replace)
+string SReplace(string_view value, string_view find, string_view replace)
 {
     // What are you trying to pull sending an empty string here?
     if (find.empty()) {
-        return value;
+        return string(value);
     }
 
     // Look for first match
     size_t pos = value.find(find);
-    if (pos == string::npos) {
+    if (pos == string_view::npos) {
         // No matches, return original
-        return value;
+        return string(value);
     }
 
     // Reserve a reasonable size (use value.size() as minimum, will grow if needed)
@@ -687,15 +684,15 @@ string SReplace(const string& value, const string& find, const string& replace)
     size_t lastPos = 0;
     do
     {
-        // Append text before match using pointers (avoids substr)
-        out.append(value.data() + lastPos, pos - lastPos);
+        // Append text before match without copying it into a temporary string
+        out.append(value.substr(lastPos, pos - lastPos));
         out.append(replace);
         lastPos = pos + find.size();
         pos = value.find(find, lastPos);
-    } while (pos != string::npos);
+    } while (pos != string_view::npos);
 
     // Append remaining text
-    out.append(value.data() + lastPos, value.size() - lastPos);
+    out.append(value.substr(lastPos));
     return out;
 }
 
@@ -3540,13 +3537,9 @@ bool SIEquals(string_view lhs, string_view rhs)
     return lhs.size() == rhs.size() && (lhs.empty() || strncasecmp(lhs.data(), rhs.data(), lhs.size()) == 0);
 }
 
-bool SEndsWith(const string& haystack, const string& needle)
+bool SEndsWith(string_view haystack, string_view needle)
 {
-    if (needle.size() > haystack.size()) {
-        return false;
-    } else {
-        return haystack.substr(haystack.size() - needle.size()) == needle;
-    }
+    return needle.size() <= haystack.size() && haystack.substr(haystack.size() - needle.size()) == needle;
 }
 
 string SStripAllBut(const string& lhs, const string& chars)
