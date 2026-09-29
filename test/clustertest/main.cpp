@@ -107,7 +107,8 @@ int main(int argc, char* argv[])
         newOutput = std::make_unique<tpunit::NcursesOutputWriter>();
         activeOutput = newOutput.get();
     }
-    auto initThread = []() {};
+    auto initThread = []() {
+    };
     {
         for (int i = 0; i < repeatCount; i++) {
             try {
