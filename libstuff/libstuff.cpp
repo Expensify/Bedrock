@@ -1872,7 +1872,7 @@ list<string> SParseJSONArray(const string& array, const string& nullValue)
 }
 
 // --------------------------------------------------------------------------
-string SGZip(const string& content)
+string SGZip(string_view content)
 {
     z_stream stream;
 
@@ -1880,7 +1880,7 @@ string SGZip(const string& content)
     stream.zfree = Z_NULL;
     stream.opaque = Z_NULL;
 
-    stream.next_in = (unsigned char*) content.c_str();
+    stream.next_in = (unsigned char*) (content.empty() ? "" : content.data());
     stream.avail_in = (unsigned int) content.size();
 
     int GZIP_ENCODING = 16;
@@ -1923,7 +1923,7 @@ string SGZip(const string& content)
     }
 }
 
-string SGUnzip(const string& content)
+string SGUnzip(string_view content)
 {
     const int CHUNK = 16384;
     int status;
@@ -1945,7 +1945,7 @@ string SGUnzip(const string& content)
     }
 
     strm.avail_in = (decltype(strm.avail_in)) content.size();
-    strm.next_in = (unsigned char*) content.c_str();
+    strm.next_in = (unsigned char*) (content.empty() ? "" : content.data());
 
     do
     {
@@ -2720,19 +2720,19 @@ uint64_t SFileSize(const string& path)
 // Cryptography stuff
 /////////////////////////////////////////////////////////////////////////////
 
-string SHashSHA1(const string& buffer)
+string SHashSHA1(string_view buffer)
 {
     string result;
     result.resize(20);
-    mbedtls_sha1((unsigned char*) buffer.c_str(), buffer.size(), (unsigned char*) &result[0]);
+    mbedtls_sha1((unsigned char*) (buffer.empty() ? "" : buffer.data()), buffer.size(), (unsigned char*) &result[0]);
     return result;
 }
 
-string SHashSHA256(const string& buffer)
+string SHashSHA256(string_view buffer)
 {
     string result;
     result.resize(32);
-    mbedtls_sha256((unsigned char*) buffer.c_str(), buffer.size(), (unsigned char*) &result[0], 0);
+    mbedtls_sha256((unsigned char*) (buffer.empty() ? "" : buffer.data()), buffer.size(), (unsigned char*) &result[0], 0);
     return result;
 }
 
@@ -2751,9 +2751,9 @@ string SEncodeBase64(const unsigned char* buffer, size_t size)
     return out;
 }
 
-string SEncodeBase64(const string& bufferString)
+string SEncodeBase64(string_view bufferString)
 {
-    return SEncodeBase64((unsigned char*) bufferString.c_str(), bufferString.size());
+    return SEncodeBase64((unsigned char*) (bufferString.empty() ? "" : bufferString.data()), bufferString.size());
 }
 
 // --------------------------------------------------------------------------
@@ -2770,9 +2770,9 @@ string SDecodeBase64(const unsigned char* buffer, size_t size)
     return out;
 }
 
-string SDecodeBase64(const string& bufferString)
+string SDecodeBase64(string_view bufferString)
 {
-    return SDecodeBase64((unsigned char*) bufferString.c_str(), bufferString.size());
+    return SDecodeBase64((unsigned char*) (bufferString.empty() ? "" : bufferString.data()), bufferString.size());
 }
 
 // --------------------------------------------------------------------------

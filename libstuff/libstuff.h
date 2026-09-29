@@ -739,14 +739,14 @@ uint64_t SFileSize(const string& path);
 // Crypto stuff
 // --------------------------------------------------------------------------
 // Various hashing functions
-string SHashSHA1(const string& buffer);
-string SHashSHA256(const string& buffer);
+string SHashSHA1(string_view buffer);
+string SHashSHA256(string_view buffer);
 
 // Various encoding/decoding functions
 string SEncodeBase64(const unsigned char* buffer, const size_t size);
-string SEncodeBase64(const string& buffer);
+string SEncodeBase64(string_view buffer);
 string SDecodeBase64(const unsigned char* buffer, const size_t size);
-string SDecodeBase64(const string& buffer);
+string SDecodeBase64(string_view buffer);
 
 // HMAC (for use with Amazon S3)
 string SHMACSHA1(const string& key, const string& buffer);
@@ -819,8 +819,8 @@ string STIMESTAMP_MS(uint64_t time);
 // Miscellaneous stuff
 // --------------------------------------------------------------------------
 // Compression
-string SGZip(const string& content);
-string SGUnzip(const string& content);
+string SGZip(string_view content);
+string SGUnzip(string_view content);
 
 // Command-line helpers
 STable SParseCommandLine(int argc, char* argv[]);
