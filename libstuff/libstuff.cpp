@@ -469,6 +469,9 @@ bool SStartsWith(const char* haystack, size_t haystackSize, const char* needle, 
 string STrim(string_view lhs)
 {
     // Just trim off the front and back whitespace
+    if (lhs.empty()) {
+        return "";
+    }
     size_t front = 0;
     size_t back = lhs.size();
     while (front < back && isspace(static_cast<unsigned char>(lhs[front]))) {
@@ -664,6 +667,9 @@ string SUnescape(const char* lhs, char escaper)
 // --------------------------------------------------------------------------
 string SReplace(string_view value, string_view find, string_view replace)
 {
+    if (value.empty()) {
+        return "";
+    }
     // What are you trying to pull sending an empty string here?
     if (find.empty()) {
         return string(value);
