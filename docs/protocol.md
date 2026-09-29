@@ -53,9 +53,8 @@ Six rules cover almost all of it:
 1. **End every line with CRLF.** A receiver also accepts a bare LF, which is
    what typing into `netcat` produces.
 2. **A blank line ends the fields.** Everything after it is the body.
-3. **`Content-Length` gives the body length in octets.** Send it, and make it
-   exact, on any connection you will reuse. See section 4.4; this is the rule
-   most often got wrong.
+3. **Always send `Content-Length`, and make it exact.** It is the body length
+   in octets. See section 4.4.
 4. **Field names are case-insensitive and must not contain a colon.** Field
    values are backslash-escaped, so a value can carry a newline as `\n` and
    therefore a whole JSON document on one line.
@@ -357,30 +356,26 @@ depends on how TCP happened to segment the stream. See section 15.2.
 `Content-Length: 0` is distinct from an absent `Content-Length`: it selects
 **Explicit length** with an empty body.
 
-### 4.4 Content-Length: Who Sets It, Who Reads It
+### 4.4 Content-Length
 
-This is a commonly misunderstood part of the protocol, because the two directions do different things.
+A sender MUST send `Content-Length` on every message. It MUST be a plain
+decimal integer, and it MUST equal the body length in octets. It is sent even
+when the body is empty, as `Content-Length: 0`.
 
-**A receiver reads `Content-Length` and depends on it.** It is how the end of
-the body is found under **Explicit length**. A wrong value silently mis-frames
-every subsequent message on that connection.
+A receiver MUST accept a message without `Content-Length` and frame it with
+**Read to end**. This exists so that a command can be typed by hand, where
+counting octets is impractical.
 
-**A sender always emits a `Content-Length` computed from the body it is
-actually sending, and discards any value the caller asked for.** It is emitted
-unconditionally, even for an empty body, so that there is no ambiguity. A
-`Content-Length` on the wire is therefore always the true body length.
+Two asymmetries follow from the rules above.
 
-The obligations on a client follow from that:
+**A wrong value is not detected.** A receiver has no way to check
+`Content-Length` against the body, so a wrong value mis-frames every subsequent
+message on the connection with no error.
 
-| Requirement | Detail |
-|---|---|
-| MUST be exact | If `Content-Length` is present, it MUST equal the body length in octets. |
-| MUST be present when reusing a connection | Omitting it selects **Read to end**, which would swallow whatever the client sends next. The same applies when pipelining. |
-| MUST be a plain decimal integer | No sign, no whitespace, no units. See section 15.3. |
-| MAY be omitted for a one-shot request | A single request on a connection the client will not reuse can rely on **Read to end**. This is what makes interactive `netcat` use possible. |
-
-A client that builds messages through a library which computes `Content-Length`
-should not set the field at all; whatever it sets will be replaced.
+**A supplied value is discarded on output.** A sender computes
+`Content-Length` from the body it is actually sending. A caller that sets the
+field is overridden, so a `Content-Length` on the wire is always the true body
+length.
 
 ### 4.5 Pipelining
 
@@ -1313,10 +1308,8 @@ segmentation. If a peer pipelines a second message behind a length-less first
 message, and both arrive in one read, the second message becomes the first
 one's body.
 
-This is harmless for the interactive use the behaviour exists for, and dangerous
-for anything programmatic.
-
-For implementers: always send `Content-Length` (section 4.4).
+Section 4.4 requires a sender to send `Content-Length` for this reason. The
+receiver-side tolerance remains only to support hand-typed commands.
 
 ### 15.3 Malformed Content-Length Is Not Handled
 
@@ -1418,9 +1411,9 @@ those conventions.
 
 ### A.1 Minimal Request and Response
 
-A request as a person would type it into `netcat`. Both lines end with a bare
-LF, and there is no `Content-Length`, which is permitted for one-shot
-interactive use (section 4.4):
+A request typed by hand into `netcat`. Both lines end with a bare LF, and
+`Content-Length` is absent. Section 4.4 requires a sender to send it; a
+receiver accepts its absence so that a command can be typed this way.
 
 ```
 Status
