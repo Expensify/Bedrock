@@ -775,7 +775,7 @@ string SQ(int64_t val);
 string SQ(double val);
 string SQList(string_view val, bool integersOnly = true);
 
-template<typename Container> string SQList(const Container& valueList)
+template<typename Container> requires(!convertible_to<const Container&, string_view>) string SQList(const Container& valueList)
 {
     list<string> safeValues;
     for (typename Container::const_iterator valueIt = valueList.begin(); valueIt != valueList.end(); ++valueIt) {
