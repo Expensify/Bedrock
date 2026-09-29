@@ -178,6 +178,11 @@ NcursesOutputWriter::NcursesOutputWriter() : impl(std::make_unique<Impl>())
     fcntl(fileno(impl->tty), F_SETFD, FD_CLOEXEC);
     impl->screen = newterm(nullptr, impl->tty, stdin);
     if (!impl->screen) {
+        // A local terminal may advertise a newer TERM than the VM has in its terminfo database.
+        // Modern terminals support the xterm-256color control sequences we use here.
+        impl->screen = newterm("xterm-256color", impl->tty, stdin);
+    }
+    if (!impl->screen) {
         fclose(impl->tty);
         impl->tty = nullptr;
         throw std::runtime_error("Could not initialize ncurses");
