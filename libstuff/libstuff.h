@@ -532,13 +532,13 @@ private:
 
     void* regex;
 
-    friend SRECompiledRegex SRECompile(const string& regExp, bool caseSensitive);
-    friend bool SREMatch(const SRECompiledRegex& regExp, const string& input, bool partialMatch, vector<string>* matches, size_t startOffset, size_t* matchOffset);
-    friend string SREReplace(const SRECompiledRegex& regExp, const string& input, const string& replacement);
+    friend SRECompiledRegex SRECompile(string_view regExp, bool caseSensitive);
+    friend bool SREMatch(const SRECompiledRegex& regExp, string_view input, bool partialMatch, vector<string>* matches, size_t startOffset, size_t* matchOffset);
+    friend string SREReplace(const SRECompiledRegex& regExp, string_view input, string_view replacement);
 };
 
 // Compiles a regular expression for reuse. Case sensitivity is fixed when the expression is compiled.
-SRECompiledRegex SRECompile(const string& regExp, bool caseSensitive = true);
+SRECompiledRegex SRECompile(string_view regExp, bool caseSensitive = true);
 
 // Unless `partialMatch` is specified, perform a full regex match (the '^' and '$' symbols are implicit).
 //
@@ -549,17 +549,17 @@ SRECompiledRegex SRECompile(const string& regExp, bool caseSensitive = true);
 //
 // If matchOffset is supplied, and a match is found, it will be set to the offset of the first character of the matched substring.
 // To find the end of the matched substring, you can do something like matchOffset + matches[0].size().
-bool SREMatch(const string& regExp, const string& input, bool caseSensitive = true, bool partialMatch = false, vector<string>* matches = nullptr, size_t startOffset = 0, size_t* matchOffset = nullptr);
-bool SREMatch(const SRECompiledRegex& regExp, const string& input, bool partialMatch = false, vector<string>* matches = nullptr, size_t startOffset = 0, size_t* matchOffset = nullptr);
+bool SREMatch(string_view regExp, string_view input, bool caseSensitive = true, bool partialMatch = false, vector<string>* matches = nullptr, size_t startOffset = 0, size_t* matchOffset = nullptr);
+bool SREMatch(const SRECompiledRegex& regExp, string_view input, bool partialMatch = false, vector<string>* matches = nullptr, size_t startOffset = 0, size_t* matchOffset = nullptr);
 
 // Matches every instance of regExp in the input string. Returns a vector of vectors or strings.
 // The outer vector has one entry for each match found. The inner vectors contain first the entire matched substring, and following that, each match group
-vector<vector<string>> SREMatchAll(const string& regExp, const string& input, bool caseSensitive = true);
-vector<vector<string>> SREMatchAll(const SRECompiledRegex& regExp, const string& input);
+vector<vector<string>> SREMatchAll(string_view regExp, string_view input, bool caseSensitive = true);
+vector<vector<string>> SREMatchAll(const SRECompiledRegex& regExp, string_view input);
 
 // Replaces all instances of the matched `regExp` with `replacement` in `input`.
-string SREReplace(const string& regExp, const string& input, const string& replacement, bool caseSensitive = true);
-string SREReplace(const SRECompiledRegex& regExp, const string& input, const string& replacement);
+string SREReplace(string_view regExp, string_view input, string_view replacement, bool caseSensitive = true);
+string SREReplace(const SRECompiledRegex& regExp, string_view input, string_view replacement);
 
 // Redact values that should not be logged.
 void SRedactSensitiveValues(string& s);
