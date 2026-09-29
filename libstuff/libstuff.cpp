@@ -347,7 +347,7 @@ string SToHex(uint64_t value, int digits)
     return working;
 }
 
-string SToHex(const string& value)
+string SToHex(string_view value)
 {
     // Fill from front to back
     string working;
@@ -367,7 +367,7 @@ string SToHex(uint32_t value)
 }
 
 // --------------------------------------------------------------------------
-uint64_t SFromHex(const string& value)
+uint64_t SFromHex(string_view value)
 {
     // Convert one digit at a time
     uint64_t binValue = 0;
@@ -703,7 +703,7 @@ string SReplace(string_view value, string_view find, string_view replace)
 }
 
 // --------------------------------------------------------------------------
-string SReplaceAllBut(const string& value, const string& safeChars, char replaceChar)
+string SReplaceAllBut(string_view value, string_view safeChars, char replaceChar)
 {
     // Build a lookup table for O(1) character checking
     bool isSafe[256] = {false};
@@ -721,7 +721,7 @@ string SReplaceAllBut(const string& value, const string& safeChars, char replace
 }
 
 // --------------------------------------------------------------------------
-string SReplaceAll(const string& value, const string& unsafeChars, char replaceChar)
+string SReplaceAll(string_view value, string_view unsafeChars, char replaceChar)
 {
     // Build a lookup table for O(1) character checking
     bool isUnsafe[256] = {false};
@@ -1445,7 +1445,7 @@ bool SParseHost(const string& host, string& domain, uint16_t& port)
 }
 
 // --------------------------------------------------------------------------
-string SEncodeURIComponent(const string& value, bool keepSpaces)
+string SEncodeURIComponent(string_view value, bool keepSpaces)
 {
     // Construct an encoded version.  According to:
     // http://developer.mozilla.org/en/docs/Core_JavaScript_1.5_Reference:Global_Functions:encodeURIComponent
@@ -3575,39 +3575,40 @@ string SStripTrim(const string& lhs)
     return STrim(SStrip(lhs));
 }
 
-string SBefore(const string& value, const string& needle)
+string SBefore(string_view value, string_view needle)
 {
     size_t pos = value.find(needle);
-    if (pos == string::npos) {
+    if (pos == string_view::npos || pos == 0) {
         return "";
     } else {
-        return value.substr(0, pos);
+        return string(value.substr(0, pos));
     }
 }
 
-string SAfter(const string& value, const string& needle)
+string SAfter(string_view value, string_view needle)
 {
     size_t pos = value.find(needle);
-    if (pos == string::npos) {
+    if (pos == string_view::npos || pos + needle.size() == value.size()) {
         return "";
     } else {
-        return value.substr(pos + needle.size());
+        return string(value.substr(pos + needle.size()));
     }
 }
 
-string SAfterLastOf(const string& value, const string& needle)
+string SAfterLastOf(string_view value, string_view needle)
 {
     size_t pos = value.find_last_of(needle);
-    if (pos == string::npos) {
+    if (pos == string_view::npos || pos + 1 == value.size()) {
         return "";
     } else {
-        return value.substr(pos + 1);
+        return string(value.substr(pos + 1));
     }
 }
 
-string SAfterUpTo(const string& value, const string& after, const string& upTo)
+string SAfterUpTo(string_view value, string_view after, string_view upTo)
 {
-    return SBefore(SAfter(value, after), upTo);
+    size_t pos = value.find(after);
+    return pos == string_view::npos ? "" : SBefore(value.substr(pos + after.size()), upTo);
 }
 
 void SAppend(string& lhs, const void* rhs, int num)

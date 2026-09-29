@@ -430,8 +430,8 @@ private:
 // Converting between various bases
 string SToHex(uint64_t value, int digits = 16);
 string SToHex(uint32_t value);
-string SToHex(const string& buffer);
-uint64_t SFromHex(const string& value);
+string SToHex(string_view buffer);
+uint64_t SFromHex(string_view value);
 string SStrFromHex(const string& buffer);
 string SBase32HexStringFromBase32(const string& buffer);
 string SHexStringFromBase32(const string& buffer);
@@ -582,13 +582,13 @@ string SEscape(const string& lhs, const string& unsafe, char escaper = '\\');
 string SUnescape(const char* lhs, char escaper);
 string SUnescape(const string& lhs, char escaper = '\\');
 string SStripTrim(const string& lhs);
-string SBefore(const string& value, const string& needle);
-string SAfter(const string& value, const string& needle);
-string SAfterLastOf(const string& value, const string& needle);
-string SAfterUpTo(const string& value, const string& after, const string& upTo);
+string SBefore(string_view value, string_view needle);
+string SAfter(string_view value, string_view needle);
+string SAfterLastOf(string_view value, string_view needle);
+string SAfterUpTo(string_view value, string_view after, string_view upTo);
 string SReplace(string_view value, string_view find, string_view replace);
-string SReplaceAllBut(const string& value, const string& safeChars, char replaceChar);
-string SReplaceAll(const string& value, const string& unsafeChars, char replaceChar);
+string SReplaceAllBut(string_view value, string_view safeChars, char replaceChar);
+string SReplaceAll(string_view value, string_view unsafeChars, char replaceChar);
 int SStateNameToInt(const char* states[], const string& stateName, unsigned int numStates);
 void SAppend(string& lhs, const void* rhs, int num);
 void SAppend(string& lhs, const string& rhs);
@@ -611,7 +611,7 @@ bool SHostIsValid(const string& host);
 string SGetDomain(const string& host);
 string SDecodeURIComponent(const char* buffer, int length);
 string SDecodeURIComponent(const string& value);
-string SEncodeURIComponent(const string& value, bool keepSpaces = false);
+string SEncodeURIComponent(string_view value, bool keepSpaces = false);
 
 // --------------------------------------------------------------------------
 // List stuff
