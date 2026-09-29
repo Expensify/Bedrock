@@ -1396,7 +1396,7 @@ string Value::serializePretty() const
     return JSON::Writer::serializePretty(*this);
 }
 
-Value Value::parse(const string& s)
+Value Value::parse(string_view s)
 {
     return move(*JSON::Parser::read(s));
 }

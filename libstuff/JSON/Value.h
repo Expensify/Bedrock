@@ -1046,7 +1046,7 @@ public:
     /**
      * Parse a json object from a string.
      */
-    static Value parse(const string& s);
+    static Value parse(string_view s);
 
     template<class T>
     static JSON::Value fromDataStructure(const map<string, T>& data)
