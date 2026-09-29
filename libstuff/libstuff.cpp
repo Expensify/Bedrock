@@ -399,11 +399,11 @@ string SStrFromHex(const string& buffer)
     return retVal;
 }
 
-string SBase32HexStringFromBase32(const string& buffer)
+string SBase32HexStringFromBase32(string_view buffer)
 {
     static const char map[] = "QRSTUV\0\0\0\0\0\0\0\0\0""0123456789ABCDEFGHIJKLMNOP";
     static const int mapLength = sizeof(map);
-    string out = buffer;
+    string out = buffer.empty() ? "" : string(buffer);
     int shiftedIndex;
     for (size_t i = 0; i < out.size(); i++) {
         shiftedIndex = out[i] - 50;
@@ -748,7 +748,7 @@ string SReplaceAll(string_view value, string_view unsafeChars, char replaceChar)
 }
 
 // --------------------------------------------------------------------------
-int SStateNameToInt(const char* states[], const string& stateName, unsigned int numStates)
+int SStateNameToInt(const char* states[], string_view stateName, unsigned int numStates)
 {
     // Converts an array of state names back to the index
     for (int i = 0; i < (int) numStates; i++) {
@@ -760,7 +760,7 @@ int SStateNameToInt(const char* states[], const string& stateName, unsigned int 
 }
 
 // --------------------------------------------------------------------------
-bool SConstantTimeEquals(const string& secret, const string& userInput)
+bool SConstantTimeEquals(string_view secret, string_view userInput)
 {
     // If one (and only one) of the parameters is zero length, fail now.  This
     // leaks no timing information and keeps us from having to worry about
@@ -2820,7 +2820,7 @@ string SHMACSHA256(const string& key, const string& buffer)
 /////////////////////////////////////////////////////////////////////////////
 
 // --------------------------------------------------------------------------
-string SQList(const string& val, bool integersOnly)
+string SQList(string_view val, bool integersOnly)
 {
     // Parse and verify
     list<string> dirtyList;
@@ -3632,9 +3632,9 @@ void SAppend(string& lhs, const string& rhs)
     lhs += rhs;
 }
 
-int SParseHTTP(const string& buffer, string& methodLine, STable& nameValueMap, string& content)
+int SParseHTTP(string_view buffer, string& methodLine, STable& nameValueMap, string& content)
 {
-    return SParseHTTP(buffer.c_str(), (int) buffer.size(), methodLine, nameValueMap, content);
+    return SParseHTTP(buffer.empty() ? "" : buffer.data(), buffer.size(), methodLine, nameValueMap, content);
 }
 
 string SComposeHTTP(const string& methodLine, const STable& nameValueMap, const string& content)
@@ -3667,9 +3667,9 @@ string SGetDomain(const string& host)
     }
 }
 
-string SDecodeURIComponent(const string& value)
+string SDecodeURIComponent(string_view value)
 {
-    return SDecodeURIComponent(value.c_str(), (int) value.size());
+    return value.empty() ? "" : SDecodeURIComponent(value.data(), (int) value.size());
 }
 
 bool SParseList(const char* value, list<string>& valueList, char separator)

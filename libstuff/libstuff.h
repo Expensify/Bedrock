@@ -433,7 +433,7 @@ string SToHex(uint32_t value);
 string SToHex(string_view buffer);
 uint64_t SFromHex(string_view value);
 string SStrFromHex(const string& buffer);
-string SBase32HexStringFromBase32(const string& buffer);
+string SBase32HexStringFromBase32(string_view buffer);
 string SHexStringFromBase32(const string& buffer);
 
 // Testing various conditions
@@ -515,7 +515,7 @@ bool SIContains(const string& haystack, const string& needle);
 bool SStartsWith(string_view haystack, string_view needle);
 bool SStartsWith(const char* haystack, size_t haystackSize, const char* needle, size_t needleSize);
 bool SEndsWith(string_view haystack, string_view needle);
-bool SConstantTimeEquals(const string& secret, const string& userInput);
+bool SConstantTimeEquals(string_view secret, string_view userInput);
 bool SConstantTimeIEquals(const string& secret, const string& userInput);
 
 class SRECompiledRegex {
@@ -589,13 +589,13 @@ string SAfterUpTo(string_view value, string_view after, string_view upTo);
 string SReplace(string_view value, string_view find, string_view replace);
 string SReplaceAllBut(string_view value, string_view safeChars, char replaceChar);
 string SReplaceAll(string_view value, string_view unsafeChars, char replaceChar);
-int SStateNameToInt(const char* states[], const string& stateName, unsigned int numStates);
+int SStateNameToInt(const char* states[], string_view stateName, unsigned int numStates);
 void SAppend(string& lhs, const void* rhs, int num);
 void SAppend(string& lhs, const string& rhs);
 
 // HTTP message management
 int SParseHTTP(const char* buffer, size_t length, string& methodLine, STable& nameValueMap, string& content);
-int SParseHTTP(const string& buffer, string& methodLine, STable& nameValueMap, string& content);
+int SParseHTTP(string_view buffer, string& methodLine, STable& nameValueMap, string& content);
 bool SParseRequestMethodLine(const string& methodLine, string& method, string& uri);
 bool SParseResponseMethodLine(const string& methodLine, string& protocol, int& code, string& reason);
 bool SParseURI(const char* buffer, int length, string& host, string& path);
@@ -610,7 +610,7 @@ bool SParseHost(const string& host, string& domain, uint16_t& port);
 bool SHostIsValid(const string& host);
 string SGetDomain(const string& host);
 string SDecodeURIComponent(const char* buffer, int length);
-string SDecodeURIComponent(const string& value);
+string SDecodeURIComponent(string_view value);
 string SEncodeURIComponent(string_view value, bool keepSpaces = false);
 
 // --------------------------------------------------------------------------
@@ -773,7 +773,7 @@ string SQ(unsigned val);
 string SQ(uint64_t val);
 string SQ(int64_t val);
 string SQ(double val);
-string SQList(const string& val, bool integersOnly = true);
+string SQList(string_view val, bool integersOnly = true);
 
 template<typename Container> string SQList(const Container& valueList)
 {
