@@ -213,7 +213,7 @@ string SComposeTime(const string& format, uint64_t when);
 uint64_t STimestampToEpoch(const string& format, const string& timestamp);
 uint64_t STimestampMSToEpoch(const string& format, const string& timestamp);
 timeval SToTimeval(uint64_t when);
-string SFirstOfMonth(const string& timeStamp, const int64_t& offset = 0);
+string SFirstOfMonth(string_view timeStamp, const int64_t& offset = 0);
 
 // Helpful class for timing
 struct SStopwatch
