@@ -4,6 +4,7 @@
 #include <libstuff/libstuff.h>
 #include <libstuff/SData.h>
 #include <test/lib/BedrockTester.h>
+#include <test/lib/ConsoleOutputWriter.h>
 
 /*
  * This is based on the 'test' application in the parent directory to this one, but specifically aims to test the
@@ -86,7 +87,6 @@ int main(int argc, char* argv[])
     if (args.isSet("-v")) {
         BedrockTester::VERBOSE_LOGGING = true;
         SLogLevel(LOG_DEBUG);
-        tpunit::_TestFixture::_verboseOutput = true;
     }
     if (args.isSet("-q")) {
         BedrockTester::QUIET_LOGGING = true;
@@ -94,10 +94,11 @@ int main(int argc, char* argv[])
     }
 
     int retval = 0;
+    tpunit::ConsoleOutputWriter outputWriter(args.isSet("-v"));
     {
         for (int i = 0; i < repeatCount; i++) {
             try {
-                retval = tpunit::Tests::run(include, exclude, before, after, threads);
+                retval = tpunit::Tests::run(include, exclude, before, after, threads, [](){}, &tpunit::_TestFixture::sorter, &outputWriter);
             } catch (...) {
                 cout << "Unhandled exception running tests!" << endl;
                 retval = 1;
