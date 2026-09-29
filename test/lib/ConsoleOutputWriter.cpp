@@ -5,40 +5,55 @@
 
 using namespace tpunit;
 
-ConsoleOutputWriter::ConsoleOutputWriter(bool verbose) : ConsoleOutputWriter(std::cout, verbose) {}
+ConsoleOutputWriter::ConsoleOutputWriter(bool verbose) : ConsoleOutputWriter(std::cout, verbose)
+{
+}
 
 ConsoleOutputWriter::ConsoleOutputWriter(std::ostream& output, bool verbose)
-    : output(output), verbose(verbose) {}
+    : output(output), verbose(verbose)
+{
+}
 
-void ConsoleOutputWriter::breakCheckLine() {
+void ConsoleOutputWriter::breakCheckLine()
+{
     if (!verbose && shortOutputColumn > 0) {
         output << '\n';
         shortOutputColumn = 0;
     }
 }
 
-void ConsoleOutputWriter::runStarted(size_t) {}
+void ConsoleOutputWriter::runStarted(const std::vector<PlannedFixture>&)
+{
+}
 
-void ConsoleOutputWriter::fixtureStarted(const std::string&, bool singleThreaded) {
+void ConsoleOutputWriter::fixtureStarted(size_t, const std::string&, bool singleThreaded)
+{
     if (singleThreaded) {
         output << "--------------\n";
     }
 }
 
-void ConsoleOutputWriter::fixtureFinished(const std::string&, std::chrono::milliseconds) {}
+void ConsoleOutputWriter::fixtureFinished(size_t, const std::string&, std::chrono::milliseconds)
+{
+}
 
-void ConsoleOutputWriter::fixtureSetupFailed(const std::string& fixture) {
+void ConsoleOutputWriter::fixtureSetupFailed(size_t, const std::string& fixture)
+{
     output << "\xE2\x9D\x8C !FAILED! \xE2\x9D\x8C initializing " << fixture << ". Skipping tests." << std::endl;
 }
 
-void ConsoleOutputWriter::fixtureTeardownFailed(const std::string& fixture) {
+void ConsoleOutputWriter::fixtureTeardownFailed(size_t, const std::string& fixture)
+{
     output << "\xE2\x9D\x8C !FAILED! \xE2\x9D\x8C cleaning up " << fixture << "." << std::endl;
 }
 
-void ConsoleOutputWriter::testStarted(const std::string&, const std::string&) {}
+void ConsoleOutputWriter::testStarted(size_t, const std::string&, const std::string&)
+{
+}
 
-void ConsoleOutputWriter::testFinished(const std::string&, const std::string& test, bool passed,
-                                       std::chrono::milliseconds duration, const std::string& bufferedInfo) {
+void ConsoleOutputWriter::testFinished(size_t, const std::string&, const std::string& test, bool passed,
+                                       std::chrono::milliseconds duration, const std::string& bufferedInfo)
+{
     std::ostringstream time;
     time << '(' << duration;
     if (duration > std::chrono::milliseconds(5000)) {
@@ -60,57 +75,67 @@ void ConsoleOutputWriter::testFinished(const std::string&, const std::string& te
             breakCheckLine();
         }
         output << bufferedInfo << "\xE2\x9D\x8C !FAILED! \xE2\x9D\x8C " << test << ' ' << time.str()
-               << (verbose ? "\n" : "\n\n");
+        << (verbose ? "\n" : "\n\n");
     }
 }
 
 void ConsoleOutputWriter::assertionFailed(const std::string&, const std::string&, int number,
-                                          const std::string& file, int line, const std::string& bufferedInfo) {
+                                          const std::string& file, int line, const std::string& bufferedInfo)
+{
     breakCheckLine();
     output << "   assertion #" << number << " at " << file << ':' << line << '\n' << bufferedInfo;
 }
 
 void ConsoleOutputWriter::exceptionCaught(const std::string&, const std::string&, int number,
                                           const std::string& method, const std::string& cause,
-                                          const std::string& bufferedInfo) {
+                                          const std::string& bufferedInfo)
+{
     breakCheckLine();
     output << "   exception #" << number << " from " << method << " with cause: " << cause << '\n' << bufferedInfo;
 }
 
 void ConsoleOutputWriter::trace(const std::string&, const std::string&, int number,
                                 const std::string& file, int line, const std::string& message,
-                                const std::string& bufferedInfo) {
+                                const std::string& bufferedInfo)
+{
     breakCheckLine();
     output << "   trace #" << number << " at " << file << ':' << line << ": " << message << '\n' << bufferedInfo;
 }
 
 void ConsoleOutputWriter::comparisonFailed(const std::string&, const std::string&,
-                                           const std::string& lhs, const std::string& rhs, bool isEqual) {
+                                           const std::string& lhs, const std::string& rhs, bool isEqual)
+{
     breakCheckLine();
     output << lhs << (isEqual ? " == " : " != ") << rhs << '\n';
 }
 
-void ConsoleOutputWriter::diagnostic(const std::string&, const std::string&, const std::string& message) {
+void ConsoleOutputWriter::diagnostic(const std::string&, const std::string&, const std::string& message)
+{
     output << message << std::endl;
 }
 
-void ConsoleOutputWriter::invalidPattern(const std::string& pattern) {
+void ConsoleOutputWriter::invalidPattern(const std::string& pattern)
+{
     output << "Invalid pattern: " << pattern << ", skipping." << std::endl;
 }
 
-void ConsoleOutputWriter::unnamedFixture() {
+void ConsoleOutputWriter::unnamedFixture()
+{
     output << "test has no name???" << std::endl;
 }
 
-void ConsoleOutputWriter::unmatchedPattern(const std::string& pattern) {
+void ConsoleOutputWriter::unmatchedPattern(const std::string& pattern)
+{
     output << "\xE2\x9D\x8C Could not find any test matching, make sure the test name is right: " << pattern << '\n';
 }
 
-void ConsoleOutputWriter::threadShutdown(int threadID) {
+void ConsoleOutputWriter::threadShutdown(int threadID)
+{
     output << "Thread " << threadID << " caught shutdown exception, exiting.\n";
 }
 
-void ConsoleOutputWriter::runFinished(const RunResult& result) {
+void ConsoleOutputWriter::runFinished(const RunResult& result)
+{
     output << "\n[ TEST RESULTS ] Passed: " << result.passes << ", Failed: " << result.failures << '\n';
     if (!result.failureNames.empty()) {
         output << "\nFailures:\n";
@@ -130,8 +155,8 @@ void ConsoleOutputWriter::runFinished(const RunResult& result) {
     for (size_t i = 0; i < std::min(size_t(10), testTimes.size()); ++i) {
         const auto& testTime = testTimes[testTimes.size() - i - 1];
         output << testTime.first << ": " << testTime.second << " : "
-               << (static_cast<double>(testTime.first.count()) / totalTestTime) * 100.0
-               << "% of total test time" << std::endl;
+        << (static_cast<double>(testTime.first.count()) / totalTestTime) * 100.0
+        << "% of total test time" << std::endl;
     }
     output << "Total test time across threads: " << totalTestTime << "ms" << std::endl;
 }

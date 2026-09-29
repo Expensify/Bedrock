@@ -218,6 +218,7 @@ namespace tpunit {
          perFixtureStats  _stats;
          recursive_mutex* _mutex;
          OutputWriter* _outputWriter = nullptr;
+         size_t _invocationID = 0;
          int _threadID;
 
          static bool sorter(_TestFixture* a, _TestFixture* b);
@@ -313,6 +314,8 @@ namespace tpunit {
          const char* name() {
             return _name;
          }
+
+         size_t testCount() const;
 
          static std::list<_TestFixture*>* tpunit_detail_fixture_list();
       protected:

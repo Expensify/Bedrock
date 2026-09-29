@@ -4,19 +4,18 @@
 #include <ostream>
 
 namespace tpunit {
-
 class ConsoleOutputWriter : public OutputWriter {
 public:
     explicit ConsoleOutputWriter(bool verbose = false);
     ConsoleOutputWriter(std::ostream& output, bool verbose = false);
 
-    void runStarted(size_t fixtureCount) override;
-    void fixtureStarted(const std::string& fixture, bool singleThreaded) override;
-    void fixtureFinished(const std::string& fixture, std::chrono::milliseconds duration) override;
-    void fixtureSetupFailed(const std::string& fixture) override;
-    void fixtureTeardownFailed(const std::string& fixture) override;
-    void testStarted(const std::string& fixture, const std::string& test) override;
-    void testFinished(const std::string& fixture, const std::string& test, bool passed,
+    void runStarted(const std::vector<PlannedFixture>& fixtures) override;
+    void fixtureStarted(size_t id, const std::string& fixture, bool singleThreaded) override;
+    void fixtureFinished(size_t id, const std::string& fixture, std::chrono::milliseconds duration) override;
+    void fixtureSetupFailed(size_t id, const std::string& fixture) override;
+    void fixtureTeardownFailed(size_t id, const std::string& fixture) override;
+    void testStarted(size_t id, const std::string& fixture, const std::string& test) override;
+    void testFinished(size_t id, const std::string& fixture, const std::string& test, bool passed,
                       std::chrono::milliseconds duration, const std::string& bufferedInfo) override;
     void assertionFailed(const std::string& fixture, const std::string& test, int number,
                          const std::string& file, int line, const std::string& bufferedInfo) override;
@@ -42,5 +41,4 @@ private:
     bool verbose;
     int shortOutputColumn = 0;
 };
-
 }

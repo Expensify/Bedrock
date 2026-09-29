@@ -8,12 +8,19 @@
 #include <vector>
 
 namespace tpunit {
-
 // All strings passed to a writer are valid for the duration of the callback. Callbacks
 // may come from test worker threads, but the runner serializes their delivery.
 class OutputWriter {
 public:
-    struct RunResult {
+    struct PlannedFixture
+    {
+        size_t id;
+        std::string name;
+        size_t testCount;
+    };
+
+    struct RunResult
+    {
         int passes;
         int failures;
         const std::set<std::string>& failureNames;
@@ -22,13 +29,13 @@ public:
 
     virtual ~OutputWriter() = default;
 
-    virtual void runStarted(size_t fixtureCount) = 0;
-    virtual void fixtureStarted(const std::string& fixture, bool singleThreaded) = 0;
-    virtual void fixtureFinished(const std::string& fixture, std::chrono::milliseconds duration) = 0;
-    virtual void fixtureSetupFailed(const std::string& fixture) = 0;
-    virtual void fixtureTeardownFailed(const std::string& fixture) = 0;
-    virtual void testStarted(const std::string& fixture, const std::string& test) = 0;
-    virtual void testFinished(const std::string& fixture, const std::string& test, bool passed,
+    virtual void runStarted(const std::vector<PlannedFixture>& fixtures) = 0;
+    virtual void fixtureStarted(size_t id, const std::string& fixture, bool singleThreaded) = 0;
+    virtual void fixtureFinished(size_t id, const std::string& fixture, std::chrono::milliseconds duration) = 0;
+    virtual void fixtureSetupFailed(size_t id, const std::string& fixture) = 0;
+    virtual void fixtureTeardownFailed(size_t id, const std::string& fixture) = 0;
+    virtual void testStarted(size_t id, const std::string& fixture, const std::string& test) = 0;
+    virtual void testFinished(size_t id, const std::string& fixture, const std::string& test, bool passed,
                               std::chrono::milliseconds duration, const std::string& bufferedInfo) = 0;
     virtual void assertionFailed(const std::string& fixture, const std::string& test, int number,
                                  const std::string& file, int line, const std::string& bufferedInfo) = 0;
@@ -47,5 +54,4 @@ public:
     virtual void threadShutdown(int threadID) = 0;
     virtual void runFinished(const RunResult& result) = 0;
 };
-
 }
