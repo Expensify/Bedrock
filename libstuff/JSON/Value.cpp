@@ -6,6 +6,7 @@
 #include <algorithm>
 
 #include <libstuff/libstuff.h>
+#include <libstuff/SQValue.h>
 
 using namespace JSON;
 
@@ -1399,6 +1400,12 @@ string Value::serializePretty() const
 Value Value::parse(string_view s)
 {
     return move(*JSON::Parser::read(s));
+}
+
+Value Value::parse(const SQValue& s)
+{
+    string scratch;
+    return parse(s.asStringView(scratch));
 }
 
 Value::operator int64_t() const
