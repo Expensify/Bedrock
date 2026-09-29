@@ -42,3 +42,5 @@ private:
     int shortOutputColumn = 0;
 };
 }
+
+#include <test/lib/ConsoleOutputWriter.inl>

@@ -1,20 +1,19 @@
-#include <test/lib/ConsoleOutputWriter.h>
 #include <algorithm>
 #include <iostream>
 #include <sstream>
 
-using namespace tpunit;
+namespace tpunit {
 
-ConsoleOutputWriter::ConsoleOutputWriter(bool verbose) : ConsoleOutputWriter(std::cout, verbose)
+inline ConsoleOutputWriter::ConsoleOutputWriter(bool verbose) : ConsoleOutputWriter(std::cout, verbose)
 {
 }
 
-ConsoleOutputWriter::ConsoleOutputWriter(std::ostream& output, bool verbose)
+inline ConsoleOutputWriter::ConsoleOutputWriter(std::ostream& output, bool verbose)
     : output(output), verbose(verbose)
 {
 }
 
-void ConsoleOutputWriter::breakCheckLine()
+inline void ConsoleOutputWriter::breakCheckLine()
 {
     if (!verbose && shortOutputColumn > 0) {
         output << '\n';
@@ -22,36 +21,36 @@ void ConsoleOutputWriter::breakCheckLine()
     }
 }
 
-void ConsoleOutputWriter::runStarted(const std::vector<PlannedFixture>&)
+inline void ConsoleOutputWriter::runStarted(const std::vector<PlannedFixture>&)
 {
 }
 
-void ConsoleOutputWriter::fixtureStarted(size_t, const std::string&, bool singleThreaded)
+inline void ConsoleOutputWriter::fixtureStarted(size_t, const std::string&, bool singleThreaded)
 {
     if (singleThreaded) {
         output << "--------------\n";
     }
 }
 
-void ConsoleOutputWriter::fixtureFinished(size_t, const std::string&, std::chrono::milliseconds)
+inline void ConsoleOutputWriter::fixtureFinished(size_t, const std::string&, std::chrono::milliseconds)
 {
 }
 
-void ConsoleOutputWriter::fixtureSetupFailed(size_t, const std::string& fixture)
+inline void ConsoleOutputWriter::fixtureSetupFailed(size_t, const std::string& fixture)
 {
     output << "\xE2\x9D\x8C !FAILED! \xE2\x9D\x8C initializing " << fixture << ". Skipping tests." << std::endl;
 }
 
-void ConsoleOutputWriter::fixtureTeardownFailed(size_t, const std::string& fixture)
+inline void ConsoleOutputWriter::fixtureTeardownFailed(size_t, const std::string& fixture)
 {
     output << "\xE2\x9D\x8C !FAILED! \xE2\x9D\x8C cleaning up " << fixture << "." << std::endl;
 }
 
-void ConsoleOutputWriter::testStarted(size_t, const std::string&, const std::string&)
+inline void ConsoleOutputWriter::testStarted(size_t, const std::string&, const std::string&)
 {
 }
 
-void ConsoleOutputWriter::testFinished(size_t, const std::string&, const std::string& test, bool passed,
+inline void ConsoleOutputWriter::testFinished(size_t, const std::string&, const std::string& test, bool passed,
                                        std::chrono::milliseconds duration, const std::string& bufferedInfo)
 {
     std::ostringstream time;
@@ -79,14 +78,14 @@ void ConsoleOutputWriter::testFinished(size_t, const std::string&, const std::st
     }
 }
 
-void ConsoleOutputWriter::assertionFailed(const std::string&, const std::string&, int number,
+inline void ConsoleOutputWriter::assertionFailed(const std::string&, const std::string&, int number,
                                           const std::string& file, int line, const std::string& bufferedInfo)
 {
     breakCheckLine();
     output << "   assertion #" << number << " at " << file << ':' << line << '\n' << bufferedInfo;
 }
 
-void ConsoleOutputWriter::exceptionCaught(const std::string&, const std::string&, int number,
+inline void ConsoleOutputWriter::exceptionCaught(const std::string&, const std::string&, int number,
                                           const std::string& method, const std::string& cause,
                                           const std::string& bufferedInfo)
 {
@@ -94,7 +93,7 @@ void ConsoleOutputWriter::exceptionCaught(const std::string&, const std::string&
     output << "   exception #" << number << " from " << method << " with cause: " << cause << '\n' << bufferedInfo;
 }
 
-void ConsoleOutputWriter::trace(const std::string&, const std::string&, int number,
+inline void ConsoleOutputWriter::trace(const std::string&, const std::string&, int number,
                                 const std::string& file, int line, const std::string& message,
                                 const std::string& bufferedInfo)
 {
@@ -102,39 +101,39 @@ void ConsoleOutputWriter::trace(const std::string&, const std::string&, int numb
     output << "   trace #" << number << " at " << file << ':' << line << ": " << message << '\n' << bufferedInfo;
 }
 
-void ConsoleOutputWriter::comparisonFailed(const std::string&, const std::string&,
+inline void ConsoleOutputWriter::comparisonFailed(const std::string&, const std::string&,
                                            const std::string& lhs, const std::string& rhs, bool isEqual)
 {
     breakCheckLine();
     output << lhs << (isEqual ? " == " : " != ") << rhs << '\n';
 }
 
-void ConsoleOutputWriter::diagnostic(const std::string&, const std::string&, const std::string& message)
+inline void ConsoleOutputWriter::diagnostic(const std::string&, const std::string&, const std::string& message)
 {
     output << message << std::endl;
 }
 
-void ConsoleOutputWriter::invalidPattern(const std::string& pattern)
+inline void ConsoleOutputWriter::invalidPattern(const std::string& pattern)
 {
     output << "Invalid pattern: " << pattern << ", skipping." << std::endl;
 }
 
-void ConsoleOutputWriter::unnamedFixture()
+inline void ConsoleOutputWriter::unnamedFixture()
 {
     output << "test has no name???" << std::endl;
 }
 
-void ConsoleOutputWriter::unmatchedPattern(const std::string& pattern)
+inline void ConsoleOutputWriter::unmatchedPattern(const std::string& pattern)
 {
     output << "\xE2\x9D\x8C Could not find any test matching, make sure the test name is right: " << pattern << '\n';
 }
 
-void ConsoleOutputWriter::threadShutdown(int threadID)
+inline void ConsoleOutputWriter::threadShutdown(int threadID)
 {
     output << "Thread " << threadID << " caught shutdown exception, exiting.\n";
 }
 
-void ConsoleOutputWriter::runFinished(const RunResult& result)
+inline void ConsoleOutputWriter::runFinished(const RunResult& result)
 {
     output << "\n[ TEST RESULTS ] Passed: " << result.passes << ", Failed: " << result.failures << '\n';
     if (!result.failureNames.empty()) {
@@ -159,4 +158,5 @@ void ConsoleOutputWriter::runFinished(const RunResult& result)
         << "% of total test time" << std::endl;
     }
     output << "Total test time across threads: " << totalTestTime << "ms" << std::endl;
+}
 }

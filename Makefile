@@ -135,7 +135,7 @@ checkjsonsymbols: bedrock
 	fi
 
 # Benchmarks binary (separate from unit tests) under top-level benchmarks/
-BENCHCPP = $(shell find benchmarks -name '*.cpp') test/lib/tpunit++.cpp test/lib/ConsoleOutputWriter.cpp
+BENCHCPP = $(shell find benchmarks -name '*.cpp') test/lib/tpunit++.cpp
 BENCHOBJ = $(BENCHCPP:%.cpp=$(INTERMEDIATEDIR)/%.o)
 BENCHDEP = $(BENCHCPP:%.cpp=$(INTERMEDIATEDIR)/%.d)
 bench: $(BENCHOBJ) $(BINPREREQS)
