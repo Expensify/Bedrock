@@ -569,19 +569,19 @@ string SToLower(string value);
 string SToUpper(string value);
 
 // String alteration
-string SCollapse(const string& lhs);
+string SCollapse(string_view lhs);
 string STrim(string_view lhs);
-string SStrip(const string& lhs);
-string SStrip(const string& lhs, const string& chars, bool charsAreSafe);
-string SStripAllBut(const string& lhs, const string& chars);
-string SStripNonNum(const string& lhs);
+string SStrip(string_view lhs);
+string SStrip(string_view lhs, string_view chars, bool charsAreSafe);
+string SStripAllBut(string_view lhs, string_view chars);
+string SStripNonNum(string_view lhs);
 
 // A length of 0 uses legacy strlen-like behavior; otherwise, at most length characters are escaped.
 string SEscape(const char* lhs, const string& unsafe, char escaper, size_t length = 0);
 string SEscape(const string& lhs, const string& unsafe, char escaper = '\\');
 string SUnescape(const char* lhs, char escaper);
 string SUnescape(const string& lhs, char escaper = '\\');
-string SStripTrim(const string& lhs);
+string SStripTrim(string_view lhs);
 string SBefore(string_view value, string_view needle);
 string SAfter(string_view value, string_view needle);
 string SAfterLastOf(string_view value, string_view needle);

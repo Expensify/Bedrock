@@ -484,14 +484,17 @@ string STrim(string_view lhs)
 }
 
 // --------------------------------------------------------------------------
-string SCollapse(const string& lhs)
+string SCollapse(string_view lhs)
 {
     // Collapse all whitespace into a single space
     string out;
     out.reserve(lhs.size());
     bool inWhite = false;
-    for (const char* c(lhs.data()); *c; ++c) {
-        if (isspace(*c)) {
+    for (const char c : lhs) {
+        if (c == '\0') {
+            break;
+        }
+        if (isspace(static_cast<unsigned char>(c))) {
             // Only add if not already whitespace
             if (!inWhite) {
                 out += ' ';
@@ -499,7 +502,7 @@ string SCollapse(const string& lhs)
             inWhite = true;
         } else {
             // Not whitespace, add
-            out += *c;
+            out += c;
             inWhite = false;
         }
     }
@@ -507,31 +510,37 @@ string SCollapse(const string& lhs)
 }
 
 // --------------------------------------------------------------------------
-string SStrip(const string& lhs)
+string SStrip(string_view lhs)
 {
     // Strip out all non-printable characters
     string working;
     working.reserve(lhs.size());
-    for (const char* c(lhs.data()); *c; ++c) {
-        if (isprint(*c)) {
-            working += *c;
+    for (const char c : lhs) {
+        if (c == '\0') {
+            break;
+        }
+        if (isprint(static_cast<unsigned char>(c))) {
+            working += c;
         }
     }
     return working;
 }
 
 // --------------------------------------------------------------------------
-string SStrip(const string& lhs, const string& chars, bool charsAreSafe)
+string SStrip(string_view lhs, string_view chars, bool charsAreSafe)
 {
     // Strip out all unsafe characters
     string working;
     working.reserve(lhs.size());
-    for (const char* c(lhs.data()); *c; ++c) {
+    for (const char c : lhs) {
+        if (c == '\0') {
+            break;
+        }
         // If the characters are in the set and are safe, then add.
         // Otherwise, if the characters are unsafe but not in the set, still add.
-        bool inSet = (chars.find(*c) != string::npos);
+        bool inSet = (chars.find(c) != string_view::npos);
         if (inSet == charsAreSafe) {
-            working += *c;
+            working += c;
         }
     }
     return working;
@@ -3550,12 +3559,12 @@ bool SEndsWith(string_view haystack, string_view needle)
     return needle.size() <= haystack.size() && haystack.substr(haystack.size() - needle.size()) == needle;
 }
 
-string SStripAllBut(const string& lhs, const string& chars)
+string SStripAllBut(string_view lhs, string_view chars)
 {
     return SStrip(lhs, chars, true);
 }
 
-string SStripNonNum(const string& lhs)
+string SStripNonNum(string_view lhs)
 {
     return SStripAllBut(lhs, "0123456789");
 }
@@ -3570,7 +3579,7 @@ string SUnescape(const string& lhs, char escaper)
     return SUnescape(lhs.c_str(), escaper);
 }
 
-string SStripTrim(const string& lhs)
+string SStripTrim(string_view lhs)
 {
     return STrim(SStrip(lhs));
 }
