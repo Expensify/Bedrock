@@ -2776,7 +2776,7 @@ string SDecodeBase64(string_view bufferString)
 }
 
 // --------------------------------------------------------------------------
-string SHMACSHA1(const string& key, const string& buffer)
+string SHMACSHA1(string_view key, string_view buffer)
 {
     // See: http://en.wikipedia.org/wiki/HMAC
 
@@ -2796,7 +2796,7 @@ string SHMACSHA1(const string& key, const string& buffer)
 }
 
 // --------------------------------------------------------------------------
-string SHMACSHA256(const string& key, const string& buffer)
+string SHMACSHA256(string_view key, string_view buffer)
 {
     // See: http://en.wikipedia.org/wiki/HMAC
 
@@ -3251,10 +3251,10 @@ void STerminateHandler(void)
     abort();
 }
 
-bool SIsValidSQLiteDateModifier(const string& modifier)
+bool SIsValidSQLiteDateModifier(string_view modifier)
 {
     // See: https://www.sqlite.org/lang_datefunc.html
-    list<string> parts = SParseList(SToUpper(modifier));
+    list<string> parts = SParseList(SToUpper(modifier.empty() ? "" : string(modifier)));
     for (const string& part : parts) {
         // Simple regexp validation
         if (SREMatch("^(\\+|-)\\d{1,8} (SECOND)S?$", part)) {

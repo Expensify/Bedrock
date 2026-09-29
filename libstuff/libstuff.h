@@ -504,7 +504,7 @@ bool SContains(string_view haystack, string_view needle);
 bool SContains(string_view haystack, char needle);
 bool SContains(const STable& nameValueMap, const string& name);
 
-bool SIsValidSQLiteDateModifier(const string& modifier);
+bool SIsValidSQLiteDateModifier(string_view modifier);
 
 // General testing functions
 // Case-insensitive comparison, bounded by the views and stopping at the first NUL as strcasecmp does.
@@ -749,8 +749,8 @@ string SDecodeBase64(const unsigned char* buffer, const size_t size);
 string SDecodeBase64(string_view buffer);
 
 // HMAC (for use with Amazon S3)
-string SHMACSHA1(const string& key, const string& buffer);
-string SHMACSHA256(const string& key, const string& buffer);
+string SHMACSHA1(string_view key, string_view buffer);
+string SHMACSHA256(string_view key, string_view buffer);
 
 // Encryption/Decryption
 #define SAES_KEY_SIZE 32 // AES256 32 bytes = 256 bits
