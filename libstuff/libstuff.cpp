@@ -1435,7 +1435,7 @@ string SComposePOST(const STable& nameValueMap)
 }
 
 // --------------------------------------------------------------------------
-bool SParseHost(const string& host, string& domain, uint16_t& port)
+bool SParseHost(string_view host, string& domain, uint16_t& port)
 {
     // Split around the ':'
     domain = SBefore(host, ":");
@@ -3644,26 +3644,26 @@ string SComposeHTTP(const string& methodLine, const STable& nameValueMap, const 
     return buffer;
 }
 
-string SComposeHost(const string& host, int port)
+string SComposeHost(string_view host, int port)
 {
     return host + ":" + SToStr(port);
 }
 
-bool SHostIsValid(const string& host)
+bool SHostIsValid(string_view host)
 {
     string domain;
     uint16_t port = 0;
     return SParseHost(host, domain, port);
 }
 
-string SGetDomain(const string& host)
+string SGetDomain(string_view host)
 {
     string domain;
     uint16_t ignore;
     if (SParseHost(host, domain, ignore)) {
         return domain;
     } else {
-        return host;
+        return host.empty() ? "" : string(host);
     }
 }
 
