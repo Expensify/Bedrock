@@ -2494,10 +2494,8 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
                             auto commandThreadConstructorStartTime = chrono::steady_clock::now();
                             thread commandThread(
                                 [&, commandThreadStartTime]() {
-                                uint64_t commandThreadEntryTime = STimeNow();
                                 SInitialize(threadName + "_cmd");
-                                uint64_t commandThreadInitializeTime = STimeNow();
-                                command->recordCommandThreadTiming(commandThreadStartTime, commandThreadEntryTime, commandThreadInitializeTime);
+                                command->recordTiming(BedrockCommand::COMMAND_THREAD, commandThreadStartTime);
                                 runCommand(move(command));
                             });
                             auto commandThreadConstructorTime = chrono::steady_clock::now() - commandThreadConstructorStartTime;

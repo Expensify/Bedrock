@@ -105,13 +105,6 @@ void BedrockCommand::recordTiming(TIMING_INFO type, uint64_t startTime)
     timingInfo.emplace_back(type, startTime, STimeNow());
 }
 
-void BedrockCommand::recordCommandThreadTiming(uint64_t startTime, uint64_t entryTime, uint64_t initializeTime)
-{
-    _commandThreadEntryTime = entryTime - startTime;
-    _commandThreadInitializeTime = initializeTime - entryTime;
-    timingInfo.emplace_back(COMMAND_THREAD, startTime, initializeTime);
-}
-
 bool BedrockCommand::areHttpsRequestsComplete() const
 {
     auto requestIt = (_lastContiguousCompletedTransaction == httpsRequests.end()) ? httpsRequests.begin() : _lastContiguousCompletedTransaction;
@@ -318,8 +311,6 @@ void BedrockCommand::finalizeTimingInfo()
         {"processTime", processTotal},
         {"postProcessTime", postProcessTotal},
         {"commandThreadTime", commandThreadTotal},
-        {"commandThreadEntryTime", _commandThreadEntryTime},
-        {"commandThreadInitializeTime", _commandThreadInitializeTime},
         {"dbHandleTime", dbHandleTotal},
         {"totalTime", totalTime},
         {"unaccountedTime", unaccountedTime},
@@ -371,8 +362,6 @@ void BedrockCommand::finalizeTimingInfo()
           "total:" << totalTime / 1000 << ", "
           "unaccounted:" << unaccountedTime / 1000 << ", "
           "commandThread:" << commandThreadTotal / 1000 << ", "
-          "commandThreadEntry:" << _commandThreadEntryTime / 1000 << ", "
-          "commandThreadInitialize:" << _commandThreadInitializeTime / 1000 << ", "
           "dbHandle:" << dbHandleTotal / 1000 << ", "
           "blockingCommitThreadTime:" << blockingCommitThreadTime / 1000 << ", "
           "exclusiveTransactionLockTime:" << exclusiveTransactionLockTime / 1000 <<

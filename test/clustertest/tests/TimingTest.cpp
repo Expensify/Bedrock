@@ -42,12 +42,9 @@ struct TimingTest : tpunit::TestFixture
             uint64_t peekTime = SToUInt64(result["peekTime"]);
             uint64_t processTime = SToUInt64(result["processTime"]);
             uint64_t commandThreadTime = SToUInt64(result["commandThreadTime"]);
-            uint64_t commandThreadEntryTime = SToUInt64(result["commandThreadEntryTime"]);
-            uint64_t commandThreadInitializeTime = SToUInt64(result["commandThreadInitializeTime"]);
             uint64_t totalTime = SToUInt64(result["totalTime"]);
 
             ASSERT_GREATER_THAN(commandThreadTime, 0);
-            ASSERT_EQUAL(commandThreadEntryTime + commandThreadInitializeTime, commandThreadTime);
 
             // Leader should have peek and process times, followers only peek.
             if (i == 0) {
@@ -108,12 +105,9 @@ struct TimingTest : tpunit::TestFixture
             uint64_t peekTime = SToUInt64(result["peekTime"]);
             uint64_t processTime = SToUInt64(result["processTime"]);
             uint64_t commandThreadTime = SToUInt64(result["commandThreadTime"]);
-            uint64_t commandThreadEntryTime = SToUInt64(result["commandThreadEntryTime"]);
-            uint64_t commandThreadInitializeTime = SToUInt64(result["commandThreadInitializeTime"]);
             uint64_t totalTime = SToUInt64(result["totalTime"]);
 
             ASSERT_GREATER_THAN(commandThreadTime, 0);
-            ASSERT_EQUAL(commandThreadEntryTime + commandThreadInitializeTime, commandThreadTime);
             ASSERT_GREATER_THAN(peekTime, 0);
             ASSERT_EQUAL(processTime, 0);
             ASSERT_LESS_THAN(peekTime + processTime, totalTime);
