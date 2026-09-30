@@ -1,7 +1,7 @@
 #pragma once
 
 #include <memory>
-#include <string>
+#include <string_view>
 
 #include "Value.h"
 
@@ -18,7 +18,7 @@ public:
      * @return a JSON::Value with the contents
      * @throws JSON::InvalidArgument
      */
-    static unique_ptr<Value> read(const string& json);
+    static unique_ptr<Value> read(string_view json);
 
     /**
      * Read and parse a json string but don't throw an exception if the
@@ -27,6 +27,6 @@ public:
      * @param json The json string
      * @return a JSON::Value with the contents
      */
-    static unique_ptr<Value> readUnsafe(const string& json);
+    static unique_ptr<Value> readUnsafe(string_view json);
 };
 }

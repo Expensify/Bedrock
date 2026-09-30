@@ -213,7 +213,7 @@ string SComposeTime(const string& format, uint64_t when);
 uint64_t STimestampToEpoch(const string& format, const string& timestamp);
 uint64_t STimestampMSToEpoch(const string& format, const string& timestamp);
 timeval SToTimeval(uint64_t when);
-string SFirstOfMonth(const string& timeStamp, const int64_t& offset = 0);
+string SFirstOfMonth(string_view timeStamp, const int64_t& offset = 0);
 
 // Helpful class for timing
 struct SStopwatch
@@ -430,10 +430,10 @@ private:
 // Converting between various bases
 string SToHex(uint64_t value, int digits = 16);
 string SToHex(uint32_t value);
-string SToHex(const string& buffer);
-uint64_t SFromHex(const string& value);
+string SToHex(string_view buffer);
+uint64_t SFromHex(string_view value);
 string SStrFromHex(const string& buffer);
-string SBase32HexStringFromBase32(const string& buffer);
+string SBase32HexStringFromBase32(string_view buffer);
 string SHexStringFromBase32(const string& buffer);
 
 // Testing various conditions
@@ -504,7 +504,7 @@ bool SContains(string_view haystack, string_view needle);
 bool SContains(string_view haystack, char needle);
 bool SContains(const STable& nameValueMap, const string& name);
 
-bool SIsValidSQLiteDateModifier(const string& modifier);
+bool SIsValidSQLiteDateModifier(string_view modifier);
 
 // General testing functions
 // Case-insensitive comparison, bounded by the views and stopping at the first NUL as strcasecmp does.
@@ -514,8 +514,8 @@ bool SIContains(const string& haystack, const string& needle);
 // Prefix comparison retains the length check and strncmp semantics of the buffer overload.
 bool SStartsWith(string_view haystack, string_view needle);
 bool SStartsWith(const char* haystack, size_t haystackSize, const char* needle, size_t needleSize);
-bool SEndsWith(const string& haystack, const string& needle);
-bool SConstantTimeEquals(const string& secret, const string& userInput);
+bool SEndsWith(string_view haystack, string_view needle);
+bool SConstantTimeEquals(string_view secret, string_view userInput);
 bool SConstantTimeIEquals(const string& secret, const string& userInput);
 
 class SRECompiledRegex {
@@ -532,13 +532,13 @@ private:
 
     void* regex;
 
-    friend SRECompiledRegex SRECompile(const string& regExp, bool caseSensitive);
-    friend bool SREMatch(const SRECompiledRegex& regExp, const string& input, bool partialMatch, vector<string>* matches, size_t startOffset, size_t* matchOffset);
-    friend string SREReplace(const SRECompiledRegex& regExp, const string& input, const string& replacement);
+    friend SRECompiledRegex SRECompile(string_view regExp, bool caseSensitive);
+    friend bool SREMatch(const SRECompiledRegex& regExp, string_view input, bool partialMatch, vector<string>* matches, size_t startOffset, size_t* matchOffset);
+    friend string SREReplace(const SRECompiledRegex& regExp, string_view input, string_view replacement);
 };
 
 // Compiles a regular expression for reuse. Case sensitivity is fixed when the expression is compiled.
-SRECompiledRegex SRECompile(const string& regExp, bool caseSensitive = true);
+SRECompiledRegex SRECompile(string_view regExp, bool caseSensitive = true);
 
 // Unless `partialMatch` is specified, perform a full regex match (the '^' and '$' symbols are implicit).
 //
@@ -549,17 +549,17 @@ SRECompiledRegex SRECompile(const string& regExp, bool caseSensitive = true);
 //
 // If matchOffset is supplied, and a match is found, it will be set to the offset of the first character of the matched substring.
 // To find the end of the matched substring, you can do something like matchOffset + matches[0].size().
-bool SREMatch(const string& regExp, const string& input, bool caseSensitive = true, bool partialMatch = false, vector<string>* matches = nullptr, size_t startOffset = 0, size_t* matchOffset = nullptr);
-bool SREMatch(const SRECompiledRegex& regExp, const string& input, bool partialMatch = false, vector<string>* matches = nullptr, size_t startOffset = 0, size_t* matchOffset = nullptr);
+bool SREMatch(string_view regExp, string_view input, bool caseSensitive = true, bool partialMatch = false, vector<string>* matches = nullptr, size_t startOffset = 0, size_t* matchOffset = nullptr);
+bool SREMatch(const SRECompiledRegex& regExp, string_view input, bool partialMatch = false, vector<string>* matches = nullptr, size_t startOffset = 0, size_t* matchOffset = nullptr);
 
 // Matches every instance of regExp in the input string. Returns a vector of vectors or strings.
 // The outer vector has one entry for each match found. The inner vectors contain first the entire matched substring, and following that, each match group
-vector<vector<string>> SREMatchAll(const string& regExp, const string& input, bool caseSensitive = true);
-vector<vector<string>> SREMatchAll(const SRECompiledRegex& regExp, const string& input);
+vector<vector<string>> SREMatchAll(string_view regExp, string_view input, bool caseSensitive = true);
+vector<vector<string>> SREMatchAll(const SRECompiledRegex& regExp, string_view input);
 
 // Replaces all instances of the matched `regExp` with `replacement` in `input`.
-string SREReplace(const string& regExp, const string& input, const string& replacement, bool caseSensitive = true);
-string SREReplace(const SRECompiledRegex& regExp, const string& input, const string& replacement);
+string SREReplace(string_view regExp, string_view input, string_view replacement, bool caseSensitive = true);
+string SREReplace(const SRECompiledRegex& regExp, string_view input, string_view replacement);
 
 // Redact values that should not be logged.
 void SRedactSensitiveValues(string& s);
@@ -569,33 +569,33 @@ string SToLower(string value);
 string SToUpper(string value);
 
 // String alteration
-string SCollapse(const string& lhs);
-string STrim(const string& lhs);
-string SStrip(const string& lhs);
-string SStrip(const string& lhs, const string& chars, bool charsAreSafe);
-string SStripAllBut(const string& lhs, const string& chars);
-string SStripNonNum(const string& lhs);
+string SCollapse(string_view lhs);
+string STrim(string_view lhs);
+string SStrip(string_view lhs);
+string SStrip(string_view lhs, string_view chars, bool charsAreSafe);
+string SStripAllBut(string_view lhs, string_view chars);
+string SStripNonNum(string_view lhs);
 
 // A length of 0 uses legacy strlen-like behavior; otherwise, at most length characters are escaped.
 string SEscape(const char* lhs, const string& unsafe, char escaper, size_t length = 0);
 string SEscape(const string& lhs, const string& unsafe, char escaper = '\\');
 string SUnescape(const char* lhs, char escaper);
 string SUnescape(const string& lhs, char escaper = '\\');
-string SStripTrim(const string& lhs);
-string SBefore(const string& value, const string& needle);
-string SAfter(const string& value, const string& needle);
-string SAfterLastOf(const string& value, const string& needle);
-string SAfterUpTo(const string& value, const string& after, const string& upTo);
-string SReplace(const string& value, const string& find, const string& replace);
-string SReplaceAllBut(const string& value, const string& safeChars, char replaceChar);
-string SReplaceAll(const string& value, const string& unsafeChars, char replaceChar);
-int SStateNameToInt(const char* states[], const string& stateName, unsigned int numStates);
+string SStripTrim(string_view lhs);
+string SBefore(string_view value, string_view needle);
+string SAfter(string_view value, string_view needle);
+string SAfterLastOf(string_view value, string_view needle);
+string SAfterUpTo(string_view value, string_view after, string_view upTo);
+string SReplace(string_view value, string_view find, string_view replace);
+string SReplaceAllBut(string_view value, string_view safeChars, char replaceChar);
+string SReplaceAll(string_view value, string_view unsafeChars, char replaceChar);
+int SStateNameToInt(const char* states[], string_view stateName, unsigned int numStates);
 void SAppend(string& lhs, const void* rhs, int num);
 void SAppend(string& lhs, const string& rhs);
 
 // HTTP message management
 int SParseHTTP(const char* buffer, size_t length, string& methodLine, STable& nameValueMap, string& content);
-int SParseHTTP(const string& buffer, string& methodLine, STable& nameValueMap, string& content);
+int SParseHTTP(string_view buffer, string& methodLine, STable& nameValueMap, string& content);
 bool SParseRequestMethodLine(const string& methodLine, string& method, string& uri);
 bool SParseResponseMethodLine(const string& methodLine, string& protocol, int& code, string& reason);
 bool SParseURI(const char* buffer, int length, string& host, string& path);
@@ -605,27 +605,27 @@ bool SParseURIPath(const string& uri, string& path, STable& nameValueMap);
 void SComposeHTTP(string& buffer, const string& methodLine, const STable& nameValueMap, const string& content);
 string SComposeHTTP(const string& methodLine, const STable& nameValueMap, const string& content);
 string SComposePOST(const STable& nameValueMap);
-string SComposeHost(const string& host, int port);
-bool SParseHost(const string& host, string& domain, uint16_t& port);
-bool SHostIsValid(const string& host);
-string SGetDomain(const string& host);
+string SComposeHost(string_view host, int port);
+bool SParseHost(string_view host, string& domain, uint16_t& port);
+bool SHostIsValid(string_view host);
+string SGetDomain(string_view host);
 string SDecodeURIComponent(const char* buffer, int length);
-string SDecodeURIComponent(const string& value);
-string SEncodeURIComponent(const string& value, bool keepSpaces = false);
+string SDecodeURIComponent(string_view value);
+string SEncodeURIComponent(string_view value, bool keepSpaces = false);
 
 // --------------------------------------------------------------------------
 // List stuff
 // --------------------------------------------------------------------------
 // List management
-list<int64_t> SParseIntegerList(const string& value, char separator = ',');
-set<int64_t> SParseIntegerSet(const string& value, char separator = ',');
-vector<int64_t> SParseIntegerVector(const string& value, char separator = ',');
+list<int64_t> SParseIntegerList(string_view value, char separator = ',');
+set<int64_t> SParseIntegerSet(string_view value, char separator = ',');
+vector<int64_t> SParseIntegerVector(string_view value, char separator = ',');
 
 // Parse into owning strings, skipping leading spaces and empty components and stopping at the first NUL.
 // The bool overloads clear valueList and return whether the final component is nonempty, even if earlier ones exist.
 bool SParseList(const char* value, list<string>& valueList, char separator = ',');
 bool SParseList(string_view value, list<string>& valueList, char separator = ',');
-set<string> SParseSet(const string& value, char separator = ',');
+set<string> SParseSet(string_view value, char separator = ',');
 list<string> SParseList(string_view value, char separator = ',');
 
 // Concatenates things into a string. "Things" can mean essentially any
@@ -739,18 +739,18 @@ uint64_t SFileSize(const string& path);
 // Crypto stuff
 // --------------------------------------------------------------------------
 // Various hashing functions
-string SHashSHA1(const string& buffer);
-string SHashSHA256(const string& buffer);
+string SHashSHA1(string_view buffer);
+string SHashSHA256(string_view buffer);
 
 // Various encoding/decoding functions
 string SEncodeBase64(const unsigned char* buffer, const size_t size);
-string SEncodeBase64(const string& buffer);
+string SEncodeBase64(string_view buffer);
 string SDecodeBase64(const unsigned char* buffer, const size_t size);
-string SDecodeBase64(const string& buffer);
+string SDecodeBase64(string_view buffer);
 
 // HMAC (for use with Amazon S3)
-string SHMACSHA1(const string& key, const string& buffer);
-string SHMACSHA256(const string& key, const string& buffer);
+string SHMACSHA1(string_view key, string_view buffer);
+string SHMACSHA256(string_view key, string_view buffer);
 
 // Encryption/Decryption
 #define SAES_KEY_SIZE 32 // AES256 32 bytes = 256 bits
@@ -773,9 +773,9 @@ string SQ(unsigned val);
 string SQ(uint64_t val);
 string SQ(int64_t val);
 string SQ(double val);
-string SQList(const string& val, bool integersOnly = true);
+string SQList(string_view val, bool integersOnly = true);
 
-template<typename Container> string SQList(const Container& valueList)
+template<typename Container> requires(!convertible_to<const Container&, string_view>) string SQList(const Container& valueList)
 {
     list<string> safeValues;
     for (typename Container::const_iterator valueIt = valueList.begin(); valueIt != valueList.end(); ++valueIt) {
@@ -819,8 +819,8 @@ string STIMESTAMP_MS(uint64_t time);
 // Miscellaneous stuff
 // --------------------------------------------------------------------------
 // Compression
-string SGZip(const string& content);
-string SGUnzip(const string& content);
+string SGZip(string_view content);
+string SGUnzip(string_view content);
 
 // Command-line helpers
 STable SParseCommandLine(int argc, char* argv[]);

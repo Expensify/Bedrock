@@ -19,6 +19,8 @@
 #include <libstuff/libstuff.h>
 using namespace std;
 
+class SQValue;
+
 namespace JSON
 {
 inline thread_local atomic<bool> logStackTraceOnEnsureTypeFailure{false};
@@ -1046,7 +1048,13 @@ public:
     /**
      * Parse a json object from a string.
      */
-    static Value parse(const string& s);
+    static Value parse(string_view s);
+    static Value parse(const SQValue& s);
+
+    static Value parse(const char* s)
+    {
+        return parse(string_view(s));
+    }
 
     template<class T>
     static JSON::Value fromDataStructure(const map<string, T>& data)
