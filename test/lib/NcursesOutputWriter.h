@@ -1,5 +1,7 @@
 #pragma once
 
+#ifdef TPUNITPP_ENABLE_NCURSES_OUTPUT
+
 #include <test/lib/OutputWriter.h>
 #include <memory>
 
@@ -43,3 +45,5 @@ private:
     unique_ptr<Impl> impl;
 };
 }
+
+#endif

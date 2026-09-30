@@ -92,6 +92,8 @@ CLUSTERTESTCPP += test/tests/jobs/JobTestHelper.cpp
 CLUSTERTESTOBJ = $(CLUSTERTESTCPP:%.cpp=$(INTERMEDIATEDIR)/%.o)
 CLUSTERTESTDEP = $(CLUSTERTESTCPP:%.cpp=$(INTERMEDIATEDIR)/%.d)
 
+$(TESTOBJ) $(TESTDEP) $(CLUSTERTESTOBJ) $(CLUSTERTESTDEP): CXXFLAGS += -DTPUNITPP_ENABLE_NCURSES_OUTPUT
+
 # And the same for the test plugin.
 TESTPLUGINCPP = test/clustertest/testplugin/TestPlugin.cpp test/clustertest/testplugin/ExternPointer.cpp
 TESTPLUGINOBJ = $(TESTPLUGINCPP:%.cpp=$(INTERMEDIATEDIR)/%.o)

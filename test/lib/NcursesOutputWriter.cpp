@@ -1,3 +1,5 @@
+#ifdef TPUNITPP_ENABLE_NCURSES_OUTPUT
+
 #include <test/lib/NcursesOutputWriter.h>
 #include <test/lib/ConsoleOutputWriter.h>
 #include <ncurses.h>
@@ -431,3 +433,5 @@ void NcursesOutputWriter::runFinished(const RunResult& result)
     impl->failureNames = result.failureNames;
     impl->testTimes = result.testTimes;
 }
+
+#endif
