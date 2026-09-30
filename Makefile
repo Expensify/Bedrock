@@ -114,9 +114,9 @@ BINPREREQS = libbedrock.a libstuff.a libjson.a mbedtls/library/libmbedcrypto.a
 bedrock: $(BEDROCKOBJ) $(JSONMETRICSOBJ) $(BINPREREQS)
 	$(CXX) -o $@ $(BEDROCKOBJ) $(JSONMETRICSOBJ) $(LIBPATHS) -rdynamic $(LIBRARIES)
 test/test: $(TESTOBJ) $(BINPREREQS)
-	$(CXX) -o $@ $(TESTOBJ) $(LIBPATHS) -rdynamic $(LIBRARIES) $(shell pkg-config --libs ncursesw)
+	$(CXX) -o $@ $(TESTOBJ) $(LIBPATHS) -rdynamic $(LIBRARIES) -lncursesw
 test/clustertest/clustertest: $(CLUSTERTESTOBJ) $(BINPREREQS)
-	$(CXX) -o $@ $(CLUSTERTESTOBJ) $(LIBPATHS) -rdynamic $(LIBRARIES) $(shell pkg-config --libs ncursesw)
+	$(CXX) -o $@ $(CLUSTERTESTOBJ) $(LIBPATHS) -rdynamic $(LIBRARIES) -lncursesw
 
 checkjsonsymbols: bedrock
 	@symbols="$$(nm -D --defined-only bedrock | c++filt | grep -E ' [TDBR] JSON::' || true)"; \
