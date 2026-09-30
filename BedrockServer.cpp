@@ -2500,10 +2500,10 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
                             });
                             auto commandThreadConstructorTime = chrono::steady_clock::now() - commandThreadConstructorStartTime;
                             if (commandThreadConstructorTime > chrono::milliseconds(20)) {
-                                static atomic<uint64_t> nextSlowCommandThreadLogTime = 0;
-                                uint64_t currentTime = STimeNow();
-                                uint64_t nextLogTime = nextSlowCommandThreadLogTime.load();
-                                if (currentTime >= nextLogTime && nextSlowCommandThreadLogTime.compare_exchange_strong(nextLogTime, currentTime + STIME_US_PER_S)) {
+                                static atomic<chrono::microseconds::rep> nextSlowCommandThreadLogTime = 0;
+                                auto currentTime = chrono::duration_cast<chrono::microseconds>(chrono::steady_clock::now().time_since_epoch()).count();
+                                auto nextLogTime = nextSlowCommandThreadLogTime.load();
+                                if (currentTime >= nextLogTime && nextSlowCommandThreadLogTime.compare_exchange_strong(nextLogTime, currentTime + chrono::duration_cast<chrono::microseconds>(chrono::seconds(1)).count())) {
                                     SINFO("Slow command thread construction", {
                                         {"commandThreadConstructorTimeUS", to_string(chrono::duration_cast<chrono::microseconds>(commandThreadConstructorTime).count())},
                                     });
