@@ -7,6 +7,7 @@
 #include <atomic>
 #include <cstdio>
 #include <fcntl.h>
+#include <iomanip>
 #include <iostream>
 #include <map>
 #include <mutex>
@@ -109,12 +110,36 @@ struct NcursesOutputWriter::Impl
                 mvaddnstr(row, 0, safe(text).c_str(), width - 1);
             }
         };
-        std::ostringstream header;
-        header << "Elapsed " << clockText(duration_cast<seconds>(now - runStart)) << "  " << done << '/' << current.size()
-        << " completed (" << (current.empty() ? 100 : 100 * done / current.size()) << "%)"
-        << "  Failed: " << failedTests << "  Passed: " << passes;
-        line(0, header.str());
-        int failureHeight = currentFailures.empty() ? 0 : std::min(height - 2, std::max(2, height / 3));
+        size_t completedCases = 0;
+        size_t totalCases = 0;
+        for (const auto& fixture : current) {
+            completedCases += fixture.completed;
+            totalCases += fixture.total;
+        }
+        bool compactHeader = width < 70;
+        int elapsedWidth = compactHeader ? 8 : 11;
+        int classesWidth = compactHeader ? 9 : 13;
+        int casesWidth = compactHeader ? 9 : 14;
+        int completeWidth = compactHeader ? 9 : 12;
+        int failedWidth = compactHeader ? 7 : 9;
+        std::ostringstream labels, values;
+        labels << std::left << std::setw(elapsedWidth) << "ELAPSED" << std::setw(classesWidth) << "CLASSES"
+        << std::setw(casesWidth) << (compactHeader ? "CASES" : "TEST CASES")
+        << std::setw(completeWidth) << (compactHeader ? "COMPLETE" : "% COMPLETE")
+        << std::setw(failedWidth) << "FAILED" << "PASSED";
+        values << std::left << std::setw(elapsedWidth) << clockText(duration_cast<seconds>(now - runStart))
+        << std::setw(classesWidth) << (std::to_string(done) + "/" + std::to_string(current.size()))
+        << std::setw(casesWidth) << (std::to_string(completedCases) + "/" + std::to_string(totalCases))
+        << std::setw(completeWidth) << (std::to_string(current.empty() ? 100 : 100 * done / current.size()) + "%")
+        << std::setw(failedWidth) << failedTests << passes;
+        attron(A_BOLD);
+        line(0, labels.str());
+        attroff(A_BOLD);
+        line(1, values.str());
+        if (height >= 7) {
+            mvhline(2, 0, ACS_HLINE, width - 1);
+        }
+        int failureHeight = currentFailures.empty() ? 0 : std::min(height - 3, std::max(2, height / 3));
         std::vector<Fixture> active;
         for (const auto& fixture : current) {
             if (fixture.running) {
@@ -124,21 +149,22 @@ struct NcursesOutputWriter::Impl
         std::sort(active.begin(), active.end(), [](const auto& a, const auto& b) {
             return a.started < b.started;
         });
-        int availableRows = std::max(0, height - 2 - (failureHeight ? failureHeight + 1 : 0));
+        int availableRows = std::max(0, height - 3 - (failureHeight ? failureHeight + 1 : 0));
         bool overflow = static_cast<int>(active.size()) > availableRows && availableRows > 0;
         int shown = std::min(static_cast<int>(active.size()), availableRows - (overflow ? 1 : 0));
         for (int i = 0; i < shown; ++i) {
             const auto& fixture = active[i];
             std::ostringstream row;
-            row << clockText(duration_cast<seconds>(now - fixture.started)) << "  " << fixture.completed
-            << '/' << fixture.total << "  " << fixture.name;
-            line(i + 2, row.str());
+            row << clockText(duration_cast<seconds>(now - fixture.started)) << "  "
+            << std::right << std::setw(3) << fixture.completed << '/' << std::setw(3) << fixture.total
+            << "  " << fixture.name;
+            line(i + 3, row.str());
         }
         if (overflow) {
-            line(2 + shown, "+" + std::to_string(active.size() - shown) + " more running");
+            line(3 + shown, "+" + std::to_string(active.size() - shown) + " more running");
         }
         if (failureHeight) {
-            int failureStart = shown || overflow ? 3 + shown + (overflow ? 1 : 0) : 2;
+            int failureStart = shown || overflow ? 4 + shown + (overflow ? 1 : 0) : (height >= 6 ? 4 : 3);
             line(failureStart, "Failed tests (" + std::to_string(currentFailures.size()) + "):");
             int slots = height - failureStart - 1;
             size_t offset = currentFailures.size() > static_cast<size_t>(slots) ? currentFailures.size() - slots : 0;
