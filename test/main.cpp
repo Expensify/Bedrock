@@ -4,6 +4,7 @@
 #include <libstuff/SData.h>
 #include <libstuff/libstuff.h>
 #include <test/lib/BedrockTester.h>
+#include <test/lib/BedrockTestPath.h>
 #include <test/lib/ConsoleOutputWriter.h>
 #include <test/output/NcursesOutputWriter.h>
 #include <libstuff/SSSLState.h>
@@ -32,6 +33,7 @@ void sigclean(int sig)
 
 int main(int argc, char* argv[])
 {
+    configureBedrockTestPath();
     SData args = SParseCommandLine(argc, argv);
 
     // Catch sigint.
