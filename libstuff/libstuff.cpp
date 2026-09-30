@@ -348,7 +348,7 @@ string SToHex(uint64_t value, int digits)
     return working;
 }
 
-string SToHex(const string& value)
+string SToHex(string_view value)
 {
     // Fill from front to back
     string working;
@@ -368,7 +368,7 @@ string SToHex(uint32_t value)
 }
 
 // --------------------------------------------------------------------------
-uint64_t SFromHex(const string& value)
+uint64_t SFromHex(string_view value)
 {
     // Convert one digit at a time
     uint64_t binValue = 0;
@@ -400,11 +400,11 @@ string SStrFromHex(const string& buffer)
     return retVal;
 }
 
-string SBase32HexStringFromBase32(const string& buffer)
+string SBase32HexStringFromBase32(string_view buffer)
 {
     static const char map[] = "QRSTUV\0\0\0\0\0\0\0\0\0""0123456789ABCDEFGHIJKLMNOP";
     static const int mapLength = sizeof(map);
-    string out = buffer;
+    string out = buffer.empty() ? "" : string(buffer);
     int shiftedIndex;
     for (size_t i = 0; i < out.size(); i++) {
         shiftedIndex = out[i] - 50;
@@ -467,32 +467,35 @@ bool SStartsWith(const char* haystack, size_t haystackSize, const char* needle, 
 }
 
 // --------------------------------------------------------------------------
-string STrim(const string& lhs)
+string STrim(string_view lhs)
 {
     // Just trim off the front and back whitespace
-    if (!lhs.empty()) {
-        const char* front(lhs.data());
-        const char* back(&lhs.back());
-        while (*front && isspace(*front)) {
-            ++front;
-        }
-        while (back > front && isspace(*back)) {
-            --back;
-        }
-        return string(front, ++back);
+    if (lhs.empty()) {
+        return "";
     }
-    return "";
+    size_t front = 0;
+    size_t back = lhs.size();
+    while (front < back && isspace(static_cast<unsigned char>(lhs[front]))) {
+        ++front;
+    }
+    while (back > front && isspace(static_cast<unsigned char>(lhs[back - 1]))) {
+        --back;
+    }
+    return string(lhs.substr(front, back - front));
 }
 
 // --------------------------------------------------------------------------
-string SCollapse(const string& lhs)
+string SCollapse(string_view lhs)
 {
     // Collapse all whitespace into a single space
     string out;
     out.reserve(lhs.size());
     bool inWhite = false;
-    for (const char* c(lhs.data()); *c; ++c) {
-        if (isspace(*c)) {
+    for (const char c : lhs) {
+        if (c == '\0') {
+            break;
+        }
+        if (isspace(static_cast<unsigned char>(c))) {
             // Only add if not already whitespace
             if (!inWhite) {
                 out += ' ';
@@ -500,7 +503,7 @@ string SCollapse(const string& lhs)
             inWhite = true;
         } else {
             // Not whitespace, add
-            out += *c;
+            out += c;
             inWhite = false;
         }
     }
@@ -508,31 +511,37 @@ string SCollapse(const string& lhs)
 }
 
 // --------------------------------------------------------------------------
-string SStrip(const string& lhs)
+string SStrip(string_view lhs)
 {
     // Strip out all non-printable characters
     string working;
     working.reserve(lhs.size());
-    for (const char* c(lhs.data()); *c; ++c) {
-        if (isprint(*c)) {
-            working += *c;
+    for (const char c : lhs) {
+        if (c == '\0') {
+            break;
+        }
+        if (isprint(static_cast<unsigned char>(c))) {
+            working += c;
         }
     }
     return working;
 }
 
 // --------------------------------------------------------------------------
-string SStrip(const string& lhs, const string& chars, bool charsAreSafe)
+string SStrip(string_view lhs, string_view chars, bool charsAreSafe)
 {
     // Strip out all unsafe characters
     string working;
     working.reserve(lhs.size());
-    for (const char* c(lhs.data()); *c; ++c) {
+    for (const char c : lhs) {
+        if (c == '\0') {
+            break;
+        }
         // If the characters are in the set and are safe, then add.
         // Otherwise, if the characters are unsafe but not in the set, still add.
-        bool inSet = (chars.find(*c) != string::npos);
+        bool inSet = (chars.find(c) != string_view::npos);
         if (inSet == charsAreSafe) {
-            working += *c;
+            working += c;
         }
     }
     return working;
@@ -666,18 +675,21 @@ string SUnescape(const char* lhs, char escaper)
 }
 
 // --------------------------------------------------------------------------
-string SReplace(const string& value, const string& find, const string& replace)
+string SReplace(string_view value, string_view find, string_view replace)
 {
+    if (value.empty()) {
+        return "";
+    }
     // What are you trying to pull sending an empty string here?
     if (find.empty()) {
-        return value;
+        return string(value);
     }
 
     // Look for first match
     size_t pos = value.find(find);
-    if (pos == string::npos) {
+    if (pos == string_view::npos) {
         // No matches, return original
-        return value;
+        return string(value);
     }
 
     // Reserve a reasonable size (use value.size() as minimum, will grow if needed)
@@ -688,20 +700,20 @@ string SReplace(const string& value, const string& find, const string& replace)
     size_t lastPos = 0;
     do
     {
-        // Append text before match using pointers (avoids substr)
-        out.append(value.data() + lastPos, pos - lastPos);
+        // Append text before match without copying it into a temporary string
+        out.append(value.substr(lastPos, pos - lastPos));
         out.append(replace);
         lastPos = pos + find.size();
         pos = value.find(find, lastPos);
-    } while (pos != string::npos);
+    } while (pos != string_view::npos);
 
     // Append remaining text
-    out.append(value.data() + lastPos, value.size() - lastPos);
+    out.append(value.substr(lastPos));
     return out;
 }
 
 // --------------------------------------------------------------------------
-string SReplaceAllBut(const string& value, const string& safeChars, char replaceChar)
+string SReplaceAllBut(string_view value, string_view safeChars, char replaceChar)
 {
     // Build a lookup table for O(1) character checking
     bool isSafe[256] = {false};
@@ -719,7 +731,7 @@ string SReplaceAllBut(const string& value, const string& safeChars, char replace
 }
 
 // --------------------------------------------------------------------------
-string SReplaceAll(const string& value, const string& unsafeChars, char replaceChar)
+string SReplaceAll(string_view value, string_view unsafeChars, char replaceChar)
 {
     // Build a lookup table for O(1) character checking
     bool isUnsafe[256] = {false};
@@ -737,7 +749,7 @@ string SReplaceAll(const string& value, const string& unsafeChars, char replaceC
 }
 
 // --------------------------------------------------------------------------
-int SStateNameToInt(const char* states[], const string& stateName, unsigned int numStates)
+int SStateNameToInt(const char* states[], string_view stateName, unsigned int numStates)
 {
     // Converts an array of state names back to the index
     for (int i = 0; i < (int) numStates; i++) {
@@ -749,7 +761,7 @@ int SStateNameToInt(const char* states[], const string& stateName, unsigned int 
 }
 
 // --------------------------------------------------------------------------
-bool SConstantTimeEquals(const string& secret, const string& userInput)
+bool SConstantTimeEquals(string_view secret, string_view userInput)
 {
     // If one (and only one) of the parameters is zero length, fail now.  This
     // leaks no timing information and keeps us from having to worry about
@@ -777,7 +789,7 @@ bool SConstantTimeIEquals(const string& secret, const string& userInput)
 }
 
 // --------------------------------------------------------------------------
-list<int64_t> SParseIntegerList(const string& value, char separator)
+list<int64_t> SParseIntegerList(string_view value, char separator)
 {
     list<int64_t> valueList;
     list<string> strings = SParseList(value, separator);
@@ -788,7 +800,7 @@ list<int64_t> SParseIntegerList(const string& value, char separator)
 }
 
 // --------------------------------------------------------------------------
-set<int64_t> SParseIntegerSet(const string& value, char separator)
+set<int64_t> SParseIntegerSet(string_view value, char separator)
 {
     set<int64_t> valueSet;
     list<string> strings = SParseList(value, separator);
@@ -799,7 +811,7 @@ set<int64_t> SParseIntegerSet(const string& value, char separator)
 }
 
 // --------------------------------------------------------------------------
-vector<int64_t> SParseIntegerVector(const string& value, char separator)
+vector<int64_t> SParseIntegerVector(string_view value, char separator)
 {
     vector<int64_t> valueVector;
     list<string> strings = SParseList(value, separator);
@@ -849,7 +861,7 @@ bool SParseList(string_view value, list<string>& valueList, char separator)
 }
 
 // --------------------------------------------------------------------------
-set<string> SParseSet(const string& value, char separator)
+set<string> SParseSet(string_view value, char separator)
 {
     set<string> valueSet;
     list<string> strings = SParseList(value, separator);
@@ -1424,7 +1436,7 @@ string SComposePOST(const STable& nameValueMap)
 }
 
 // --------------------------------------------------------------------------
-bool SParseHost(const string& host, string& domain, uint16_t& port)
+bool SParseHost(string_view host, string& domain, uint16_t& port)
 {
     // Split around the ':'
     domain = SBefore(host, ":");
@@ -1443,7 +1455,7 @@ bool SParseHost(const string& host, string& domain, uint16_t& port)
 }
 
 // --------------------------------------------------------------------------
-string SEncodeURIComponent(const string& value, bool keepSpaces)
+string SEncodeURIComponent(string_view value, bool keepSpaces)
 {
     // Construct an encoded version.  According to:
     // http://developer.mozilla.org/en/docs/Core_JavaScript_1.5_Reference:Global_Functions:encodeURIComponent
@@ -1536,7 +1548,7 @@ string SToJSON(const string& value, const bool forceString)
     if (!forceString && value.size() >= 2 &&
         ((value[0] == '[' && value[value.size() - 1] == ']') || (value[0] == '{' && value[value.size() - 1] == '}'))) {
         // Preserve the original formatting when the shared parser accepts the complete value.
-        // Its string stream stops at a NUL, so reject embedded NULs before validating.
+        // Reject embedded NULs so the parser cannot accept just a valid prefix.
         if (value.find('\0') == string::npos) {
             try {
                 JSON::Value::parse(value);
@@ -1571,7 +1583,7 @@ string SComposeJSONObject(const STable& nameValueMap, const bool forceString)
 }
 
 // --------------------------------------------------------------------------
-string SGZip(const string& content)
+string SGZip(string_view content)
 {
     z_stream stream;
 
@@ -1579,7 +1591,7 @@ string SGZip(const string& content)
     stream.zfree = Z_NULL;
     stream.opaque = Z_NULL;
 
-    stream.next_in = (unsigned char*) content.c_str();
+    stream.next_in = (unsigned char*) (content.empty() ? "" : content.data());
     stream.avail_in = (unsigned int) content.size();
 
     int GZIP_ENCODING = 16;
@@ -1622,7 +1634,7 @@ string SGZip(const string& content)
     }
 }
 
-string SGUnzip(const string& content)
+string SGUnzip(string_view content)
 {
     const int CHUNK = 16384;
     int status;
@@ -1644,7 +1656,7 @@ string SGUnzip(const string& content)
     }
 
     strm.avail_in = (decltype(strm.avail_in)) content.size();
-    strm.next_in = (unsigned char*) content.c_str();
+    strm.next_in = (unsigned char*) (content.empty() ? "" : content.data());
 
     do
     {
@@ -2419,19 +2431,19 @@ uint64_t SFileSize(const string& path)
 // Cryptography stuff
 /////////////////////////////////////////////////////////////////////////////
 
-string SHashSHA1(const string& buffer)
+string SHashSHA1(string_view buffer)
 {
     string result;
     result.resize(20);
-    mbedtls_sha1((unsigned char*) buffer.c_str(), buffer.size(), (unsigned char*) &result[0]);
+    mbedtls_sha1((unsigned char*) (buffer.empty() ? "" : buffer.data()), buffer.size(), (unsigned char*) &result[0]);
     return result;
 }
 
-string SHashSHA256(const string& buffer)
+string SHashSHA256(string_view buffer)
 {
     string result;
     result.resize(32);
-    mbedtls_sha256((unsigned char*) buffer.c_str(), buffer.size(), (unsigned char*) &result[0], 0);
+    mbedtls_sha256((unsigned char*) (buffer.empty() ? "" : buffer.data()), buffer.size(), (unsigned char*) &result[0], 0);
     return result;
 }
 
@@ -2450,9 +2462,9 @@ string SEncodeBase64(const unsigned char* buffer, size_t size)
     return out;
 }
 
-string SEncodeBase64(const string& bufferString)
+string SEncodeBase64(string_view bufferString)
 {
-    return SEncodeBase64((unsigned char*) bufferString.c_str(), bufferString.size());
+    return SEncodeBase64((unsigned char*) (bufferString.empty() ? "" : bufferString.data()), bufferString.size());
 }
 
 // --------------------------------------------------------------------------
@@ -2469,13 +2481,13 @@ string SDecodeBase64(const unsigned char* buffer, size_t size)
     return out;
 }
 
-string SDecodeBase64(const string& bufferString)
+string SDecodeBase64(string_view bufferString)
 {
-    return SDecodeBase64((unsigned char*) bufferString.c_str(), bufferString.size());
+    return SDecodeBase64((unsigned char*) (bufferString.empty() ? "" : bufferString.data()), bufferString.size());
 }
 
 // --------------------------------------------------------------------------
-string SHMACSHA1(const string& key, const string& buffer)
+string SHMACSHA1(string_view key, string_view buffer)
 {
     // See: http://en.wikipedia.org/wiki/HMAC
 
@@ -2495,7 +2507,7 @@ string SHMACSHA1(const string& key, const string& buffer)
 }
 
 // --------------------------------------------------------------------------
-string SHMACSHA256(const string& key, const string& buffer)
+string SHMACSHA256(string_view key, string_view buffer)
 {
     // See: http://en.wikipedia.org/wiki/HMAC
 
@@ -2519,7 +2531,7 @@ string SHMACSHA256(const string& key, const string& buffer)
 /////////////////////////////////////////////////////////////////////////////
 
 // --------------------------------------------------------------------------
-string SQList(const string& val, bool integersOnly)
+string SQList(string_view val, bool integersOnly)
 {
     // Parse and verify
     list<string> dirtyList;
@@ -2950,10 +2962,10 @@ void STerminateHandler(void)
     abort();
 }
 
-bool SIsValidSQLiteDateModifier(const string& modifier)
+bool SIsValidSQLiteDateModifier(string_view modifier)
 {
     // See: https://www.sqlite.org/lang_datefunc.html
-    list<string> parts = SParseList(SToUpper(modifier));
+    list<string> parts = SParseList(SToUpper(modifier.empty() ? "" : string(modifier)));
     for (const string& part : parts) {
         // Simple regexp validation
         if (SREMatch("^(\\+|-)\\d{1,8} (SECOND)S?$", part)) {
@@ -2978,25 +2990,27 @@ bool SIsValidSQLiteDateModifier(const string& modifier)
     return true;
 }
 
-bool SREMatch(const string& regExp, const string& input, bool caseSensitive, bool partialMatch, vector<string>* matches, size_t startOffset, size_t* matchOffset)
+bool SREMatch(string_view regExp, string_view input, bool caseSensitive, bool partialMatch, vector<string>* matches, size_t startOffset, size_t* matchOffset)
 {
     return SREMatch(SRECompile(regExp, caseSensitive), input, partialMatch, matches, startOffset, matchOffset);
 }
 
-bool SREMatch(const SRECompiledRegex& regExp, const string& input, bool partialMatch, vector<string>* matches, size_t startOffset, size_t* matchOffset)
+bool SREMatch(const SRECompiledRegex& regExp, string_view input, bool partialMatch, vector<string>* matches, size_t startOffset, size_t* matchOffset)
 {
+    if (matches) {
+        matches->clear();
+    }
+    if (startOffset > input.size()) {
+        return false;
+    }
+
     // These require full-string matches as that's the historical way this function works.
     uint32_t matchFlags = partialMatch ? 0 : PCRE2_ANCHORED | PCRE2_ENDANCHORED;
     pcre2_match_context* matchContext = pcre2_match_context_create(0);
     pcre2_set_depth_limit(matchContext, 1000);
     pcre2_match_data* matchData = pcre2_match_data_create_from_pattern(static_cast<pcre2_code*>(regExp.regex), 0);
 
-    int result = pcre2_match(static_cast<pcre2_code*>(regExp.regex), (PCRE2_SPTR8) input.c_str() + startOffset, input.size() - startOffset, 0, matchFlags, matchData, matchContext);
-
-    // Clear out existing matches.
-    if (matches) {
-        matches->clear();
-    }
+    int result = pcre2_match(static_cast<pcre2_code*>(regExp.regex), (PCRE2_SPTR8) (input.empty() ? "" : input.data()) + startOffset, input.size() - startOffset, 0, matchFlags, matchData, matchContext);
 
     // If the caller wanted to receive matches, and we have them, figure them out.
     if (result > 0 && matches) {
@@ -3008,7 +3022,7 @@ bool SREMatch(const SRECompiledRegex& regExp, const string& input, bool partialM
             if (start == PCRE2_UNSET || end == PCRE2_UNSET) {
                 continue;
             }
-            matches->push_back(input.substr(startOffset + start, end - start));
+            matches->emplace_back(input.substr(startOffset + start, end - start));
             if (i == 0 && matchOffset) {
                 *matchOffset = startOffset + start;
             }
@@ -3021,12 +3035,12 @@ bool SREMatch(const SRECompiledRegex& regExp, const string& input, bool partialM
     return result > 0;
 }
 
-vector<vector<string>> SREMatchAll(const string& regExp, const string& input, bool caseSensitive)
+vector<vector<string>> SREMatchAll(string_view regExp, string_view input, bool caseSensitive)
 {
     return SREMatchAll(SRECompile(regExp, caseSensitive), input);
 }
 
-vector<vector<string>> SREMatchAll(const SRECompiledRegex& regExp, const string& input)
+vector<vector<string>> SREMatchAll(const SRECompiledRegex& regExp, string_view input)
 {
     vector<vector<string>> returnValue;
     vector<string> matches;
@@ -3064,24 +3078,24 @@ SRECompiledRegex& SRECompiledRegex::operator=(SRECompiledRegex&& other) noexcept
     return *this;
 }
 
-SRECompiledRegex SRECompile(const string& regExp, bool caseSensitive)
+SRECompiledRegex SRECompile(string_view regExp, bool caseSensitive)
 {
     int errornumber = 0;
     PCRE2_SIZE erroroffset = 0;
     uint32_t compileFlags = caseSensitive ? 0 : PCRE2_CASELESS;
-    pcre2_code* regex = pcre2_compile((PCRE2_SPTR8) regExp.c_str(), PCRE2_ZERO_TERMINATED, compileFlags, &errornumber, &erroroffset, 0);
+    pcre2_code* regex = pcre2_compile((PCRE2_SPTR8) (regExp.empty() ? "" : regExp.data()), regExp.size(), compileFlags, &errornumber, &erroroffset, 0);
     if (!regex) {
         STHROW("Bad regex: " + regExp);
     }
     return SRECompiledRegex(regex);
 }
 
-string SREReplace(const string& regExp, const string& input, const string& replacement, bool caseSensitive)
+string SREReplace(string_view regExp, string_view input, string_view replacement, bool caseSensitive)
 {
     return SREReplace(SRECompile(regExp, caseSensitive), input, replacement);
 }
 
-string SREReplace(const SRECompiledRegex& regExp, const string& input, const string& replacement)
+string SREReplace(const SRECompiledRegex& regExp, string_view input, string_view replacement)
 {
     char* output = nullptr;
     size_t outSize = 0;
@@ -3089,7 +3103,7 @@ string SREReplace(const SRECompiledRegex& regExp, const string& input, const str
     pcre2_match_context* matchContext = pcre2_match_context_create(0);
     pcre2_set_depth_limit(matchContext, 1000);
     for (int i = 0; i < 2; i++) {
-        int result = pcre2_substitute(static_cast<pcre2_code*>(regExp.regex), (PCRE2_SPTR8) input.c_str(), input.size(), 0, substituteFlags, 0, matchContext, (PCRE2_SPTR8) replacement.c_str(), replacement.size(), (PCRE2_UCHAR*) output, &outSize);
+        int result = pcre2_substitute(static_cast<pcre2_code*>(regExp.regex), (PCRE2_SPTR8) (input.empty() ? "" : input.data()), input.size(), 0, substituteFlags, 0, matchContext, (PCRE2_SPTR8) (replacement.empty() ? "" : replacement.data()), replacement.size(), (PCRE2_UCHAR*) output, &outSize);
         if (i == 0 && result == PCRE2_ERROR_NOMEMORY) {
             // This is the expected case on the first run, there's not enough space to store the result, so we allocate the space and do it again.
             output = (char*) malloc(outSize);
@@ -3251,21 +3265,17 @@ bool SIEquals(string_view lhs, string_view rhs)
     return lhs.size() == rhs.size() && (lhs.empty() || strncasecmp(lhs.data(), rhs.data(), lhs.size()) == 0);
 }
 
-bool SEndsWith(const string& haystack, const string& needle)
+bool SEndsWith(string_view haystack, string_view needle)
 {
-    if (needle.size() > haystack.size()) {
-        return false;
-    } else {
-        return haystack.substr(haystack.size() - needle.size()) == needle;
-    }
+    return needle.size() <= haystack.size() && haystack.substr(haystack.size() - needle.size()) == needle;
 }
 
-string SStripAllBut(const string& lhs, const string& chars)
+string SStripAllBut(string_view lhs, string_view chars)
 {
     return SStrip(lhs, chars, true);
 }
 
-string SStripNonNum(const string& lhs)
+string SStripNonNum(string_view lhs)
 {
     return SStripAllBut(lhs, "0123456789");
 }
@@ -3280,44 +3290,45 @@ string SUnescape(const string& lhs, char escaper)
     return SUnescape(lhs.c_str(), escaper);
 }
 
-string SStripTrim(const string& lhs)
+string SStripTrim(string_view lhs)
 {
     return STrim(SStrip(lhs));
 }
 
-string SBefore(const string& value, const string& needle)
+string SBefore(string_view value, string_view needle)
 {
     size_t pos = value.find(needle);
-    if (pos == string::npos) {
+    if (pos == string_view::npos || pos == 0) {
         return "";
     } else {
-        return value.substr(0, pos);
+        return string(value.substr(0, pos));
     }
 }
 
-string SAfter(const string& value, const string& needle)
+string SAfter(string_view value, string_view needle)
 {
     size_t pos = value.find(needle);
-    if (pos == string::npos) {
+    if (pos == string_view::npos || pos + needle.size() == value.size()) {
         return "";
     } else {
-        return value.substr(pos + needle.size());
+        return string(value.substr(pos + needle.size()));
     }
 }
 
-string SAfterLastOf(const string& value, const string& needle)
+string SAfterLastOf(string_view value, string_view needle)
 {
     size_t pos = value.find_last_of(needle);
-    if (pos == string::npos) {
+    if (pos == string_view::npos || pos + 1 == value.size()) {
         return "";
     } else {
-        return value.substr(pos + 1);
+        return string(value.substr(pos + 1));
     }
 }
 
-string SAfterUpTo(const string& value, const string& after, const string& upTo)
+string SAfterUpTo(string_view value, string_view after, string_view upTo)
 {
-    return SBefore(SAfter(value, after), upTo);
+    size_t pos = value.find(after);
+    return pos == string_view::npos ? "" : SBefore(value.substr(pos + after.size()), upTo);
 }
 
 void SAppend(string& lhs, const void* rhs, int num)
@@ -3332,9 +3343,9 @@ void SAppend(string& lhs, const string& rhs)
     lhs += rhs;
 }
 
-int SParseHTTP(const string& buffer, string& methodLine, STable& nameValueMap, string& content)
+int SParseHTTP(string_view buffer, string& methodLine, STable& nameValueMap, string& content)
 {
-    return SParseHTTP(buffer.c_str(), (int) buffer.size(), methodLine, nameValueMap, content);
+    return SParseHTTP(buffer.empty() ? "" : buffer.data(), buffer.size(), methodLine, nameValueMap, content);
 }
 
 string SComposeHTTP(const string& methodLine, const STable& nameValueMap, const string& content)
@@ -3344,32 +3355,32 @@ string SComposeHTTP(const string& methodLine, const STable& nameValueMap, const 
     return buffer;
 }
 
-string SComposeHost(const string& host, int port)
+string SComposeHost(string_view host, int port)
 {
     return host + ":" + SToStr(port);
 }
 
-bool SHostIsValid(const string& host)
+bool SHostIsValid(string_view host)
 {
     string domain;
     uint16_t port = 0;
     return SParseHost(host, domain, port);
 }
 
-string SGetDomain(const string& host)
+string SGetDomain(string_view host)
 {
     string domain;
     uint16_t ignore;
     if (SParseHost(host, domain, ignore)) {
         return domain;
     } else {
-        return host;
+        return host.empty() ? "" : string(host);
     }
 }
 
-string SDecodeURIComponent(const string& value)
+string SDecodeURIComponent(string_view value)
 {
-    return SDecodeURIComponent(value.c_str(), (int) value.size());
+    return value.empty() ? "" : SDecodeURIComponent(value.data(), (int) value.size());
 }
 
 bool SParseList(const char* value, list<string>& valueList, char separator)

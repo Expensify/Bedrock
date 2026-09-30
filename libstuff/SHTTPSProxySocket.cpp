@@ -15,11 +15,22 @@ SHTTPSProxySocket::SHTTPSProxySocket(const string& proxyAddress, const string& h
 {
 }
 
+SHTTPSProxySocket::SHTTPSProxySocket(const string& proxyAddress, shared_ptr<const STCPManager::MTLSConnection> connection, const string& requestID)
+    : STCPManager::Socket(proxyAddress, false, DEFAULT_RESOLVE_GRACE_MS, move(connection)),
+    proxyAddress(proxyAddress),
+    hostname(_mtlsConnection ? _mtlsConnection->hostname : ""),
+    requestID(requestID)
+{
+    SASSERT(SHostIsValid(hostname));
+}
+
 SHTTPSProxySocket::SHTTPSProxySocket(SHTTPSProxySocket&& from)
     : STCPManager::Socket(move(from))
 {
     proxyAddress = move(from.proxyAddress);
     from.proxyAddress = "";
+    hostname = move(from.hostname);
+    from.hostname = "";
     requestID = move(from.requestID);
     from.requestID = "";
 }
@@ -110,7 +121,6 @@ bool SHTTPSProxySocket::recv()
                 if (!connectionEstablished.empty()) {
                     // Basic checking that we got back a 200.
                     if (SContains(connectionEstablished.methodLine, " 200 ")) {
-                        proxyNegotiationComplete = true;
                         recvBuffer.clear();
 
                         // We create this here, rather than in the constructor or somewhere that seems more reasonable, because
@@ -121,7 +131,16 @@ bool SHTTPSProxySocket::recv()
                         // waiting for the response, but this was causing issues debugging in wireshark, which couldn't reassemble the
                         // stream of packets in a way that really made sense. It's also just sort of strange looking, so we just
                         // wait to start the TLS handshake until the CONNECT message is complete and its response is received.
-                        ssl = new SSSLState(hostname, s);
+                        try {
+                            ssl = new SSSLState(hostname, s, _mtlsConnection);
+                        } catch (const SException& e) {
+                            SWARN("Couldn't set up SSL for '" << hostname << "' through proxy '" << proxyAddress << "': " << e.what());
+                            S_close(&s);
+                            state.store(State::CLOSED);
+                            connectFailure = true;
+                            return false;
+                        }
+                        proxyNegotiationComplete = true;
                     } else {
                         SWARN("Proxy server " << proxyAddress << " returned methodLine: " << connectionEstablished.methodLine);
                         close(s);

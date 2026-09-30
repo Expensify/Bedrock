@@ -212,6 +212,11 @@ unique_ptr<SStandaloneHTTPSManager::Transaction> SStandaloneHTTPSManager::_creat
 
 unique_ptr<SStandaloneHTTPSManager::Transaction> SStandaloneHTTPSManager::_httpsSend(const string& url, const SData& request, bool allowProxy)
 {
+    return _httpsSend(url, request, nullptr, allowProxy);
+}
+
+unique_ptr<SStandaloneHTTPSManager::Transaction> SStandaloneHTTPSManager::_httpsSend(const string& url, const SData& request, shared_ptr<const MTLSConnection> connection, bool allowProxy)
+{
     // Open a connection, optionally using SSL (if the URL is HTTPS). If that doesn't work, then just return a
     // completed transaction with an error response.
     string host, path;
@@ -222,22 +227,29 @@ unique_ptr<SStandaloneHTTPSManager::Transaction> SStandaloneHTTPSManager::_https
         host += ":443";
     }
 
+    const bool isHttps = SStartsWith(url, "https://");
+    if (connection && (!isHttps || !SIEquals(host, connection->hostname))) {
+        SWARN("mTLS requires an HTTPS URL matching the connection hostname");
+        return _createErrorTransaction();
+    }
+
     unique_ptr<Transaction> transaction = make_unique<Transaction>(*this);
 
-    // If this is going to be an https transaction, create a certificate and give it to the socket.
+    // Open a socket, optionally using a client certificate.
     Socket* s = nullptr;
     bool usingProxy = false;
     try {
         // If a proxy is set, and it's allowed to use it, go through the proxy.
-        bool isHttps = SStartsWith(url, "https://");
         if (isHttps && allowProxy && proxyAddressHTTPS.size()) {
             string proxyHost, path;
             SParseURI(proxyAddressHTTPS, proxyHost, path);
             SINFO("Proxying " << url << " through " << proxyHost);
-            s = new SHTTPSProxySocket(proxyHost, host, transaction->requestID);
+            s = connection
+                ? new SHTTPSProxySocket(proxyHost, move(connection), transaction->requestID)
+                : new SHTTPSProxySocket(proxyHost, host, transaction->requestID);
             usingProxy = true;
         } else {
-            s = new Socket(host, isHttps);
+            s = connection ? new Socket(move(connection)) : new Socket(host, isHttps);
         }
     } catch (const SException& exception) {
         return _createErrorTransaction();

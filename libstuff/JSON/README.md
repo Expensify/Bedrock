@@ -9,7 +9,7 @@ Applications that use these APIs consume Bedrock's copy. They do not maintain an
 Use `JSON::Value::parse()` to parse a document once, then access nested objects and arrays directly.
 The former `SParseJSONObject()`, `SParseJSONArray()`, and `SGetJSONArrayFront()` APIs have been removed.
 Parsing invalid JSON throws `JSON::InvalidArgument`; check the root type before reading object members or array elements.
-The parser reads a NUL-terminated stream, so reject raw embedded NUL bytes at input boundaries before parsing.
+The parser treats raw NUL bytes as end-of-input, so reject them at input boundaries before parsing.
 Keep values typed until a caller needs a serialized string. At string-only command boundaries, use `getString()` for
 JSON strings and `serialize()` for other values, and choose the null representation required by that boundary.
 

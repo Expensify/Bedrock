@@ -172,6 +172,10 @@ void _SSignal_signalHandlerThreadFunc()
         int signum = siginfo.si_signo;
 
         if (result > 0) {
+            if (signum == SIGWINCH) {
+                continue;
+            }
+
             // Do the same handling for these functions here as any other thread.
             if (signum == SIGSEGV || signum == SIGABRT || signum == SIGFPE || signum == SIGILL || signum == SIGBUS) {
                 _SSignal_StackTrace(signum, nullptr, nullptr);
