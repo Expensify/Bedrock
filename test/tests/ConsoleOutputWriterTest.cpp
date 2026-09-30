@@ -16,12 +16,12 @@ struct ConsoleOutputWriterTest : tpunit::TestFixture
     void testCompactOutput()
     {
         if (std::getenv("TPUNIT_TEST_CAPTURE_OUTPUT")) {
-            std::cout << "capture test stdout" << std::endl;
-            std::cerr << "capture test stderr" << std::endl;
+            cout << "capture test stdout" << endl;
+            cerr << "capture test stderr" << endl;
             printf("capture test printf\n");
-            std::system("printf 'capture test child\\n'");
+            system("printf 'capture test child\\n'");
         }
-        std::ostringstream stream;
+        ostringstream stream;
         tpunit::ConsoleOutputWriter writer(stream);
         writer.fixtureStarted(0, "Example", true);
         writer.testFinished(0, "Example", "passing", true, 3ms, "");
@@ -35,7 +35,7 @@ struct ConsoleOutputWriterTest : tpunit::TestFixture
 
     void testVerboseOutput()
     {
-        std::ostringstream stream;
+        ostringstream stream;
         tpunit::ConsoleOutputWriter writer(stream, true);
         writer.testFinished(0, "Example", "passing", true, 5001ms, "");
         writer.comparisonFailed("Example", "failing", "one", "two", false);

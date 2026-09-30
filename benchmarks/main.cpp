@@ -25,7 +25,9 @@ const double SIGNIFICANT_CHANGE_THRESHOLD = 5.0;
 bool runBenchmarks(const set<string>& include, const set<string>& exclude, tpunit::OutputWriter& writer)
 {
     g_benchmarkResults.clear();
-    int result = tpunit::Tests::run(include, exclude, {}, {}, 1, [](){}, &tpunit::_TestFixture::sorter, &writer);
+    auto initThread = []() {
+    };
+    int result = tpunit::Tests::run(include, exclude, {}, {}, 1, initThread, &tpunit::_TestFixture::sorter, &writer);
     return result == 0;
 }
 

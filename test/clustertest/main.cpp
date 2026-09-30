@@ -104,12 +104,12 @@ int main(int argc, char* argv[])
 
     int retval = 0;
     tpunit::ConsoleOutputWriter outputWriter(args.isSet("-v"));
-    std::unique_ptr<tpunit::NcursesOutputWriter> newOutput;
+    unique_ptr<tpunit::NcursesOutputWriter> newOutput;
     if (args.isSet("-useNewOutput") && tpunit::NcursesOutputWriter::available()) {
         try {
-            newOutput = std::make_unique<tpunit::NcursesOutputWriter>();
+            newOutput = make_unique<tpunit::NcursesOutputWriter>();
             activeOutput = newOutput.get();
-        } catch (const std::runtime_error& error) {
+        } catch (const runtime_error& error) {
             cerr << "New test output unavailable: " << error.what() << ". Using console output." << endl;
         }
     }

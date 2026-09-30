@@ -16,26 +16,27 @@
 #include <thread>
 
 using namespace tpunit;
-using namespace std::chrono;
+using namespace std;
+using namespace chrono;
 
 struct NcursesOutputWriter::Impl
 {
     struct Fixture
     {
-        std::string name;
+        string name;
         size_t total = 0;
         size_t completed = 0;
         bool running = false;
         steady_clock::time_point started;
     };
-    std::mutex mutex;
-    std::vector<Fixture> fixtures;
-    std::vector<std::string> failures;
-    std::vector<std::string> failureDetails;
-    std::vector<std::string> messages;
-    std::map<std::thread::id, std::string> pending;
-    std::set<std::string> failureNames;
-    std::vector<std::pair<milliseconds, std::string>> testTimes;
+    mutex mutex;
+    vector<Fixture> fixtures;
+    vector<string> failures;
+    vector<string> failureDetails;
+    vector<string> messages;
+    map<thread::id, string> pending;
+    set<string> failureNames;
+    vector<pair<milliseconds, string>> testTimes;
     steady_clock::time_point started = steady_clock::now();
     size_t completed = 0;
     int passed = 0;
@@ -44,8 +45,8 @@ struct NcursesOutputWriter::Impl
     int summaryFailures = 0;
     bool planned = false;
     bool hasResult = false;
-    std::atomic<bool> stopped{false};
-    std::thread renderer;
+    atomic<bool> stopped{false};
+    thread renderer;
     FILE* tty = nullptr;
     FILE* capture = nullptr;
     SCREEN* screen = nullptr;
@@ -53,7 +54,7 @@ struct NcursesOutputWriter::Impl
     int oldStderr = -1;
     bool finished = false;
 
-    static std::string clockText(seconds duration)
+    static string clockText(seconds duration)
     {
         auto count = duration.count();
         char text[32];
@@ -61,9 +62,9 @@ struct NcursesOutputWriter::Impl
         return text;
     }
 
-    static std::string safe(const std::string& text)
+    static string safe(const string& text)
     {
-        std::string result;
+        string result;
         for (unsigned char c : text) {
             if (c >= 32 && c != 127) {
                 result += static_cast<char>(c);
@@ -74,14 +75,14 @@ struct NcursesOutputWriter::Impl
 
     void draw()
     {
-        std::vector<Fixture> current;
-        std::vector<std::string> currentFailures;
+        vector<Fixture> current;
+        vector<string> currentFailures;
         steady_clock::time_point runStart;
         size_t done;
         int passes, failedTests;
         bool hasPlan;
         {
-            std::lock_guard lock(mutex);
+            lock_guard lock(mutex);
             current = fixtures;
             currentFailures = failures;
             runStart = started;
@@ -105,7 +106,7 @@ struct NcursesOutputWriter::Impl
         }
         erase();
         auto now = steady_clock::now();
-        auto line = [&](int row, const std::string& text) {
+        auto line = [&](int row, const string& text) {
             if (row >= 0 && row < height) {
                 mvaddnstr(row, 0, safe(text).c_str(), width - 1);
             }
@@ -122,16 +123,16 @@ struct NcursesOutputWriter::Impl
         int casesWidth = compactHeader ? 9 : 14;
         int completeWidth = compactHeader ? 9 : 12;
         int failedWidth = compactHeader ? 7 : 9;
-        std::ostringstream labels, values;
-        labels << std::left << std::setw(elapsedWidth) << "ELAPSED" << std::setw(classesWidth) << "CLASSES"
-        << std::setw(casesWidth) << (compactHeader ? "CASES" : "TEST CASES")
-        << std::setw(completeWidth) << (compactHeader ? "COMPLETE" : "% COMPLETE")
-        << std::setw(failedWidth) << "FAILED" << "PASSED";
-        values << std::left << std::setw(elapsedWidth) << clockText(duration_cast<seconds>(now - runStart))
-        << std::setw(classesWidth) << (std::to_string(done) + "/" + std::to_string(current.size()))
-        << std::setw(casesWidth) << (std::to_string(completedCases) + "/" + std::to_string(totalCases))
-        << std::setw(completeWidth) << (std::to_string(current.empty() ? 100 : 100 * done / current.size()) + "%")
-        << std::setw(failedWidth) << failedTests << passes;
+        ostringstream labels, values;
+        labels << left << setw(elapsedWidth) << "ELAPSED" << setw(classesWidth) << "CLASSES"
+        << setw(casesWidth) << (compactHeader ? "CASES" : "TEST CASES")
+        << setw(completeWidth) << (compactHeader ? "COMPLETE" : "% COMPLETE")
+        << setw(failedWidth) << "FAILED" << "PASSED";
+        values << left << setw(elapsedWidth) << clockText(duration_cast<seconds>(now - runStart))
+        << setw(classesWidth) << (to_string(done) + "/" + to_string(current.size()))
+        << setw(casesWidth) << (to_string(completedCases) + "/" + to_string(totalCases))
+        << setw(completeWidth) << (to_string(current.empty() ? 100 : 100 * done / current.size()) + "%")
+        << setw(failedWidth) << failedTests << passes;
         attron(A_BOLD);
         line(0, labels.str());
         attroff(A_BOLD);
@@ -139,33 +140,33 @@ struct NcursesOutputWriter::Impl
         if (height >= 7) {
             mvhline(2, 0, ACS_HLINE, width - 1);
         }
-        int failureHeight = currentFailures.empty() ? 0 : std::min(height - 3, std::max(2, height / 3));
-        std::vector<Fixture> active;
+        int failureHeight = currentFailures.empty() ? 0 : min(height - 3, max(2, height / 3));
+        vector<Fixture> active;
         for (const auto& fixture : current) {
             if (fixture.running) {
                 active.push_back(fixture);
             }
         }
-        std::sort(active.begin(), active.end(), [](const auto& a, const auto& b) {
+        sort(active.begin(), active.end(), [](const auto& a, const auto& b) {
             return a.started < b.started;
         });
-        int availableRows = std::max(0, height - 3 - (failureHeight ? failureHeight + 1 : 0));
+        int availableRows = max(0, height - 3 - (failureHeight ? failureHeight + 1 : 0));
         bool overflow = static_cast<int>(active.size()) > availableRows && availableRows > 0;
-        int shown = std::min(static_cast<int>(active.size()), availableRows - (overflow ? 1 : 0));
+        int shown = min(static_cast<int>(active.size()), availableRows - (overflow ? 1 : 0));
         for (int i = 0; i < shown; ++i) {
             const auto& fixture = active[i];
-            std::ostringstream row;
+            ostringstream row;
             row << clockText(duration_cast<seconds>(now - fixture.started)) << "  "
-            << std::right << std::setw(3) << fixture.completed << '/' << std::setw(3) << fixture.total
+            << right << setw(3) << fixture.completed << '/' << setw(3) << fixture.total
             << "  " << fixture.name;
             line(i + 3, row.str());
         }
         if (overflow) {
-            line(3 + shown, "+" + std::to_string(active.size() - shown) + " more running");
+            line(3 + shown, "+" + to_string(active.size() - shown) + " more running");
         }
         if (failureHeight) {
             int failureStart = shown || overflow ? 4 + shown + (overflow ? 1 : 0) : (height >= 6 ? 4 : 3);
-            line(failureStart, "Failed tests (" + std::to_string(currentFailures.size()) + "):");
+            line(failureStart, "Failed tests (" + to_string(currentFailures.size()) + "):");
             int slots = height - failureStart - 1;
             size_t offset = currentFailures.size() > static_cast<size_t>(slots) ? currentFailures.size() - slots : 0;
             for (int i = 0; i < slots && offset + i < currentFailures.size(); ++i) {
@@ -175,17 +176,17 @@ struct NcursesOutputWriter::Impl
         refresh();
     }
 
-    void append(const std::string& message)
+    void append(const string& message)
     {
-        std::lock_guard lock(mutex);
-        pending[std::this_thread::get_id()] += message;
+        lock_guard lock(mutex);
+        pending[this_thread::get_id()] += message;
     }
 
-    void failure(const std::string& name)
+    void failure(const string& name)
     {
         failures.push_back(name);
         ++failed;
-        auto& details = pending[std::this_thread::get_id()];
+        auto& details = pending[this_thread::get_id()];
         failureDetails.push_back(name + "\n" + details);
         details.clear();
     }
@@ -196,11 +197,11 @@ bool NcursesOutputWriter::available()
     return isatty(STDIN_FILENO) && isatty(STDOUT_FILENO);
 }
 
-NcursesOutputWriter::NcursesOutputWriter() : impl(std::make_unique<Impl>())
+NcursesOutputWriter::NcursesOutputWriter() : impl(make_unique<Impl>())
 {
     impl->tty = fopen("/dev/tty", "w");
     if (!impl->tty) {
-        throw std::runtime_error("Could not open terminal");
+        throw runtime_error("Could not open terminal");
     }
     fcntl(fileno(impl->tty), F_SETFD, FD_CLOEXEC);
     impl->screen = newterm(nullptr, impl->tty, stdin);
@@ -213,7 +214,7 @@ NcursesOutputWriter::NcursesOutputWriter() : impl(std::make_unique<Impl>())
     if (!impl->screen) {
         fclose(impl->tty);
         impl->tty = nullptr;
-        throw std::runtime_error("Could not initialize ncurses");
+        throw runtime_error("Could not initialize ncurses");
     }
     cbreak();
     noecho();
@@ -234,21 +235,21 @@ NcursesOutputWriter::NcursesOutputWriter() : impl(std::make_unique<Impl>())
         if (impl->oldStderr >= 0) {
             close(impl->oldStderr);
         }
-        throw std::runtime_error("Could not capture test output");
+        throw runtime_error("Could not capture test output");
     }
     fcntl(impl->oldStdout, F_SETFD, FD_CLOEXEC);
     fcntl(impl->oldStderr, F_SETFD, FD_CLOEXEC);
     fcntl(fileno(impl->capture), F_SETFD, FD_CLOEXEC);
-    std::cout.flush();
-    std::cerr.flush();
+    cout.flush();
+    cerr.flush();
     fflush(nullptr);
     dup2(fileno(impl->capture), STDOUT_FILENO);
     dup2(fileno(impl->capture), STDERR_FILENO);
-    impl->renderer = std::thread([this]() {
+    impl->renderer = thread([this]() {
         set_term(impl->screen);
         while (!impl->stopped) {
             impl->draw();
-            std::this_thread::sleep_for(100ms);
+            this_thread::sleep_for(100ms);
         }
         impl->draw();
         endwin();
@@ -270,8 +271,8 @@ void NcursesOutputWriter::finish()
     impl->renderer.join();
     delscreen(impl->screen);
     fclose(impl->tty);
-    std::cout.flush();
-    std::cerr.flush();
+    cout.flush();
+    cerr.flush();
     fflush(nullptr);
     dup2(impl->oldStdout, STDOUT_FILENO);
     dup2(impl->oldStderr, STDERR_FILENO);
@@ -292,10 +293,10 @@ void NcursesOutputWriter::finish()
     }
     fclose(impl->capture);
     for (const auto& detail : impl->failureDetails) {
-        std::cout << detail << '\n';
+        cout << detail << '\n';
     }
     for (const auto& message : impl->messages) {
-        std::cout << message << '\n';
+        cout << message << '\n';
     }
     if (impl->hasResult) {
         ConsoleOutputWriter console;
@@ -303,9 +304,9 @@ void NcursesOutputWriter::finish()
     }
 }
 
-void NcursesOutputWriter::runStarted(const std::vector<PlannedFixture>& plan)
+void NcursesOutputWriter::runStarted(const vector<PlannedFixture>& plan)
 {
-    std::lock_guard lock(impl->mutex);
+    lock_guard lock(impl->mutex);
     impl->fixtures.clear();
     impl->planned = true;
     for (const auto& fixture : plan) {
@@ -318,112 +319,112 @@ void NcursesOutputWriter::runStarted(const std::vector<PlannedFixture>& plan)
     impl->pending.clear();
 }
 
-void NcursesOutputWriter::fixtureStarted(size_t id, const std::string&, bool)
+void NcursesOutputWriter::fixtureStarted(size_t id, const string&, bool)
 {
-    std::lock_guard lock(impl->mutex);
+    lock_guard lock(impl->mutex);
     impl->fixtures.at(id).running = true;
     impl->fixtures.at(id).started = steady_clock::now();
 }
 
-void NcursesOutputWriter::fixtureFinished(size_t id, const std::string&, milliseconds)
+void NcursesOutputWriter::fixtureFinished(size_t id, const string&, milliseconds)
 {
-    std::lock_guard lock(impl->mutex);
+    lock_guard lock(impl->mutex);
     impl->fixtures.at(id).running = false;
     ++impl->completed;
 }
 
-void NcursesOutputWriter::fixtureSetupFailed(size_t, const std::string& fixture)
+void NcursesOutputWriter::fixtureSetupFailed(size_t, const string& fixture)
 {
-    std::lock_guard lock(impl->mutex);
+    lock_guard lock(impl->mutex);
     impl->failure(fixture + "::BEFORE_CLASS");
 }
 
-void NcursesOutputWriter::fixtureTeardownFailed(size_t, const std::string& fixture)
+void NcursesOutputWriter::fixtureTeardownFailed(size_t, const string& fixture)
 {
-    std::lock_guard lock(impl->mutex);
+    lock_guard lock(impl->mutex);
     impl->failure(fixture + "::AFTER_CLASS");
 }
 
-void NcursesOutputWriter::testStarted(size_t, const std::string&, const std::string&)
+void NcursesOutputWriter::testStarted(size_t, const string&, const string&)
 {
-    std::lock_guard lock(impl->mutex);
-    impl->pending[std::this_thread::get_id()].clear();
+    lock_guard lock(impl->mutex);
+    impl->pending[this_thread::get_id()].clear();
 }
 
-void NcursesOutputWriter::testFinished(size_t id, const std::string& fixture, const std::string& test, bool passed,
-                                       milliseconds, const std::string& bufferedInfo)
+void NcursesOutputWriter::testFinished(size_t id, const string& fixture, const string& test, bool passed,
+                                       milliseconds, const string& bufferedInfo)
 {
-    std::lock_guard lock(impl->mutex);
+    lock_guard lock(impl->mutex);
     ++impl->fixtures.at(id).completed;
-    impl->pending[std::this_thread::get_id()] += bufferedInfo;
+    impl->pending[this_thread::get_id()] += bufferedInfo;
     if (passed) {
         ++impl->passed;
-        if (!impl->pending[std::this_thread::get_id()].empty()) {
-            impl->messages.push_back(impl->pending[std::this_thread::get_id()]);
+        if (!impl->pending[this_thread::get_id()].empty()) {
+            impl->messages.push_back(impl->pending[this_thread::get_id()]);
         }
-        impl->pending[std::this_thread::get_id()].clear();
+        impl->pending[this_thread::get_id()].clear();
     } else {
         impl->failure(fixture + "::" + test);
     }
 }
 
-void NcursesOutputWriter::assertionFailed(const std::string&, const std::string&, int number,
-                                          const std::string& file, int line, const std::string& bufferedInfo)
+void NcursesOutputWriter::assertionFailed(const string&, const string&, int number,
+                                          const string& file, int line, const string& bufferedInfo)
 {
-    impl->append("  assertion #" + std::to_string(number) + " at " + file + ":" + std::to_string(line) + "\n" + bufferedInfo);
+    impl->append("  assertion #" + to_string(number) + " at " + file + ":" + to_string(line) + "\n" + bufferedInfo);
 }
 
-void NcursesOutputWriter::exceptionCaught(const std::string&, const std::string&, int number,
-                                          const std::string& method, const std::string& cause,
-                                          const std::string& bufferedInfo)
+void NcursesOutputWriter::exceptionCaught(const string&, const string&, int number,
+                                          const string& method, const string& cause,
+                                          const string& bufferedInfo)
 {
-    impl->append("  exception #" + std::to_string(number) + " from " + method + " with cause: " + cause + "\n" + bufferedInfo);
+    impl->append("  exception #" + to_string(number) + " from " + method + " with cause: " + cause + "\n" + bufferedInfo);
 }
 
-void NcursesOutputWriter::trace(const std::string&, const std::string&, int, const std::string&,
-                                int, const std::string& message, const std::string& bufferedInfo)
+void NcursesOutputWriter::trace(const string&, const string&, int, const string&,
+                                int, const string& message, const string& bufferedInfo)
 {
     impl->append("  trace: " + message + "\n" + bufferedInfo);
 }
 
-void NcursesOutputWriter::comparisonFailed(const std::string&, const std::string&,
-                                           const std::string& lhs, const std::string& rhs, bool isEqual)
+void NcursesOutputWriter::comparisonFailed(const string&, const string&,
+                                           const string& lhs, const string& rhs, bool isEqual)
 {
     impl->append(lhs + (isEqual ? " == " : " != ") + rhs + "\n");
 }
 
-void NcursesOutputWriter::diagnostic(const std::string&, const std::string&, const std::string& message)
+void NcursesOutputWriter::diagnostic(const string&, const string&, const string& message)
 {
     impl->append(message + "\n");
 }
 
-void NcursesOutputWriter::invalidPattern(const std::string& pattern)
+void NcursesOutputWriter::invalidPattern(const string& pattern)
 {
-    std::lock_guard lock(impl->mutex);
+    lock_guard lock(impl->mutex);
     impl->messages.push_back("Invalid pattern: " + pattern + ", skipping.");
 }
 
 void NcursesOutputWriter::unnamedFixture()
 {
-    std::lock_guard lock(impl->mutex);
+    lock_guard lock(impl->mutex);
     impl->messages.push_back("test has no name???");
 }
 
-void NcursesOutputWriter::unmatchedPattern(const std::string& pattern)
+void NcursesOutputWriter::unmatchedPattern(const string& pattern)
 {
-    std::lock_guard lock(impl->mutex);
+    lock_guard lock(impl->mutex);
     impl->messages.push_back("Could not find any test matching, make sure the test name is right: " + pattern);
 }
 
 void NcursesOutputWriter::threadShutdown(int threadID)
 {
-    std::lock_guard lock(impl->mutex);
-    impl->messages.push_back("Thread " + std::to_string(threadID) + " caught shutdown exception, exiting.");
+    lock_guard lock(impl->mutex);
+    impl->messages.push_back("Thread " + to_string(threadID) + " caught shutdown exception, exiting.");
 }
 
 void NcursesOutputWriter::runFinished(const RunResult& result)
 {
-    std::lock_guard lock(impl->mutex);
+    lock_guard lock(impl->mutex);
     impl->hasResult = true;
     impl->summaryPasses = result.passes;
     impl->summaryFailures = result.failures;
