@@ -34,6 +34,7 @@ struct GetJobTest : tpunit::TestFixture
                               BEFORE_CLASS(GetJobTest::setupClass),
                               TEST(GetJobTest::getJob),
                               TEST(GetJobTest::getJobWithHttp),
+                              TEST(GetJobTest::testJobDataKeysWithNul),
                               TEST(GetJobTest::withNumResults),
                               TEST(GetJobTest::noJobFound),
                               TEST(GetJobTest::testPriorities),
@@ -123,6 +124,27 @@ struct GetJobTest : tpunit::TestFixture
         ASSERT_EQUAL(currentJob[0][7], originalJob[0][7]);
         ASSERT_EQUAL(currentJob[0][8], originalJob[0][8]);
         ASSERT_EQUAL(currentJob[0][9], originalJob[0][9]);
+    }
+
+    void testJobDataKeysWithNul()
+    {
+        SData command("CreateJob");
+        command["name"] = "nul-metadata";
+        command["retryAfter"] = "+1 HOUR";
+        command["data"] = R"({"retryAfterCount\u0000caller":"10","_bedrockRerunIfDataChanged\u0000caller":true})";
+        const string jobID = tester->executeWaitVerifyContentTable(command)["jobID"];
+
+        // A caller-owned key must not be removed as Bedrock's private marker when creating the job.
+        const JSON::Value storedData = JSON::Value::parse(tester->readDB("SELECT data FROM jobs WHERE jobID = " + jobID + ";"));
+        ASSERT_TRUE(storedData["_bedrockRerunIfDataChanged\0caller"s].getBool());
+
+        command = SData("GetJob");
+        command["name"] = "nul-metadata";
+        const JSON::Value job = JSON::Value::parse(tester->executeWaitVerifyContent(command));
+        ASSERT_EQUAL(job["jobID"].getInt(), SToInt64(jobID));
+
+        // A caller-owned key must not trigger the retry limit.
+        ASSERT_EQUAL(job["data"]["retryAfterCount\0caller"s].getString(), "10");
     }
 
     // Simple GetJob with Http

@@ -699,7 +699,10 @@ void BedrockPlugin_MySQL::onPortRequestComplete(const BedrockCommand& command, S
         } else {
             // Convert the JSON response from Bedrock::DB into MySQL protocol
             SQResult result;
-            SASSERT(command.response.content.empty() || result.deserialize(command.response.content));
+            if (!result.deserialize(command.response.content)) {
+                s->send(MySQLPacket::serializeERR(command.request.calc("sequenceID"), 500, "Failed to deserialize query result"));
+                return;
+            }
             s->send(MySQLPacket::serializeQueryResponse(command.request.calc("sequenceID"), result));
         }
     } else {

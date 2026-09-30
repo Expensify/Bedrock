@@ -94,11 +94,11 @@ static string preserveRerunIfDataChangedSQL(const string& newDataExpression)
            newDataExpression + ")";
 }
 
-// These metadata lookups historically used STable's case-insensitive keys.
+// Job metadata keys are case-insensitive and must match in full, including embedded NULs.
 static string findJobDataKey(const JSON::Value& data, const string& key)
 {
     for (const auto& [storedKey, value] : JSON::ConstObjectValue(data)) {
-        if (SIEquals(storedKey, key)) {
+        if (storedKey.size() == key.size() && SIEquals(storedKey, key)) {
             return storedKey;
         }
     }
@@ -107,10 +107,11 @@ static string findJobDataKey(const JSON::Value& data, const string& key)
 
 static string stripRerunIfDataChanged(const string& data)
 {
+    const string key = "_bedrockRerunIfDataChanged";
     JSON::Value publicData = JSON::Value::parse(data);
     bool removed = false;
     for (auto member = publicData.objectBegin(); member != publicData.objectEnd();) {
-        if (SIEquals(member->first, "_bedrockRerunIfDataChanged")) {
+        if (member->first.size() == key.size() && SIEquals(member->first, key)) {
             member = publicData.erase(member);
             removed = true;
         } else {

@@ -1,6 +1,7 @@
 #include <libstuff/JSON/Value.h>
 #include "libstuff/libstuff.h"
 #include <libstuff/SData.h>
+#include <plugins/MySQL.h>
 #include <test/lib/BedrockTester.h>
 
 struct QueryTest : tpunit::TestFixture
@@ -12,6 +13,7 @@ struct QueryTest : tpunit::TestFixture
                               TEST(QueryTest::testNoSemicolon),
                               TEST(QueryTest::testBad),
                               TEST(QueryTest::testOK),
+                              TEST(QueryTest::testInvalidMySQLResult),
                               TEST(QueryTest::testWrite),
                               TEST(QueryTest::testWriteInSecondStatement),
                               TEST(QueryTest::testNoWhere),
@@ -21,10 +23,12 @@ struct QueryTest : tpunit::TestFixture
     }
 
     BedrockTester* tester;
+    uint16_t mysqlPort;
 
     void setup()
     {
-        tester = new BedrockTester({}, {
+        mysqlPort = BedrockTester::ports.getPort();
+        tester = new BedrockTester({{"-plugins", "db,mysql"}, {"-mysql.host", "127.0.0.1:" + to_string(mysqlPort)}}, {
             "CREATE TABLE queryTest (key INTEGER, value TEXT);",
         });
     }
@@ -32,6 +36,7 @@ struct QueryTest : tpunit::TestFixture
     void tearDown()
     {
         delete tester;
+        BedrockTester::ports.returnPort(mysqlPort);
     }
 
     void testMissing()
@@ -61,6 +66,46 @@ struct QueryTest : tpunit::TestFixture
         SData query("Query");
         query["query"] = "SELECT 1;";
         tester->executeWaitVerifyContent(query, "200 OK");
+    }
+
+    void testInvalidMySQLResult()
+    {
+        STCPManager::Socket socket(tester->getArg("-mysql.host"), false);
+        MySQLPacket response;
+        auto receivePacket = [&] {
+            const uint64_t deadline = STimeNow() + 5'000'000;
+            while (STimeNow() < deadline) {
+                const int bytes = response.deserialize(socket.recvBuffer.c_str(), socket.recvBuffer.size());
+                if (bytes) {
+                    socket.recvBuffer.consumeFront(bytes);
+                    return true;
+                }
+                if (socket.state == STCPManager::Socket::CLOSED) {
+                    return false;
+                }
+                fd_map fdm;
+                STCPManager::prePoll(fdm, socket);
+                S_poll(fdm, 100'000);
+                STCPManager::postPoll(fdm, socket);
+            }
+            return false;
+        };
+
+        ASSERT_TRUE(receivePacket());
+
+        // SQLite emits Inf for this valid query, which cannot be parsed as JSON.
+        MySQLPacket query;
+        query.sequenceID = 0;
+        query.payload = "\x03SELECT 1e999 AS value;";
+        ASSERT_TRUE(socket.send(query.serialize()));
+        ASSERT_TRUE(receivePacket());
+        ASSERT_EQUAL(response.serialize(), MySQLPacket::serializeERR(0, 500, "Failed to deserialize query result"));
+
+        // The connection and server remain usable after the failed result conversion.
+        query.payload = "\x03SELECT 1 AS value;";
+        ASSERT_TRUE(socket.send(query.serialize()));
+        ASSERT_TRUE(receivePacket());
+        ASSERT_EQUAL(response.payload, MySQLPacket::lenEncInt(1));
     }
 
     void testWrite()
