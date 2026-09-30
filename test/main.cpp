@@ -6,7 +6,7 @@
 #include <test/lib/BedrockTester.h>
 #include <test/lib/BedrockTestPath.h>
 #include <test/lib/ConsoleOutputWriter.h>
-#include <test/output/NcursesOutputWriter.h>
+#include <test/lib/NcursesOutputWriter.h>
 #include <libstuff/SSSLState.h>
 
 /*

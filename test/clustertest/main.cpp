@@ -7,7 +7,7 @@
 #include <test/lib/BedrockTester.h>
 #include <test/lib/BedrockTestPath.h>
 #include <test/lib/ConsoleOutputWriter.h>
-#include <test/output/NcursesOutputWriter.h>
+#include <test/lib/NcursesOutputWriter.h>
 
 /*
  * This is based on the 'test' application in the parent directory to this one, but specifically aims to test the

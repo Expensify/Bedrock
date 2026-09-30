@@ -1,4 +1,4 @@
-#include <test/output/NcursesOutputWriter.h>
+#include <test/lib/NcursesOutputWriter.h>
 #include <test/lib/ConsoleOutputWriter.h>
 #include <ncurses.h>
 #include <algorithm>
