@@ -571,6 +571,7 @@ string SQLite::_getJournalEntriesQuery(uint64_t fromIndex, uint64_t toIndex) con
         }
     }
     if (experimentalHCTree && (!toIndex || toIndex >= _sharedData.hctMinID)) {
+        // if toIndex is above the min entry in the HC-Tree journal, we will add the HC-Tree journal to out list of source tables.
         sources.push_back(_getHCTreeJournalQuery() + " WHERE cid >= " + SQ(fromIndex) +
                           (toIndex ? " AND cid <= " + SQ(toIndex) : ""));
     }
