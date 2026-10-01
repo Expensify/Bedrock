@@ -31,7 +31,7 @@ struct NcursesOutputWriter::Impl
         bool running = false;
         steady_clock::time_point started;
     };
-    mutex mutex;
+    mutex stateMutex;
     vector<Fixture> fixtures;
     vector<string> failures;
     vector<string> failureDetails;
@@ -84,7 +84,7 @@ struct NcursesOutputWriter::Impl
         int passes, failedTests;
         bool hasPlan;
         {
-            lock_guard lock(mutex);
+            lock_guard lock(stateMutex);
             current = fixtures;
             currentFailures = failures;
             runStart = started;
@@ -180,7 +180,7 @@ struct NcursesOutputWriter::Impl
 
     void append(const string& message)
     {
-        lock_guard lock(mutex);
+        lock_guard lock(stateMutex);
         pending[this_thread::get_id()] += message;
     }
 
@@ -308,7 +308,7 @@ void NcursesOutputWriter::finish()
 
 void NcursesOutputWriter::runStarted(const vector<PlannedFixture>& plan)
 {
-    lock_guard lock(impl->mutex);
+    lock_guard lock(impl->stateMutex);
     impl->fixtures.clear();
     impl->planned = true;
     for (const auto& fixture : plan) {
@@ -323,40 +323,40 @@ void NcursesOutputWriter::runStarted(const vector<PlannedFixture>& plan)
 
 void NcursesOutputWriter::fixtureStarted(size_t id, const string&, bool)
 {
-    lock_guard lock(impl->mutex);
+    lock_guard lock(impl->stateMutex);
     impl->fixtures.at(id).running = true;
     impl->fixtures.at(id).started = steady_clock::now();
 }
 
 void NcursesOutputWriter::fixtureFinished(size_t id, const string&, milliseconds)
 {
-    lock_guard lock(impl->mutex);
+    lock_guard lock(impl->stateMutex);
     impl->fixtures.at(id).running = false;
     ++impl->completed;
 }
 
 void NcursesOutputWriter::fixtureSetupFailed(size_t, const string& fixture)
 {
-    lock_guard lock(impl->mutex);
+    lock_guard lock(impl->stateMutex);
     impl->failure(fixture + "::BEFORE_CLASS");
 }
 
 void NcursesOutputWriter::fixtureTeardownFailed(size_t, const string& fixture)
 {
-    lock_guard lock(impl->mutex);
+    lock_guard lock(impl->stateMutex);
     impl->failure(fixture + "::AFTER_CLASS");
 }
 
 void NcursesOutputWriter::testStarted(size_t, const string&, const string&)
 {
-    lock_guard lock(impl->mutex);
+    lock_guard lock(impl->stateMutex);
     impl->pending[this_thread::get_id()].clear();
 }
 
 void NcursesOutputWriter::testFinished(size_t id, const string& fixture, const string& test, bool passed,
                                        milliseconds, const string& bufferedInfo)
 {
-    lock_guard lock(impl->mutex);
+    lock_guard lock(impl->stateMutex);
     ++impl->fixtures.at(id).completed;
     impl->pending[this_thread::get_id()] += bufferedInfo;
     if (passed) {
@@ -402,31 +402,31 @@ void NcursesOutputWriter::diagnostic(const string&, const string&, const string&
 
 void NcursesOutputWriter::invalidPattern(const string& pattern)
 {
-    lock_guard lock(impl->mutex);
+    lock_guard lock(impl->stateMutex);
     impl->messages.push_back("Invalid pattern: " + pattern + ", skipping.");
 }
 
 void NcursesOutputWriter::unnamedFixture()
 {
-    lock_guard lock(impl->mutex);
+    lock_guard lock(impl->stateMutex);
     impl->messages.push_back("test has no name???");
 }
 
 void NcursesOutputWriter::unmatchedPattern(const string& pattern)
 {
-    lock_guard lock(impl->mutex);
+    lock_guard lock(impl->stateMutex);
     impl->messages.push_back("Could not find any test matching, make sure the test name is right: " + pattern);
 }
 
 void NcursesOutputWriter::threadShutdown(int threadID)
 {
-    lock_guard lock(impl->mutex);
+    lock_guard lock(impl->stateMutex);
     impl->messages.push_back("Thread " + to_string(threadID) + " caught shutdown exception, exiting.");
 }
 
 void NcursesOutputWriter::runFinished(const RunResult& result)
 {
-    lock_guard lock(impl->mutex);
+    lock_guard lock(impl->stateMutex);
     impl->hasResult = true;
     impl->summaryPasses = result.passes;
     impl->summaryFailures = result.failures;
