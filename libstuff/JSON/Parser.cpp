@@ -5,16 +5,17 @@
 
 #include <chrono>
 
+#include <rapidjson/memorystream.h>
 #include <rapidjson/reader.h>
 
 using namespace JSON;
 
-unique_ptr<Value> Parser::read(const string& json)
+unique_ptr<Value> Parser::read(string_view json)
 {
     auto start = chrono::high_resolution_clock::now();
     SAXHandler handler;
     rapidjson::Reader reader;
-    rapidjson::StringStream ss(json.c_str());
+    rapidjson::MemoryStream ss(json.empty() ? "" : json.data(), json.size());
     rapidjson::ParseResult parseResult = reader.Parse(ss, handler);
 
     if (parseResult.IsError()) {
@@ -26,11 +27,11 @@ unique_ptr<Value> Parser::read(const string& json)
     return handler.getValue();
 };
 
-unique_ptr<Value> Parser::readUnsafe(const string& json)
+unique_ptr<Value> Parser::readUnsafe(string_view json)
 {
     SAXHandler handler;
     rapidjson::Reader reader;
-    rapidjson::StringStream ss(json.c_str());
+    rapidjson::MemoryStream ss(json.empty() ? "" : json.data(), json.size());
     reader.Parse(ss, handler);
 
     return handler.getValue();
