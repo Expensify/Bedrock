@@ -310,8 +310,13 @@ void SQLite::commonConstructorInitialization(bool hctree)
 
     // For non-passive checkpoints, we must set a busy timeout in order to wait on any readers.
     // We set it to 2 minutes as the majority of transactions should take less than that.
+    // Non-passive checkpoints are currently unused in production.
     if (_checkpointMode != SQLITE_CHECKPOINT_PASSIVE) {
         sqlite3_busy_timeout(_db, 120'000);
+    } else {
+        // Give transient SQLITE_BUSY 50ms to clear before falling back to
+        // SQuery's one-second waits between retries.
+        sqlite3_busy_timeout(_db, 50);
     }
 }
 
