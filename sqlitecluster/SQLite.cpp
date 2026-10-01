@@ -275,6 +275,7 @@ vector<string> SQLite::initializeJournal(sqlite3* db, int minJournalTables, bool
         SQResult latest;
         SASSERT(!SQuery(db, "SELECT MAX(id) FROM (" + _getJournalQuery(journalNames, {"SELECT MAX(id) AS id FROM"}, true) + ")", latest));
         if (latest.empty() || latest[0][0].empty()) {
+            // Without an explicit BEGIN, this runs in autocommit mode and will be committed upon completion of the insert.
             SASSERT(!SQuery(db, "INSERT INTO " + journalNames.front() + " (id, query, hash) VALUES (1, X'', '')"));
         }
     }
@@ -573,6 +574,9 @@ string SQLite::_getJournalEntriesQuery(uint64_t fromIndex, uint64_t toIndex) con
         sources.push_back(_getHCTreeJournalQuery() + " WHERE cid >= " + SQ(fromIndex) +
                           (toIndex ? " AND cid <= " + SQ(toIndex) : ""));
     }
+    // If sources is empty, it implies that the caller is asking for journal entries that we don't have. In this case, we return
+    // a default query that is valid and will run, but will return no rows, so that the caller can legitimately figure out that
+    // no data is available in that range.
     return sources.empty() ? "SELECT NULL AS id, X'' AS query, '' AS hash WHERE 0" : SComposeList(sources, " UNION ALL ");
 }
 
@@ -737,12 +741,10 @@ bool SQLite::beginTransaction(SQLite::TRANSACTION_TYPE type, bool beginOnly)
         rollback();
         STHROW("Attempted to begin transaction while in invalid state: _uncommittedQuery not empty");
     }
-    if (type == TRANSACTION_TYPE::EXCLUSIVE) {
-        beginWriteTransaction();
-    }
     _lastTransactionType = type;
     _transactionTimer.start("BEGIN_TRANSACTION");
     if (type == TRANSACTION_TYPE::EXCLUSIVE) {
+        beginWriteTransaction();
         auto commitLockWaitStart = chrono::steady_clock::now();
         if (isSyncThread) {
             // Blocking the sync thread has catastrophic results (forking) and so we either get this quickly, or we fail the transaction.
@@ -1122,10 +1124,14 @@ bool SQLite::trimJournalTable(size_t journalTableIndex, int64_t batchSize)
     const uint64_t commitCount = state.commitCount;
 
     if (experimentalHCTree && journalTableIndex == _journalNames.size()) {
-        // Keep the cutover contiguous until all legacy history has been removed.
+        // We won't remove anything from the HC-Tree journal until all legacy journals are empty.
         if (legacyTablesRemaining) {
             return true;
         }
+
+        // The oldest commit to keep is nominally the current highest commit count, minus whatever our max
+        // journal size is, but if the journal is composed of mainly empty rows (i.e., resulting from conflicts),
+        // we need to make sure we keep at least one row (the highest numbered one) with a non-blank hash.
         uint64_t oldestCommitToKeep = commitCount < _maxJournalSize ? 0 : commitCount - _maxJournalSize;
         if (state.hashCommitID) {
             oldestCommitToKeep = min(oldestCommitToKeep, state.hashCommitID);
@@ -1133,15 +1139,20 @@ bool SQLite::trimJournalTable(size_t journalTableIndex, int64_t batchSize)
         if (oldestCommitToKeep <= _sharedData.hctMinID) {
             return true;
         }
+
         SQResult bounds;
         if (!read("SELECT MIN(cid), MAX(cid) FROM hct_journal", bounds) || bounds.empty() || bounds[0][0].empty()) {
+            // This returns false if we can't select `min()` and `max()` which should never happen.
+            SWARN("Possibly corrupt HC-Tree jornal");
             return false;
         }
+
+        // Or if there's nothing old enough to trim in the journal, we can also skip.
         if (SToUInt64(bounds[0][0]) >= oldestCommitToKeep || bounds[0][0] == bounds[0][1]) {
             return true;
         }
-        // Delete a prefix, never the final entry. HC-Tree requires the journal
-        // to remain nonempty and only permits deleting rows in CID order.
+
+        // HC-Tree requires us to delete from the oldest entry in contigous order.
         return writeLocalUnreplicated("DELETE FROM hct_journal WHERE cid IN (SELECT cid FROM hct_journal "
             "WHERE cid < " + SQ(oldestCommitToKeep) + " ORDER BY cid LIMIT " + SQ(batchSize) + ");");
     }
