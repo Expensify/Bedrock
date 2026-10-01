@@ -14,6 +14,7 @@ public:
     NcursesOutputWriter();
     ~NcursesOutputWriter() override;
     void finish();
+    void restoreAfterSignal() noexcept;
 
     void runStarted(const vector<PlannedFixture>& fixtures) override;
     void fixtureStarted(size_t id, const string& fixture, bool singleThreaded) override;

@@ -5,6 +5,7 @@
 #include <ncurses.h>
 #include <algorithm>
 #include <sys/ioctl.h>
+#include <sys/syscall.h>
 #include <unistd.h>
 #include <atomic>
 #include <cstdio>
@@ -15,6 +16,7 @@
 #include <mutex>
 #include <sstream>
 #include <stdexcept>
+#include <termios.h>
 #include <thread>
 
 using namespace tpunit;
@@ -47,13 +49,17 @@ struct NcursesOutputWriter::Impl
     int summaryFailures = 0;
     bool planned = false;
     bool hasResult = false;
-    atomic<bool> stopped{false};
+    // 0 = running, 1 = normal finish, 2 = emergency signal exit.
+    atomic<int> stopMode{0};
     thread renderer;
     FILE* tty = nullptr;
+    int terminalFd = -1;
     FILE* capture = nullptr;
     SCREEN* screen = nullptr;
     int oldStdout = -1;
     int oldStderr = -1;
+    termios originalTermios{};
+    bool hasOriginalTermios = false;
     bool finished = false;
 
     static string clockText(seconds duration)
@@ -205,7 +211,9 @@ NcursesOutputWriter::NcursesOutputWriter() : impl(make_unique<Impl>())
     if (!impl->tty) {
         throw runtime_error("Could not open terminal");
     }
-    fcntl(fileno(impl->tty), F_SETFD, FD_CLOEXEC);
+    impl->terminalFd = fileno(impl->tty);
+    impl->hasOriginalTermios = tcgetattr(STDIN_FILENO, &impl->originalTermios) == 0;
+    fcntl(impl->terminalFd, F_SETFD, FD_CLOEXEC);
     impl->screen = newterm(nullptr, impl->tty, stdin);
     if (!impl->screen) {
         // A local terminal may advertise a newer TERM than the VM has in its terminfo database.
@@ -249,12 +257,14 @@ NcursesOutputWriter::NcursesOutputWriter() : impl(make_unique<Impl>())
     dup2(fileno(impl->capture), STDERR_FILENO);
     impl->renderer = thread([this]() {
         set_term(impl->screen);
-        while (!impl->stopped) {
+        while (impl->stopMode.load() == 0) {
             impl->draw();
             this_thread::sleep_for(100ms);
         }
-        impl->draw();
-        endwin();
+        if (impl->stopMode.load() == 1) {
+            impl->draw();
+            endwin();
+        }
     });
 }
 
@@ -269,7 +279,7 @@ void NcursesOutputWriter::finish()
         return;
     }
     impl->finished = true;
-    impl->stopped = true;
+    impl->stopMode.store(1);
     impl->renderer.join();
     delscreen(impl->screen);
     fclose(impl->tty);
@@ -304,6 +314,27 @@ void NcursesOutputWriter::finish()
         ConsoleOutputWriter console;
         console.runFinished({impl->summaryPasses, impl->summaryFailures, impl->failureNames, impl->testTimes});
     }
+}
+
+void NcursesOutputWriter::restoreAfterSignal() noexcept
+{
+    static_assert(atomic<int>::is_always_lock_free);
+    impl->stopMode.store(2);
+    if (impl->hasOriginalTermios) {
+        // Use the kernel ioctl directly; ncurses and stdio can hold locks in the interrupted thread.
+        syscall(SYS_ioctl, STDIN_FILENO, TCSETS, &impl->originalTermios);
+    }
+    constexpr char resetDisplay[] = "\033[?1049l\033[?25h\033[0m";
+    write(impl->terminalFd, resetDisplay, sizeof(resetDisplay) - 1);
+
+    // Keep the renderer from writing to the restored terminal while the signal handler cleans up.
+    int sink = open("/dev/null", O_WRONLY);
+    if (sink >= 0) {
+        dup2(sink, impl->terminalFd);
+        close(sink);
+    }
+    dup2(impl->oldStdout, STDOUT_FILENO);
+    dup2(impl->oldStderr, STDERR_FILENO);
 }
 
 void NcursesOutputWriter::runStarted(const vector<PlannedFixture>& plan)

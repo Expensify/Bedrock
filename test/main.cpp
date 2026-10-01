@@ -23,7 +23,7 @@ static tpunit::NcursesOutputWriter* activeOutput = nullptr;
 void sigclean(int sig)
 {
     if (activeOutput) {
-        activeOutput->finish();
+        activeOutput->restoreAfterSignal();
     }
     cout << "Got SIGINT, cleaning up." << endl;
     BedrockTester::stopAll();
