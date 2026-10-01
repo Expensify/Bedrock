@@ -1,15 +1,17 @@
 #include "tpunit++.hpp"
+#include "ConsoleOutputWriter.h"
 #include <string.h>
 #include <iostream>
 #include <regex>
 #include <chrono>
 #include <atomic>
+#include <utility>
 using namespace tpunit;
 
 atomic<bool> tpunit::_TestFixture::exitFlag(false);
-bool tpunit::_TestFixture::_verboseOutput = false;
-atomic<int> tpunit::_TestFixture::_shortOutputColumn(0);
 thread_local string tpunit::currentTestName;
+static thread_local string currentMethodName;
+thread_local string tpunit::_TestFixture::testOutputBuffer;
 thread_local tpunit::_TestFixture* tpunit::currentTestPtr = nullptr;
 thread_local mutex tpunit::currentTestNameMutex;
 
@@ -108,10 +110,10 @@ tpunit::_TestFixture::~_TestFixture() {
     delete _tests;
 }
 
-int tpunit::_TestFixture::tpunit_detail_do_run(int threads, std::function<void()> threadInitFunction, std::function<bool(_TestFixture*, _TestFixture*)> sortFunction) {
+int tpunit::_TestFixture::tpunit_detail_do_run(int threads, std::function<void()> threadInitFunction, std::function<bool(_TestFixture*, _TestFixture*)> sortFunction, OutputWriter* writer) {
     const std::set<std::string> include, exclude;
     const std::list<std::string> before, after;
-    return tpunit_detail_do_run(include, exclude, before, after, threads, threadInitFunction, sortFunction);
+    return tpunit_detail_do_run(include, exclude, before, after, threads, threadInitFunction, sortFunction, writer);
 }
 
 void tpunit::_TestFixture::tpunit_run_test_class(_TestFixture* f) {
@@ -119,9 +121,10 @@ void tpunit::_TestFixture::tpunit_run_test_class(_TestFixture* f) {
    f->_stats._exceptions = 0;
    tpunit_detail_do_methods(f->_before_classes);
    if (f->_stats._assertions || f->_stats._exceptions) {
-      tpunit_detail_stats()._failures++;
-      tpunit_detail_stats()._failureNames.emplace(f->_name + "::BEFORE_CLASS"s);
-      cout << "\xE2\x9D\x8C !FAILED! \xE2\x9D\x8C initializing " << f->_name << ". Skipping tests." << endl;
+       lock_guard<recursive_mutex> lock(*f->_mutex);
+       tpunit_detail_stats()._failures++;
+       tpunit_detail_stats()._failureNames.emplace(f->_name + "::BEFORE_CLASS"s);
+       f->_outputWriter->fixtureSetupFailed(f->_invocationID, f->_name);
    } else {
        tpunit_detail_do_tests(f);
    }
@@ -129,9 +132,10 @@ void tpunit::_TestFixture::tpunit_run_test_class(_TestFixture* f) {
    f->_stats._exceptions = 0;
    tpunit_detail_do_methods(f->_after_classes);
    if (f->_stats._assertions || f->_stats._exceptions) {
-      tpunit_detail_stats()._failures++;
-      tpunit_detail_stats()._failureNames.emplace(f->_name + "::AFTER_CLASS"s);
-      cout << "\xE2\x9D\x8C !FAILED! \xE2\x9D\x8C cleaning up " << f->_name << "." << endl;
+       lock_guard<recursive_mutex> lock(*f->_mutex);
+       tpunit_detail_stats()._failures++;
+       tpunit_detail_stats()._failureNames.emplace(f->_name + "::AFTER_CLASS"s);
+       f->_outputWriter->fixtureTeardownFailed(f->_invocationID, f->_name);
    }
 }
 bool tpunit::_TestFixture::sorter(_TestFixture* a, _TestFixture* b) {
@@ -141,10 +145,22 @@ bool tpunit::_TestFixture::sorter(_TestFixture* a, _TestFixture* b) {
    return false;
 }
 
+size_t tpunit::_TestFixture::testCount() const {
+    size_t count = 0;
+    for (method* test = _tests; test; test = test->_next) {
+        ++count;
+    }
+    return count;
+}
+
 int tpunit::_TestFixture::tpunit_detail_do_run(const set<string>& include, const set<string>& exclude,
                                               const list<string>& before, const list<string>& after, int threads,
-                                              std::function<void()> threadInitFunction, std::function<bool(_TestFixture*, _TestFixture*)> sortFunction) {
-   threadInitFunction();
+                                              std::function<void()> threadInitFunction, std::function<bool(_TestFixture*, _TestFixture*)> sortFunction, OutputWriter* writer) {
+    ConsoleOutputWriter defaultWriter;
+    if (!writer) {
+        writer = &defaultWriter;
+    }
+    threadInitFunction();
     /*
     * Run specific tests by name. If 'include' is empty, then every test is
     * run unless it's in 'exclude'. If 'include' has at least one entry,
@@ -157,24 +173,95 @@ int tpunit::_TestFixture::tpunit_detail_do_run(const set<string>& include, const
     set<string> _include = include;
     set<string> _exclude = exclude;
 
+    using Invocation = pair<_TestFixture*, size_t>;
+    vector<OutputWriter::PlannedFixture> plan;
+    vector<Invocation> beforeInvocations, afterInvocations;
+    map<_TestFixture*, size_t> mainIDs;
+    map<_TestFixture*, vector<size_t>> afterIDs;
+    auto planFixture = [&](auto& destination, _TestFixture* fixture) {
+        size_t id = plan.size();
+        plan.push_back({id, fixture->_name ? fixture->_name : "", fixture->testCount()});
+        destination.emplace_back(fixture, id);
+    };
+
+    for (const auto& name : before) {
+        for (auto fixture : testFixtureList) {
+            if (fixture->_name && name == fixture->_name) {
+                planFixture(beforeInvocations, fixture);
+                _exclude.insert(name);
+            }
+        }
+    }
+    for (const auto& name : after) {
+        _exclude.insert(name);
+    }
+    vector<_TestFixture*> afterCandidates;
+    for (auto fixture : testFixtureList) {
+        bool included = _include.empty();
+        bool excluded = false;
+        if (!_include.empty() && fixture->_name) {
+            for (const auto& pattern : _include) {
+                try {
+                    if (regex_match(fixture->_name, regex("^" + pattern + "$"))) {
+                        included = true;
+                        break;
+                    }
+                } catch (const regex_error&) {}
+            }
+        } else if (fixture->_name) {
+            for (const auto& pattern : _exclude) {
+                try {
+                    if (regex_match(fixture->_name, regex("^" + pattern + "$"))) {
+                        excluded = true;
+                        break;
+                    }
+                } catch (const regex_error&) {}
+            }
+        }
+        if (included && !excluded) {
+            size_t id = plan.size();
+            plan.push_back({id, fixture->_name ? fixture->_name : "", fixture->testCount()});
+            mainIDs.emplace(fixture, id);
+        } else {
+            afterCandidates.push_back(fixture);
+        }
+    }
+    for (const auto& name : after) {
+        for (auto fixture : afterCandidates) {
+            if (fixture->_name && name == fixture->_name) {
+                planFixture(afterInvocations, fixture);
+                afterIDs[fixture].push_back(plan.back().id);
+            }
+        }
+    }
+
     // Create a list of threads, and have them each pull tests of the queue.
     list<thread> threadList;
     recursive_mutex m;
+    for (auto fixture : testFixtureList) {
+        fixture->_outputWriter = writer;
+    }
+
+    writer->runStarted(plan);
 
     // Run the `before` tests
+    size_t beforeIndex = 0;
     for (auto name : before) {
         for (auto fixture : testFixtureList) {
             if (fixture->_name && name == fixture->_name) {
                fixture->_threadID = 0;
                fixture->_mutex = &m;
                fixture->_multiThreaded = false;
+               fixture->_invocationID = beforeInvocations.at(beforeIndex++).second;
 
                // Add to exclude.
                _exclude.insert(name);
 
-               // Run the test.
-               printf("--------------\n");
-               tpunit_run_test_class(fixture);
+                // Run the test.
+                writer->fixtureStarted(fixture->_invocationID, fixture->_name, true);
+                auto start = chrono::steady_clock::now();
+                tpunit_run_test_class(fixture);
+                writer->fixtureFinished(fixture->_invocationID, fixture->_name, chrono::duration_cast<chrono::milliseconds>(chrono::steady_clock::now() - start));
 
                continue; // Don't bother checking the rest of the tests.
             }
@@ -235,11 +322,13 @@ int tpunit::_TestFixture::tpunit_detail_do_run(const set<string>& include, const
                                         included = true;
 
                                         // Track that this pattern matched at least one test
+                                        lock_guard<recursive_mutex> lock(m);
                                         includeMatched.insert(includedName);
                                         break;
                                     }
                                 } catch (const regex_error& e) {
-                                    cout << "Invalid pattern: " << includedName << ", skipping." << endl;
+                                    lock_guard<recursive_mutex> lock(m);
+                                    writer->invalidPattern(includedName);
                                 }
                             }
                         }
@@ -254,7 +343,8 @@ int tpunit::_TestFixture::tpunit_detail_do_run(const set<string>& include, const
                                     break;
                                 }
                             } catch (const regex_error& e) {
-                                cout << "Invalid pattern: " << excludedName << ", skipping." << endl;
+                                lock_guard<recursive_mutex> lock(m);
+                                writer->invalidPattern(excludedName);
                             }
                         }
                     }
@@ -267,8 +357,10 @@ int tpunit::_TestFixture::tpunit_detail_do_run(const set<string>& include, const
                     }
 
                     // At this point, we know this test should run.
-                    if (!f->_multiThreaded) {
-                        printf("--------------\n");
+                    f->_invocationID = mainIDs.at(f);
+                    {
+                        lock_guard<recursive_mutex> lock(m);
+                        writer->fixtureStarted(f->_invocationID, f->_name ? f->_name : "", !f->_multiThreaded);
                     }
                     {
                         lock_guard<mutex> lock(currentTestNameMutex);
@@ -276,7 +368,8 @@ int tpunit::_TestFixture::tpunit_detail_do_run(const set<string>& include, const
                         if (f->_name) {
                             currentTestName = f->_name;
                         } else {
-                            cout << "test has no name???" << endl;
+                            lock_guard<recursive_mutex> outputLock(m);
+                            writer->unnamedFixture();
                             currentTestName = "UNSPECIFIED";
                         }
                     }
@@ -287,6 +380,10 @@ int tpunit::_TestFixture::tpunit_detail_do_run(const set<string>& include, const
 
                     // Do this to capture the longest test classes, not longest thread.
                     end = chrono::steady_clock::now();
+                    {
+                        lock_guard<recursive_mutex> lock(m);
+                        writer->fixtureFinished(f->_invocationID, f->_name ? f->_name : "", chrono::duration_cast<chrono::milliseconds>(end - start));
+                    }
 
                    if (currentTestName.size() && currentTestName != "UNSPECIFIED") {
                         lock_guard<mutex> lock(testTimeLock);
@@ -298,7 +395,7 @@ int tpunit::_TestFixture::tpunit_detail_do_run(const set<string>& include, const
                 // other threads know we're trying to exit.
                 lock_guard<recursive_mutex> lock(m);
                 exitFlag = true;
-                printf("Thread %d caught shutdown exception, exiting.\n", threadID);
+                writer->threadShutdown(threadID);
             }
         });
         threadList.push_back(move(t));
@@ -311,16 +408,20 @@ int tpunit::_TestFixture::tpunit_detail_do_run(const set<string>& include, const
     threadList.clear();
 
     // Run the `after` tests
+    map<_TestFixture*, size_t> afterIndexes;
     for (auto name : after) {
         for (auto fixture : afterTests) {
             if (fixture->_name && name == fixture->_name) {
                fixture->_threadID = 0;
                fixture->_mutex = &m;
                fixture->_multiThreaded = false;
+               fixture->_invocationID = afterIDs.at(fixture).at(afterIndexes[fixture]++);
 
-               // Run the test.
-               printf("--------------\n");
-               tpunit_run_test_class(fixture);
+                // Run the test.
+                writer->fixtureStarted(fixture->_invocationID, fixture->_name, true);
+                auto start = chrono::steady_clock::now();
+                tpunit_run_test_class(fixture);
+                writer->fixtureFinished(fixture->_invocationID, fixture->_name, chrono::duration_cast<chrono::milliseconds>(chrono::steady_clock::now() - start));
 
                continue; // Don't bother checking the rest of the tests.
             }
@@ -330,38 +431,14 @@ int tpunit::_TestFixture::tpunit_detail_do_run(const set<string>& include, const
     // Print message for each include pattern that did not match any test
     for (const auto& pattern : include) {
         if (includeMatched.find(pattern) == includeMatched.end()) {
-            printf("\xE2\x9D\x8C Could not find any test matching, make sure the test name is right: %s\n", pattern.c_str());
+            writer->unmatchedPattern(pattern);
         }
     }
 
     if (!exitFlag) {
-        printf("\n[ TEST RESULTS ] Passed: %i, Failed: %i\n", tpunit_detail_stats()._passes, tpunit_detail_stats()._failures);
-        if (tpunit_detail_stats()._failureNames.size()) {
-            printf("\nFailures:\n");
-            for (const auto& failure : tpunit_detail_stats()._failureNames) {
-                printf("%s\n", failure.c_str());
-            }
-        }
-
-        cout << endl;
-        cout << "Slowest Test Classes: " << endl;
-
-        // Combine total thread time so its not obscured by multi-threaded tests.
-        long long totalTestTime = 0;
-        for (auto testTime : testTimes) {
-            totalTestTime += testTime.first.count();
-        }
-
-        auto it = testTimes.rbegin();
-        for (size_t i = 0; i < 10; i++) {
-            if (it == testTimes.rend()) {
-                break;
-            }
-            cout << it->first << ": " << it->second << " : " << (static_cast<double>(it->first.count()) / totalTestTime) * 100.0 << "% of total test time" << endl;
-            it++;
-        }
-
-        cout << "Total test time across threads: " << totalTestTime << "ms" << endl;
+        vector<pair<chrono::milliseconds, string>> times(testTimes.begin(), testTimes.end());
+        stats& results = tpunit_detail_stats();
+        writer->runFinished({results._passes, results._failures, results._failureNames, times});
 
         return tpunit_detail_stats()._failures;
     }
@@ -434,43 +511,40 @@ bool tpunit::_TestFixture::tpunit_detail_fp_equal(double lhs, double rhs, unsign
 }
 
 namespace tpunit {
-void tpunit_break_check_line() {
-    if (!_TestFixture::_verboseOutput) {
-        if (currentTestPtr) {
-            currentTestPtr->_mutex->lock();
-        }
-        if (_TestFixture::_shortOutputColumn > 0) {
-            printf("\n");
-            _TestFixture::_shortOutputColumn = 0;
-        }
-        if (currentTestPtr) {
-            currentTestPtr->_mutex->unlock();
-        }
-    }
+void tpunit_report_comparison(const string& lhs, const string& rhs, bool isEqual) {
+    _TestFixture* fixture = currentTestPtr;
+    lock_guard<recursive_mutex> lock(*fixture->_mutex);
+    fixture->_outputWriter->comparisonFailed(fixture->name() ? fixture->name() : "", currentMethodName, lhs, rhs, isEqual);
+}
+
+void tpunit_report_diagnostic(const string& message) {
+    _TestFixture* fixture = currentTestPtr;
+    lock_guard<recursive_mutex> lock(*fixture->_mutex);
+    fixture->_outputWriter->diagnostic(fixture->name() ? fixture->name() : "", currentMethodName, message);
 }
 }
 
 void tpunit::_TestFixture::tpunit_detail_assert(_TestFixture* f, const char* _file, int _line) {
-    tpunit_break_check_line();
     lock_guard<recursive_mutex> lock(*(f->_mutex));
-    printf("   assertion #%i at %s:%i\n", ++f->_stats._assertions, _file, _line);
-    f->printTestBuffer();
+    f->_outputWriter->assertionFailed(f->_name ? f->_name : "", currentMethodName,
+                                      ++f->_stats._assertions, _file, _line, f->takeTestBuffer());
 }
 
 void tpunit::_TestFixture::tpunit_detail_exception(_TestFixture* f, method* _method, const char* _message) {
     lock_guard<recursive_mutex> lock(*(f->_mutex));
-    printf("   exception #%i from %s with cause: %s\n", ++f->_stats._exceptions, _method->_name, _message);
-    f->printTestBuffer();
+    f->_outputWriter->exceptionCaught(f->_name ? f->_name : "", currentMethodName,
+                                      ++f->_stats._exceptions, _method->_name, _message, f->takeTestBuffer());
 }
 
 void tpunit::_TestFixture::tpunit_detail_trace(_TestFixture* f, const char* _file, int _line, const char* _message) {
-    tpunit_break_check_line();
     lock_guard<recursive_mutex> lock(*(f->_mutex));
-    printf("   trace #%i at %s:%i: %s\n", ++f->_stats._traces, _file, _line, _message);
-    f->printTestBuffer();
+    f->_outputWriter->trace(f->_name ? f->_name : "", currentMethodName,
+                            ++f->_stats._traces, _file, _line, _message, f->takeTestBuffer());
 }
 
 void tpunit::_TestFixture::tpunit_detail_do_method(tpunit::_TestFixture::method* m) {
+    currentTestPtr = m->_this;
+    currentMethodName = m->_name;
     try {
        // If we're exiting, then don't try and run any more tests.
        if (exitFlag) {
@@ -478,19 +552,16 @@ void tpunit::_TestFixture::tpunit_detail_do_method(tpunit::_TestFixture::method*
        }
        (*m->_this.*m->_addr)();
     } catch(const std::exception& e) {
-       tpunit_break_check_line();
-       lock_guard<recursive_mutex> lock(*(m->_this->_mutex));
+        lock_guard<recursive_mutex> lock(*(m->_this->_mutex));
        tpunit_detail_exception(m->_this, m, e.what());
     } catch(const char* e) {
-       tpunit_break_check_line();
-       lock_guard<recursive_mutex> lock(*(m->_this->_mutex));
+        lock_guard<recursive_mutex> lock(*(m->_this->_mutex));
        tpunit_detail_exception(m->_this, m, e);
     } catch(ShutdownException se) {
        // Just re-throw, this exception is special and indicates that a test wants its thread to quit.
        throw;
     } catch(...) {
-       tpunit_break_check_line();
-       lock_guard<recursive_mutex> lock(*(m->_this->_mutex));
+        lock_guard<recursive_mutex> lock(*(m->_this->_mutex));
        tpunit_detail_exception(m->_this, m, "caught unknown exception type");
     }
 }
@@ -513,51 +584,23 @@ void tpunit::_TestFixture::tpunit_detail_do_tests(_TestFixture* f) {
             f->_stats._assertions = 0;
             f->_stats._exceptions = 0;
             f->testOutputBuffer = "";
+            {
+                lock_guard<recursive_mutex> lock(m);
+                f->_outputWriter->testStarted(f->_invocationID, f->_name ? f->_name : "", t->_name);
+            }
             auto start = chrono::steady_clock::now();
             tpunit_detail_do_methods(f->_befores);
             tpunit_detail_do_method(t);
             tpunit_detail_do_methods(f->_afters);
             auto end = chrono::steady_clock::now();
-            stringstream timeStream;
-            timeStream << "(" << chrono::duration_cast<std::chrono::milliseconds>(end - start);
-            if (chrono::duration_cast<std::chrono::milliseconds>(end - start) > 5000ms) {
-                timeStream << " \xF0\x9F\x90\x8C";
-            }
-            timeStream << ")";
-            string timeStr = timeStream.str();
-            const char* time = timeStr.c_str();
-
-            // No new assertions or exceptions. This not currently synchronized correctly. They can cause tests that
-            // passed to appear failed when another test failed while this test was running. They cannot cause failed
-            // tests to appear to have passed.
             lock_guard<recursive_mutex> lock(m);
-            if(!f->_stats._assertions && !f->_stats._exceptions) {
-                if (_verboseOutput) {
-                    printf("\xE2\x9C\x85 %s %s\n", t->_name, time);
-                } else {
-                    if (_shortOutputColumn >= 80) {
-                        printf("\n");
-                        _shortOutputColumn = 0;
-                    }
-                    printf("\033[32m\xE2\x9C\x93\033[0m");
-                    fflush(stdout);
-                    _shortOutputColumn++;
-                }
+            bool passed = !f->_stats._assertions && !f->_stats._exceptions;
+            f->_outputWriter->testFinished(f->_invocationID, f->_name ? f->_name : "", t->_name, passed,
+                                            chrono::duration_cast<chrono::milliseconds>(end - start),
+                                            passed ? "" : f->takeTestBuffer());
+            if (passed) {
                 tpunit_detail_stats()._passes++;
             } else {
-                if (_verboseOutput) {
-                    // Dump the test buffer if the test included any log lines.
-                    f->printTestBuffer();
-                    printf("\xE2\x9D\x8C !FAILED! \xE2\x9D\x8C %s %s\n", t->_name, time);
-                } else {
-                    if (_shortOutputColumn > 0) {
-                        printf("\n");
-                        _shortOutputColumn = 0;
-                    }
-                    // Dump the test buffer if the test included any log lines.
-                    f->printTestBuffer();
-                    printf("\xE2\x9D\x8C !FAILED! \xE2\x9D\x8C %s %s\n\n", t->_name, time);
-                }
                 tpunit_detail_stats()._failures++;
                 tpunit_detail_stats()._failureNames.emplace(t->_name);
             }
@@ -581,11 +624,8 @@ void tpunit::_TestFixture::TESTINFO(const string& newLog) {
     testOutputBuffer += "    " + newLog + "\n";
 }
 
-void tpunit::_TestFixture::printTestBuffer() {
-    lock_guard<recursive_mutex> lock(*(_mutex));
-
-    cout << testOutputBuffer;
-    testOutputBuffer = "";
+string tpunit::_TestFixture::takeTestBuffer() {
+    return std::exchange(testOutputBuffer, ""s);
 }
 
 tpunit::_TestFixture::stats& tpunit::_TestFixture::tpunit_detail_stats() {
@@ -598,11 +638,11 @@ list<tpunit::_TestFixture*>* tpunit::_TestFixture::tpunit_detail_fixture_list() 
     return _fixtureList;
 }
 
-int tpunit::Tests::run(int threads, std::function<void()> threadInitFunction, std::function<bool(_TestFixture*, _TestFixture*)> sortFunction) {
-    return _TestFixture::tpunit_detail_do_run(threads, threadInitFunction, sortFunction);
+int tpunit::Tests::run(int threads, std::function<void()> threadInitFunction, std::function<bool(_TestFixture*, _TestFixture*)> sortFunction, OutputWriter* writer) {
+    return _TestFixture::tpunit_detail_do_run(threads, threadInitFunction, sortFunction, writer);
 }
 
 int tpunit::Tests::run(const set<string>& include, const set<string>& exclude,
-                       const list<string>& before, const list<string>& after, int threads, std::function<void()> threadInitFunction, std::function<bool(_TestFixture*, _TestFixture*)> sortFunction) {
-    return _TestFixture::tpunit_detail_do_run(include, exclude, before, after, threads, threadInitFunction, sortFunction);
+                       const list<string>& before, const list<string>& after, int threads, std::function<void()> threadInitFunction, std::function<bool(_TestFixture*, _TestFixture*)> sortFunction, OutputWriter* writer) {
+    return _TestFixture::tpunit_detail_do_run(include, exclude, before, after, threads, threadInitFunction, sortFunction, writer);
 }

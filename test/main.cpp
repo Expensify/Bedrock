@@ -1,8 +1,12 @@
 #include <iostream>
+#include <memory>
 
 #include <libstuff/SData.h>
 #include <libstuff/libstuff.h>
 #include <test/lib/BedrockTester.h>
+#include <test/lib/BedrockTestPath.h>
+#include <test/lib/ConsoleOutputWriter.h>
+#include <test/lib/NcursesOutputWriter.h>
 #include <libstuff/SSSLState.h>
 
 /*
@@ -11,10 +15,16 @@
  * -except          : comma separated list of tests to skip.
  * -dontStartServer : Doesn't start the server, just prints the command that would have been run.
  * -wait            : Waits before running tests, in case you want to connect with the debugger.
+ * -useNewOutput    : Shows a live test dashboard when running in a terminal.
  */
+
+static tpunit::NcursesOutputWriter* activeOutput = nullptr;
 
 void sigclean(int sig)
 {
+    if (activeOutput) {
+        activeOutput->restoreAfterSignal();
+    }
     cout << "Got SIGINT, cleaning up." << endl;
     BedrockTester::stopAll();
     cout << "Done." << endl;
@@ -23,6 +33,7 @@ void sigclean(int sig)
 
 int main(int argc, char* argv[])
 {
+    configureBedrockTestPath();
     SData args = SParseCommandLine(argc, argv);
 
     // Catch sigint.
@@ -98,7 +109,6 @@ int main(int argc, char* argv[])
     if (args.isSet("-v")) {
         BedrockTester::VERBOSE_LOGGING = true;
         SLogLevel(LOG_DEBUG);
-        tpunit::_TestFixture::_verboseOutput = true;
     }
     if (args.isSet("-q")) {
         BedrockTester::QUIET_LOGGING = true;
@@ -106,12 +116,22 @@ int main(int argc, char* argv[])
     }
 
     int retval = 0;
+    tpunit::ConsoleOutputWriter outputWriter(args.isSet("-v"));
+    unique_ptr<tpunit::NcursesOutputWriter> newOutput;
+    if (args.isSet("-useNewOutput") && tpunit::NcursesOutputWriter::available()) {
+        try {
+            newOutput = make_unique<tpunit::NcursesOutputWriter>();
+            activeOutput = newOutput.get();
+        } catch (const runtime_error& error) {
+            cerr << "New test output unavailable: " << error.what() << ". Using console output." << endl;
+        }
+    }
     for (int i = 0; i < repeatCount; i++) {
         try {
             retval = tpunit::Tests::run(include, exclude, before, after, threads, [](){
                 SLogSetThreadName("");
                 SLogSetThreadPrefix("");
-            });
+            }, &tpunit::_TestFixture::sorter, newOutput ? static_cast<tpunit::OutputWriter*>(newOutput.get()) : &outputWriter);
         } catch (...) {
             cout << "Unhandled exception running tests!" << endl;
             retval = 1;
@@ -122,6 +142,11 @@ int main(int argc, char* argv[])
     SSSLState::freeConfig();
 
     SStopSignalThread();
+
+    if (newOutput) {
+        newOutput->finish();
+        activeOutput = nullptr;
+    }
 
     return retval;
 }
