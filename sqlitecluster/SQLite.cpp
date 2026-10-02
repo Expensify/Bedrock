@@ -316,7 +316,7 @@ void SQLite::commonConstructorInitialization(bool hctree)
     } else {
         // Give transient SQLITE_BUSY 50ms to clear before falling back to
         // SQuery's one-second waits between retries.
-        sqlite3_busy_timeout(_db, 50);
+        sqlite3_busy_handler(_db, SQueryBusyHandler, _db);
     }
 }
 

@@ -2884,6 +2884,59 @@ void SQueryLogClose()
     }
 }
 
+struct QueryBusyWait;
+static thread_local QueryBusyWait* currentQueryBusyWait = nullptr;
+
+struct QueryBusyWait
+{
+    sqlite3* db;
+    uint64_t elapsedUS = 0;
+    size_t retries = 0;
+    bool exhausted = false;
+    QueryBusyWait* previous;
+
+    explicit QueryBusyWait(sqlite3* connection) : db(connection), previous(currentQueryBusyWait)
+    {
+        currentQueryBusyWait = this;
+    }
+
+    ~QueryBusyWait()
+    {
+        currentQueryBusyWait = previous;
+    }
+
+    void logRecovery(int error) const
+    {
+        if (error == SQLITE_OK && retries && !exhausted) {
+            SINFO("SQLite busy contention cleared after " << elapsedUS << "us of waiting across " << retries << " retries.");
+        }
+    }
+};
+
+int SQueryBusyHandler(void* context, int count)
+{
+    // SQLite's native busy timeout starts with these delays; cap the final sleep at the remaining 50ms budget.
+    static constexpr int delaysMS[] = {1, 2, 5, 10, 15, 17};
+    QueryBusyWait* wait = currentQueryBusyWait;
+    if (wait && wait->db != static_cast<sqlite3*>(context)) {
+        wait = nullptr;
+    }
+    if (count >= static_cast<int>(size(delaysMS))) {
+        if (wait) {
+            wait->exhausted = true;
+        }
+        return 0;
+    }
+
+    const auto start = chrono::steady_clock::now();
+    this_thread::sleep_for(chrono::milliseconds(delaysMS[count]));
+    if (wait) {
+        wait->elapsedUS += chrono::duration_cast<chrono::microseconds>(chrono::steady_clock::now() - start).count();
+        wait->retries++;
+    }
+    return 1;
+}
+
 // --------------------------------------------------------------------------
 // Executes a SQLite query
 int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThreshold, bool skipInfoWarn, sqlite3_qrf_spec* spec, const map<string, SQliteParameter>& params, string* expandedSql)
@@ -2913,6 +2966,7 @@ int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThresho
     // walk rather than just the step loop. Each try re-prepares and re-binds; the bind state is on a
     // brand-new prepared statement so there's nothing to preserve across the retry.
     for (int tries = 0; tries < MAX_TRIES; tries++) {
+        QueryBusyWait busyWait(db);
         result.clear();
         if (expandedSql) {
             expandedSql->clear();
@@ -3017,6 +3071,7 @@ int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThresho
                     sqlite3_free(errorMsg);
                 }
                 sqlite3_finalize(preparedStatement);
+                busyWait.logRecovery(error);
                 return error;
             }
 
@@ -3107,6 +3162,7 @@ int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThresho
         }
 
         extErr = sqlite3_extended_errcode(db);
+        busyWait.logRecovery(error);
         if (error != SQLITE_BUSY || extErr == SQLITE_BUSY_SNAPSHOT) {
             break;
         }
