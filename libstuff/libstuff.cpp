@@ -2892,7 +2892,7 @@ struct QueryBusyWait
     sqlite3* db;
     uint64_t elapsedUS = 0;
     size_t retries = 0;
-    bool exhausted = false;
+    bool isExhausted = false;
     QueryBusyWait* previous;
 
     explicit QueryBusyWait(sqlite3* connection) : db(connection), previous(currentQueryBusyWait)
@@ -2907,7 +2907,7 @@ struct QueryBusyWait
 
     void logRecovery(int error) const
     {
-        if (error == SQLITE_OK && retries && !exhausted) {
+        if (error == SQLITE_OK && retries && !isExhausted) {
             SINFO("SQLite busy contention cleared after " << elapsedUS << "us of waiting across " << retries << " retries.");
         }
     }
@@ -2923,7 +2923,7 @@ int SQueryBusyHandler(void* context, int count)
     }
     if (count >= static_cast<int>(size(delaysMS))) {
         if (wait) {
-            wait->exhausted = true;
+            wait->isExhausted = true;
         }
         return 0;
     }
