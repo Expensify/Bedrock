@@ -92,6 +92,8 @@ CLUSTERTESTCPP += test/tests/jobs/JobTestHelper.cpp
 CLUSTERTESTOBJ = $(CLUSTERTESTCPP:%.cpp=$(INTERMEDIATEDIR)/%.o)
 CLUSTERTESTDEP = $(CLUSTERTESTCPP:%.cpp=$(INTERMEDIATEDIR)/%.d)
 
+$(TESTOBJ) $(TESTDEP) $(CLUSTERTESTOBJ) $(CLUSTERTESTDEP): CXXFLAGS += -DTPUNITPP_ENABLE_NCURSES_OUTPUT
+
 # And the same for the test plugin.
 TESTPLUGINCPP = test/clustertest/testplugin/TestPlugin.cpp test/clustertest/testplugin/ExternPointer.cpp
 TESTPLUGINOBJ = $(TESTPLUGINCPP:%.cpp=$(INTERMEDIATEDIR)/%.o)
@@ -114,9 +116,9 @@ BINPREREQS = libbedrock.a libstuff.a libjson.a mbedtls/library/libmbedcrypto.a
 bedrock: $(BEDROCKOBJ) $(JSONMETRICSOBJ) $(BINPREREQS)
 	$(CXX) -o $@ $(BEDROCKOBJ) $(JSONMETRICSOBJ) $(LIBPATHS) -rdynamic $(LIBRARIES)
 test/test: $(TESTOBJ) $(BINPREREQS)
-	$(CXX) -o $@ $(TESTOBJ) $(LIBPATHS) -rdynamic $(LIBRARIES)
+	$(CXX) -o $@ $(TESTOBJ) $(LIBPATHS) -rdynamic $(LIBRARIES) -lncursesw
 test/clustertest/clustertest: $(CLUSTERTESTOBJ) $(BINPREREQS)
-	$(CXX) -o $@ $(CLUSTERTESTOBJ) $(LIBPATHS) -rdynamic $(LIBRARIES)
+	$(CXX) -o $@ $(CLUSTERTESTOBJ) $(LIBPATHS) -rdynamic $(LIBRARIES) -lncursesw
 
 checkjsonsymbols: bedrock
 	@symbols="$$(nm -D --defined-only bedrock | c++filt | grep -E ' [TDBR] JSON::' || true)"; \

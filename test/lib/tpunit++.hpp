@@ -30,6 +30,7 @@
 #include <algorithm>
 #include <functional>
 #include <atomic>
+#include <test/lib/OutputWriter.h>
 #include <test/lib/PrintEquality.h>
 using namespace std;
 
@@ -123,8 +124,8 @@ using namespace std;
  */
 #define ASSERT_THROW(statement, exception) try { statement; ABORT(); } catch(const exception&) { PASS(); } catch(...) { ABORT(); }
 #define EXPECT_THROW(statement, exception) try { statement; FAIL(); } catch(const exception&) { PASS(); } catch(...) { FAIL(); }
-#define ASSERT_NO_THROW(statement) try { statement; PASS(); } catch(const exception& e) { cout << "Something threw: " << e.what() << endl; ABORT(); } catch(const char* e) { cout << "Something threw: " << e << endl; ABORT(); } catch(...) { cout << "Something threw, unsure what..." << endl; ABORT(); }
-#define EXPECT_NO_THROW(statement) try { statement; PASS(); } catch(const exception& e) { cout << "Something threw: " << e.what() << endl; FAIL(); } catch(const char* e) { cout << "Something threw: " << e << endl; FAIL(); } catch(...) { cout << "Something threw, unsure what..." << endl; FAIL(); }
+#define ASSERT_NO_THROW(statement) try { statement; PASS(); } catch(const exception& e) { tpunit::tpunit_report_diagnostic("Something threw: "s + e.what()); ABORT(); } catch(const char* e) { tpunit::tpunit_report_diagnostic("Something threw: "s + e); ABORT(); } catch(...) { tpunit::tpunit_report_diagnostic("Something threw, unsure what..."); ABORT(); }
+#define EXPECT_NO_THROW(statement) try { statement; PASS(); } catch(const exception& e) { tpunit::tpunit_report_diagnostic("Something threw: "s + e.what()); FAIL(); } catch(const char* e) { tpunit::tpunit_report_diagnostic("Something threw: "s + e); FAIL(); } catch(...) { tpunit::tpunit_report_diagnostic("Something threw, unsure what..."); FAIL(); }
 #define ASSERT_ANY_THROW(statement) try { statement; ABORT(); } catch(...) { PASS(); }
 #define EXPECT_ANY_THROW(statement) try { statement; FAIL(); } catch(...) { PASS(); }
 
@@ -191,6 +192,7 @@ namespace tpunit {
     // Make the current test name in the current thread globally accessible.
     extern thread_local string currentTestName;
     extern thread_local mutex currentTestNameMutex;
+    void tpunit_report_diagnostic(const string& message);
 
     // Doesn't do anything except allow us to detect when the program wants to shutdown.
     class ShutdownException{};
@@ -204,8 +206,6 @@ namespace tpunit {
       public:
 
          static std::atomic<bool> exitFlag;
-         static bool _verboseOutput;
-         static std::atomic<int> _shortOutputColumn;
 
          struct perFixtureStats {
             perFixtureStats();
@@ -217,13 +217,15 @@ namespace tpunit {
 
          perFixtureStats  _stats;
          recursive_mutex* _mutex;
+         OutputWriter* _outputWriter = nullptr;
+         size_t _invocationID = 0;
          int _threadID;
 
          static bool sorter(_TestFixture* a, _TestFixture* b);
 
       protected:
-         // Test buffer for printing to stdout if a test were to fail.
-         string testOutputBuffer;
+         // Buffer diagnostics for the currently running test on this thread.
+         static thread_local string testOutputBuffer;
 
          /**
           * Internal class encapsulating a registered test method.
@@ -291,11 +293,11 @@ namespace tpunit {
             return new method(this, static_cast<void (_TestFixture::*)()>(_method), _name, _type);
          }
 
-         static int tpunit_detail_do_run(int threads = 1, std::function<void()> threadInitFunction = [](){}, std::function<bool(_TestFixture*, _TestFixture*)> sortFunction = &_TestFixture::sorter);
+         static int tpunit_detail_do_run(int threads = 1, std::function<void()> threadInitFunction = [](){}, std::function<bool(_TestFixture*, _TestFixture*)> sortFunction = &_TestFixture::sorter, OutputWriter* writer = nullptr);
 
          static int tpunit_detail_do_run(const std::set<std::string>& include, const std::set<std::string>& exclude,
                                          const std::list<std::string>& before, const std::list<std::string>& after, int threads,
-                                         std::function<void()> threadInitFunction, std::function<bool(_TestFixture*, _TestFixture*)> sortFunction = &_TestFixture::sorter);
+                                         std::function<void()> threadInitFunction, std::function<bool(_TestFixture*, _TestFixture*)> sortFunction = &_TestFixture::sorter, OutputWriter* writer = nullptr);
 
          /**
           * This method writes to a temporary buffer and formats the message nicely for debugging
@@ -312,6 +314,8 @@ namespace tpunit {
          const char* name() {
             return _name;
          }
+
+         size_t testCount() const;
 
          static std::list<_TestFixture*>* tpunit_detail_fixture_list();
       protected:
@@ -347,10 +351,7 @@ namespace tpunit {
          static void tpunit_detail_do_tests(_TestFixture* f);
 
          static stats& tpunit_detail_stats();
-         /**
-          * Takes the test buffer and outputs it to cout
-          */
-         void printTestBuffer();
+         string takeTestBuffer();
 
          method* _afters = nullptr;
          method* _after_classes = nullptr;
@@ -471,11 +472,7 @@ public:
 
    extern thread_local tpunit::_TestFixture* currentTestPtr;
 
-   /**
-    * If short output mode is active and checks have been printed on the current
-    * line, prints a newline and resets the column counter.
-    */
-   void tpunit_break_check_line();
+    void tpunit_report_comparison(const string& lhs, const string& rhs, bool isEqual);
 
    /**
     * Convenience class containing the entry point to run all registered tests.
@@ -486,7 +483,7 @@ public:
        *
        * @return Number of failed assertions or zero if all tests pass.
        */
-      static int run(int threads = 1, std::function<void()> threadInitFunction = [](){}, std::function<bool(_TestFixture*, _TestFixture*)> sortFunction = &_TestFixture::sorter);
+      static int run(int threads = 1, std::function<void()> threadInitFunction = [](){}, std::function<bool(_TestFixture*, _TestFixture*)> sortFunction = &_TestFixture::sorter, OutputWriter* writer = nullptr);
 
       /**
        * Run specific tests by name. If 'include' is empty, then every test is
@@ -497,6 +494,6 @@ public:
        */
       static int run(const std::set<std::string>& include, const std::set<std::string>& exclude,
                      const std::list<std::string>& before, const std::list<std::string>& after, int threads = 1,
-                     std::function<void()> threadInitFunction = [](){}, std::function<bool(_TestFixture*, _TestFixture*)> sortFunction = &_TestFixture::sorter);
+                     std::function<void()> threadInitFunction = [](){}, std::function<bool(_TestFixture*, _TestFixture*)> sortFunction = &_TestFixture::sorter, OutputWriter* writer = nullptr);
    };
 }
