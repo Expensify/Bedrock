@@ -787,6 +787,9 @@ template<typename Container> requires(!convertible_to<const Container&, string_v
 void SQueryLogOpen(const string& logFilename);
 void SQueryLogClose();
 
+// A 50ms busy handler. Pass the sqlite3 connection as its context; SQuery logs successful busy waits.
+int SQueryBusyHandler(void* context, int count);
+
 // Returns an SQLite result code.
 // Bound parameters use SQLite's named-parameter syntax (`:name`, `@name`, or `$name`)
 // (positional `?`/`?NNN` // is not supported)
