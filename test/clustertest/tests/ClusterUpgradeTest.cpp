@@ -1,3 +1,4 @@
+#include <libstuff/JSON/Value.h>
 #include <sys/stat.h>
 #include <test/clustertest/BedrockClusterTester.h>
 
@@ -107,7 +108,7 @@ struct ClusterUpgradeTest : tpunit::TestFixture
         vector<string> versions(3);
         for (auto i: {0, 1, 2}) {
             vector<SData> statusResult = tester->getTester(i).executeWaitMultipleData({status});
-            versions[i] = SParseJSONObject(statusResult[0].content)["version"];
+            versions[i] = JSON::Value::parse(statusResult[0].content)["version"].getString();
         }
         return versions;
     }
@@ -116,7 +117,7 @@ struct ClusterUpgradeTest : tpunit::TestFixture
     {
         SData status("Status");
         vector<SData> statusResult = tester->getTester(node).executeWaitMultipleData({status});
-        return SToUInt64(SParseJSONObject(statusResult[0].content)["CommitCount"]);
+        return JSON::Value::parse(statusResult[0].content)["CommitCount"].getUint();
     }
 
     // Writes a row from `writeToNode` and waits for every running node to reach the resulting commit. Checking

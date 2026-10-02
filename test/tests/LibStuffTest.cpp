@@ -1,3 +1,4 @@
+#include <libstuff/JSON/Utils.h>
 #include <arpa/inet.h>
 #include <cstring>
 #include <unistd.h>
@@ -163,12 +164,12 @@ struct LibStuff : tpunit::TestFixture
         const string& sampleJson = SFileLoad("sample_data/lottoNumbers.json");
         ASSERT_FALSE(sampleJson.empty());
 
-        STable obj = SParseJSONObject(sampleJson);
-        STable metaData = SParseJSONObject(obj["meta"]);
-        STable view = SParseJSONObject(metaData["view"]);
-        ASSERT_EQUAL(obj["top"], "top level attribute");
-        ASSERT_EQUAL(metaData["null_attribute"], "null");
-        ASSERT_EQUAL(view["name"], "Lottery Mega Millions Winning Numbers: Beginning 2002");
+        const auto obj = JSON::Value::parse(sampleJson);
+        const auto& metaData = obj["meta"];
+        const auto& view = metaData["view"];
+        ASSERT_EQUAL(obj["top"].getString(), "top level attribute");
+        ASSERT_TRUE(metaData["null_attribute"].isNull());
+        ASSERT_EQUAL(view["name"].getString(), "Lottery Mega Millions Winning Numbers: Beginning 2002");
     }
 
     void testJSON()
@@ -191,7 +192,8 @@ struct LibStuff : tpunit::TestFixture
         ASSERT_EQUAL(SToJSON("{\"science\":9e+61}"), "{\"science\":9e+61}");
         ASSERT_EQUAL(SToJSON("{\"science\":1E+99}"), "{\"science\":1E+99}");
 
-        STable innerObject0, innerObject1, innerObject0Verify, innerObject1Verify;
+        STable innerObject0, innerObject1;
+        JSON::Value innerObject0Verify, innerObject1Verify;
         innerObject0["utf8"] = "{\"foo\":\"\\u00b7\"}";
         innerObject0["singleQuoteTest"] = "These are 'single quotes'.";
         innerObject0["doubleQuoteTest"] = "These are \"double quotes\".";
@@ -208,9 +210,9 @@ struct LibStuff : tpunit::TestFixture
             "STATUS>\\n<CLTCOOKIE>4\\n<\\/ACCTINFOTRNRS>\\n<\\/SIGNUPMSGSRSV1>\\n<\\/OFX>\"}";
 
         // Verify we can undo our own encoding (Objects)
-        innerObject0Verify = SParseJSONObject(SComposeJSONObject(innerObject0));
+        innerObject0Verify = JSON::Value::parse(SComposeJSONObject(innerObject0));
         for (auto& item : innerObject0) {
-            ASSERT_EQUAL(innerObject0[item.first], innerObject0Verify[item.first]);
+            ASSERT_EQUAL(JSON::Value::parse(SToJSON(item.second)), innerObject0Verify[item.first]);
         }
 
         // Verify we can undo our own encoding (Arrays)
@@ -218,28 +220,34 @@ struct LibStuff : tpunit::TestFixture
         list<string> innerObjectList;
         innerObjectList.push_back(SComposeJSONObject(innerObject0));
         innerObjectList.push_back(SComposeJSONObject(innerObject1));
-        list<string> innerObjectListVerify = SParseJSONArray(SComposeJSONArray(innerObjectList));
+        auto innerObjectListVerify = JSON::Value::parse(SComposeJSONArray(innerObjectList));
         ASSERT_TRUE(innerObjectListVerify.size() == 2);
 
         // Verify we can undo our own encoding through 2 levels (Object)
-        innerObject0Verify = SParseJSONObject(innerObjectListVerify.front());
-        innerObject1Verify = SParseJSONObject(innerObjectListVerify.back());
+        innerObject0Verify = innerObjectListVerify[0];
+        innerObject1Verify = innerObjectListVerify.back();
         for (auto& item : innerObject0) {
-            ASSERT_EQUAL(innerObject0[item.first], innerObject0Verify[item.first]);
+            ASSERT_EQUAL(JSON::Value::parse(SToJSON(item.second)), innerObject0Verify[item.first]);
         }
         for (auto& item : innerObject1) {
-            ASSERT_EQUAL(innerObject1[item.first], innerObject1Verify[item.first]);
+            ASSERT_EQUAL(JSON::Value::parse(SToJSON(item.second)), innerObject1Verify[item.first]);
         }
 
         // Verify we can parse/encode PHP objects
-        ASSERT_EQUAL(innerObject0["ofxTest"], SComposeJSONObject(SParseJSONObject(innerObject0["ofxTest"])));
+        ASSERT_EQUAL(innerObject0["ofxTest"], SComposeJSONObject(JSON::Utils::toSTable(JSON::Value::parse(innerObject0["ofxTest"]))));
 
-        // Test parsing a crazy thing
-        STable ignore = SParseJSONObject(
+        // Reject malformed input through the shared parser.
+        ASSERT_THROW(JSON::Value::parse(
             SStrFromHex("7D6628F7AE67FBACE9DAF79312C48BA0B41AADD5BA1704E929B96B6F87708C0898868D55C0AAAE117CF20F1317D151"
                         "348706C9EDFE8A0CDD13BFB476367DEA2761A102B26443C7D3A464DB49A37F1F816B8BEC4C55DBD9DAF0B70652D32A"
                         "CBD224F9487E25398E740E99B24089A6343B6FD6C1BC6A89AF90F3DC69016A42066AAF430B1B584D236B8AD285828D"
-                        "59BB8375E2E955E246390DE9AA69D05DEF1FBC25318C9CCFE90159EC7EAA71637C07BD"));
+                        "59BB8375E2E955E246390DE9AA69D05DEF1FBC25318C9CCFE90159EC7EAA71637C07BD")), JSON::InvalidArgument);
+
+        // Preserve valid container formatting and quote invalid containers as strings.
+        const string valid = "{ \"value\" : 1.00 }";
+        ASSERT_EQUAL(SToJSON(valid), valid);
+        ASSERT_EQUAL(JSON::Value::parse(SToJSON(valid, true)).getString(), valid);
+        ASSERT_EQUAL(JSON::Value::parse(SToJSON("[1,]")).getString(), "[1,]");
 
         // Test NaN/Infinity handling - these should be treated as strings, not numbers
         ASSERT_EQUAL(SToJSON("nan"), "\"nan\"");
@@ -262,10 +270,10 @@ struct LibStuff : tpunit::TestFixture
         ASSERT_TRUE(nanJSON.find("\"-inf\"") != string::npos);
 
         // Verify round-trip parsing works
-        STable nanParsed = SParseJSONObject(nanJSON);
-        ASSERT_EQUAL(nanParsed["note"], "nan");
-        ASSERT_EQUAL(nanParsed["value"], "inf");
-        ASSERT_EQUAL(nanParsed["negative"], "-inf");
+        const auto nanParsed = JSON::Value::parse(nanJSON);
+        ASSERT_EQUAL(nanParsed["note"].getString(), "nan");
+        ASSERT_EQUAL(nanParsed["value"].getString(), "inf");
+        ASSERT_EQUAL(nanParsed["negative"].getString(), "-inf");
     }
 
     void testEscapeUnescape()
