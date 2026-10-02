@@ -1,7 +1,7 @@
 ---
 layout: default
 ---
-[Why](http://firstround.com/review/your-database-is-your-prison-heres-how-expensify-broke-free/) | [Code](https://github.com/Expensify/Bedrock) | [Install](https://bedrockdb.com#how-to-get-it) | [Use](https://bedrockdb.com#how-to-use-it) | [Jobs](https://bedrockdb.com/jobs.html) | [Cache](https://bedrockdb.com/cache.html) | [vs MySQL](https://bedrockdb.com/vs_mysql.html) | [Replication](https://bedrockdb.com/synchronization.html) | [Blockchain](https://bedrockdb.com/blockchain.html) | [Multizone](https://bedrockdb.com/multizone.html) | [Chat](https://gitter.im/Expensify-Bedrock/Lobby) | [Contact](https://bedrockdb.com#how-to-help-and-get-helped)
+[Why](http://firstround.com/review/your-database-is-your-prison-heres-how-expensify-broke-free/) | [Code](https://github.com/Expensify/Bedrock) | [Install](https://bedrockdb.com#how-to-get-it) | [Use](https://bedrockdb.com#how-to-use-it) | [Protocol](https://bedrockdb.com/protocol.html) | [Jobs](https://bedrockdb.com/jobs.html) | [Cache](https://bedrockdb.com/cache.html) | [vs MySQL](https://bedrockdb.com/vs_mysql.html) | [Replication](https://bedrockdb.com/synchronization.html) | [Blockchain](https://bedrockdb.com/blockchain.html) | [Multizone](https://bedrockdb.com/multizone.html) | [Chat](https://gitter.im/Expensify-Bedrock/Lobby) | [Contact](https://bedrockdb.com#how-to-help-and-get-helped)
 
 # Bedrock -- Rock-solid distributed data
 Bedrock is a simple, modular, WAN-replicated, Blockchain-based data foundation for global-scale applications.  Taking each of those in turn:
