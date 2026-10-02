@@ -1727,29 +1727,16 @@ void SQLiteNode::_changeState(SQLiteNodeState newState)
         // Note: _stateMutex is already locked here (by update, _replicate, or postPoll).
         _db.exclusiveLockDB();
 
-        try {
-            if (newState == SQLiteNodeState::LEADING) {
-                _db.prepareHCTreeLeadership();
-            }
-            // Keep STANDINGDOWN in leader mode until all of its commits have finished.
-            if (newState != SQLiteNodeState::STANDINGDOWN) {
-                _db.setHCTreeFollowerMode(newState != SQLiteNodeState::LEADING);
-            }
-
-            // Send to everyone we're connected to, whether or not
-            // we're "LoggedIn" (else we might change state after sending LOGIN,
-            // but before we receive theirs, and they'll miss it).
-            // Broadcast the new state
-            _state = newState;
-            SData state("STATE");
-            state["StateChangeCount"] = to_string(++_stateChangeCount);
-            state["State"] = stateName(_state);
-            state["Priority"] = SToStr(_priority);
-            _sendToAllPeers(state);
-        } catch (...) {
-            _db.exclusiveUnlockDB();
-            throw;
-        }
+        // Send to everyone we're connected to, whether or not
+        // we're "LoggedIn" (else we might change state after sending LOGIN,
+        // but before we receive theirs, and they'll miss it).
+        // Broadcast the new state
+        _state = newState;
+        SData state("STATE");
+        state["StateChangeCount"] = to_string(++_stateChangeCount);
+        state["State"] = stateName(_state);
+        state["Priority"] = SToStr(_priority);
+        _sendToAllPeers(state);
 
         _db.exclusiveUnlockDB();
     }
@@ -2074,7 +2061,6 @@ void SQLiteNode::_handleBeginTransaction(SQLite& db, SQLitePeer* peer, const SDa
         STHROW("blank journal entry has a nonblank query");
     }
 
-    // TODO: Parallel replication will require disabling beginOnly, after which we can remove the parameter entirely.
     if (!db.beginTransaction(SQLite::TRANSACTION_TYPE::EXCLUSIVE, true)) {
         STHROW("failed to begin transaction");
     }
