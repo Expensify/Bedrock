@@ -19,7 +19,6 @@ PortMap BedrockTester::ports;
 mutex BedrockTester::_testersMutex;
 set<BedrockTester*> BedrockTester::_testers;
 bool BedrockTester::ENABLE_HCTREE{false};
-bool BedrockTester::ENABLE_HCTREE_EXPERIMENTAL_MODE{false};
 bool BedrockTester::VERBOSE_LOGGING{false};
 bool BedrockTester::QUIET_LOGGING{false};
 
@@ -98,8 +97,6 @@ BedrockTester::BedrockTester(const map<string, string>& args,
 
     if (ENABLE_HCTREE) {
         defaultArgs["-newDBsUseHctree"] = "";
-    }
-    if (ENABLE_HCTREE_EXPERIMENTAL_MODE) {
         defaultArgs["-hctreeExperimentalMode"] = "";
     }
     if (VERBOSE_LOGGING) {

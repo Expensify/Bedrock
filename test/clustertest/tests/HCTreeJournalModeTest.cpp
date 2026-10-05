@@ -40,7 +40,7 @@ struct HCTreeJournalModeTest : tpunit::TestFixture
 
     void leaderFailover()
     {
-        if (!BedrockTester::ENABLE_HCTREE_EXPERIMENTAL_MODE) {
+        if (!BedrockTester::ENABLE_HCTREE) {
             return;
         }
 
@@ -83,7 +83,7 @@ struct HCTreeJournalModeTest : tpunit::TestFixture
 
     void initializationPreservesHistory()
     {
-        if (!BedrockTester::ENABLE_HCTREE_EXPERIMENTAL_MODE) {
+        if (!BedrockTester::ENABLE_HCTREE) {
             return;
         }
 
@@ -179,7 +179,7 @@ struct HCTreeJournalModeTest : tpunit::TestFixture
 
     void rejectsDowngrade()
     {
-        if (!BedrockTester::ENABLE_HCTREE_EXPERIMENTAL_MODE) {
+        if (!BedrockTester::ENABLE_HCTREE) {
             return;
         }
         BedrockTester node({{"-journalDeleterBatchSize", "0"}}, {});
@@ -212,7 +212,7 @@ struct HCTreeJournalModeTest : tpunit::TestFixture
 
     void rejectJournalBoundary(bool overlap)
     {
-        if (!BedrockTester::ENABLE_HCTREE_EXPERIMENTAL_MODE) {
+        if (!BedrockTester::ENABLE_HCTREE) {
             return;
         }
 
@@ -265,7 +265,7 @@ struct HCTreeJournalModeTest : tpunit::TestFixture
 
     void trimsOldestEntries()
     {
-        if (!BedrockTester::ENABLE_HCTREE_EXPERIMENTAL_MODE) {
+        if (!BedrockTester::ENABLE_HCTREE) {
             return;
         }
 

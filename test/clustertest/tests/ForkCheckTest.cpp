@@ -84,7 +84,7 @@ struct ForkCheckTest : tpunit::TestFixture
             ASSERT_EQUAL(result.size(), 1ul);
             ASSERT_FALSE(result[0]["id"].empty());
             const uint64_t corruptCommit = SToUInt64(result[0]["id"]);
-            if (BedrockTester::ENABLE_HCTREE_EXPERIMENTAL_MODE) {
+            if (BedrockTester::ENABLE_HCTREE) {
                 sqlite3_stmt* stmt = nullptr;
                 ASSERT_EQUAL(sqlite3_prepare_v2(db, "SELECT query FROM hct_journal WHERE cid = ?", -1, &stmt, nullptr), SQLITE_OK);
                 sqlite3_bind_int64(stmt, 1, corruptCommit);
