@@ -47,7 +47,7 @@ struct ReadOnlyCommitTest : tpunit::TestFixture
             if (!nativeJournal) {
                 ++expectedCID;
             }
-            EXPECT_EQUAL(responses[0]["commitCount"], to_string(expectedCID));
+            ASSERT_EQUAL(responses[0]["commitCount"], to_string(expectedCID));
             EXPECT_EQUAL(callbackCount(leader), callbacksBefore + i);
             if (nativeJournal) {
                 const STable after = state(leader);
@@ -66,7 +66,7 @@ struct ReadOnlyCommitTest : tpunit::TestFixture
         leader.executeWaitVerifyContent(write);
         ++expectedCID;
         const STable afterWrite = state(leader);
-        EXPECT_EQUAL(afterWrite.at("commitCount"), to_string(expectedCID));
+        ASSERT_EQUAL(afterWrite.at("commitCount"), to_string(expectedCID));
         for (size_t i = 1; i < 3; ++i) {
             auto& follower = cluster.getTester(i);
             ASSERT_TRUE(follower.waitForStatusTerm("commitCount", to_string(expectedCID)));
@@ -81,7 +81,7 @@ struct ReadOnlyCommitTest : tpunit::TestFixture
         leader.executeWaitVerifyContent(prepareWrite);
         ++expectedCID;
         const STable afterPrepare = state(leader);
-        EXPECT_EQUAL(afterPrepare.at("commitCount"), to_string(expectedCID));
+        ASSERT_EQUAL(afterPrepare.at("commitCount"), to_string(expectedCID));
         for (size_t i = 0; i < 3; ++i) {
             auto& node = cluster.getTester(i);
             ASSERT_TRUE(node.waitForStatusTerm("commitCount", to_string(expectedCID)));
