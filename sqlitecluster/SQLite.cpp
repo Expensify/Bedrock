@@ -1422,13 +1422,13 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash, chrono::m
 
 int SQLite::commit(const string& description, const string& commandName, function<void()>* preCheckpointCallback)
 {
-    bool commitIDAllocated = false;
-    return commit(commitIDAllocated, description, commandName, preCheckpointCallback);
+    uint64_t journalCommitID = 0;
+    return commit(journalCommitID, description, commandName, preCheckpointCallback);
 }
 
-int SQLite::commit(bool& commitIDAllocated, const string& description, const string& commandName, function<void()>* preCheckpointCallback)
+int SQLite::commit(uint64_t& journalCommitID, const string& description, const string& commandName, function<void()>* preCheckpointCallback)
 {
-    commitIDAllocated = false;
+    journalCommitID = 0;
     // If commits have been disabled, return an error without attempting the commit.
     if (!_sharedData._commitEnabled) {
         return COMMIT_DISABLED;
@@ -1462,12 +1462,15 @@ int SQLite::commit(bool& commitIDAllocated, const string& description, const str
             result = sqlite3_hct_journal_follower_commit(_db,
                 reinterpret_cast<const unsigned char*>(journalData.data()), journalData.size(),
                 _sharedData.commitCount + 1, _sharedData.commitCount);
+            if (result == SQLITE_OK) {
+                journalCommitID = _sharedData.commitCount + 1;
+            }
         } else {
             sqlite3_int64 cid = 0;
             sqlite3_int64 snapshot = 0;
             result = sqlite3_hct_journal_leader_commit(_db,
                 reinterpret_cast<const unsigned char*>(journalData.data()), journalData.size(), &cid, &snapshot);
-            commitIDAllocated = cid != 0;
+            journalCommitID = static_cast<uint64_t>(cid);
             if (cid) {
                 SASSERT(cid == _sharedData.commitCount + 1);
                 if (result) {
@@ -1476,8 +1479,6 @@ int SQLite::commit(bool& commitIDAllocated, const string& description, const str
                     _sharedData.prepareTransactionInfo(cid, "", "");
                     _sharedData.incrementCommit("");
                 }
-            } else {
-                SASSERT(result != SQLITE_OK);
             }
         }
         // Match SQuery's extended conflict result before another SQLite call replaces the error state.
@@ -1486,6 +1487,9 @@ int SQLite::commit(bool& commitIDAllocated, const string& description, const str
         }
     } else {
         result = SQuery(_db, "COMMIT");
+        if (result == SQLITE_OK) {
+            journalCommitID = _sharedData.commitCount + 1;
+        }
     }
     if (_hctree) {
         SQResult pageCountResult;
@@ -1539,7 +1543,12 @@ int SQLite::commit(bool& commitIDAllocated, const string& description, const str
         _commitElapsed += STimeNow() - before;
         _commitLockElapsed += _sharedData._commitLockTimer.stop();
         _totalTransactionElapsed = _transactionTimer.stop();
-        _sharedData.incrementCommit(_uncommittedHash);
+        if (journalCommitID) {
+            _sharedData.incrementCommit(_uncommittedHash);
+        } else {
+            // A read-only HC-Tree leader transaction can succeed without allocating a CID.
+            _sharedData.discardPreparedTransactionInfo(_sharedData.commitCount + 1);
+        }
         _insideTransaction = false;
         _prepared = false;
         _uncommittedHash.clear();
@@ -2120,6 +2129,12 @@ void SQLite::SharedData::prepareTransactionInfo(uint64_t commitID, const string&
 {
     lock_guard<decltype(_internalStateMutex)> lock(_internalStateMutex);
     _preparedTransactions.insert_or_assign(commitID, make_pair(query, hash));
+}
+
+void SQLite::SharedData::discardPreparedTransactionInfo(uint64_t commitID)
+{
+    lock_guard<decltype(_internalStateMutex)> lock(_internalStateMutex);
+    _preparedTransactions.erase(commitID);
 }
 
 void SQLite::SharedData::commitTransactionInfo(uint64_t commitID)

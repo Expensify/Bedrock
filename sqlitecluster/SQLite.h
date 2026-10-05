@@ -237,9 +237,9 @@ public:
     // The main purpose of this is to allow replications in SQLiteNode to notify other waiting threads that the commit has finished even before the checkpoint is done.
     int commit(const string& description = "UNSPECIFIED", const string& commandName = "", function<void()>* preCheckpointCallback = nullptr);
 
-    // commitIDAllocated reports whether the HC-Tree leader API allocated a CID for this transaction, including when SQLite commits an empty
-    // journal entry after the transaction fails. Always false for WAL2 and HC-Tree followers.
-    int commit(bool& commitIDAllocated, const string& description = "UNSPECIFIED", const string& commandName = "", function<void()>* preCheckpointCallback = nullptr);
+    // journalCommitID is the actual journal ID, or zero if no entry was recorded. A failed HC-Tree leader commit can
+    // still record a blank entry; a successful read-only leader commit can finish without recording an entry.
+    int commit(uint64_t& journalCommitID, const string& description = "UNSPECIFIED", const string& commandName = "", function<void()>* preCheckpointCallback = nullptr);
 
     // Cancels the current transaction and rolls it back.
     void rollback(const string& commandName = "");
@@ -443,6 +443,9 @@ public:
         // query is in its post-prepare() form (a zstd frame when compression is enabled, raw SQL otherwise) and is
         // shipped directly to followers in TRANSACTION.
         void prepareTransactionInfo(uint64_t commitID, const string& query, const string& hash);
+
+        // Discard a prepared entry when the transaction completes without recording it in the journal.
+        void discardPreparedTransactionInfo(uint64_t commitID);
 
         // When a transaction that was prepared is committed, we move the data from the prepared list to the committed
         // list.
