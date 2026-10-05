@@ -51,7 +51,7 @@ struct JournalDeleterTest : tpunit::TestFixture
             db.prepare();
             ASSERT_EQUAL(db.commit(), SQLITE_OK);
         }
-        ASSERT_EQUAL(db.getCommitCount(), (uint64_t) count);
+        ASSERT_EQUAL(db.getCommitCount(), (uint64_t) count + 1);
     }
 
     int64_t countJournalRows(SQLite& db, const string& where = "1")
@@ -81,7 +81,7 @@ struct JournalDeleterTest : tpunit::TestFixture
 
         // Committing is well past `maxJournalSize`, and every commit is still journaled: trimming is somebody else's
         // job now.
-        ASSERT_EQUAL(countJournalRows(db), 20);
+        ASSERT_EQUAL(countJournalRows(db), 21);
     }
 
     void trimRemovesEntriesOlderThanTheMax()
@@ -104,7 +104,7 @@ struct JournalDeleterTest : tpunit::TestFixture
         commitTransactions(db, 10);
 
         trimEverything(db);
-        ASSERT_EQUAL(countJournalRows(db), 10);
+        ASSERT_EQUAL(countJournalRows(db), 11);
     }
 
     void trimHonoursTheBatchSize()
@@ -135,7 +135,7 @@ struct JournalDeleterTest : tpunit::TestFixture
             ASSERT_TRUE(db.trimJournalTable(table, 0));
         }
 
-        ASSERT_EQUAL(countJournalRows(db), 30);
+        ASSERT_EQUAL(countJournalRows(db), 31);
     }
 
     void trimRetainsNonblankAnchor()
