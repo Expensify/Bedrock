@@ -161,6 +161,7 @@ unique_ptr<BedrockCommand> BedrockPlugin_TestPlugin::getCommand(SQLiteCommand&& 
         "getjournalteststate",
         "journaltest",
         "blankcommitconflict",
+        "readonlycommit",
         "failcommit",
         "deletetestrowunreplicated",
         "testescalate",
@@ -747,6 +748,11 @@ void TestPluginCommand::process(SQLite& db)
         };
         sqlite3_commit_hook(db.getDBHandle(), rejectCommit, nullptr);
         return;
+    } else if (request.methodLine == "readonlycommit") {
+        // Record SQL for a dry run without making the transaction a database write.
+        db.setUpdateNoopMode(true);
+        db.setUpdateNoopMode(false);
+        return;
     } else if (request.methodLine == "blankcommitconflict") {
         // End failed attempts without a successful retry, leaving the allocated blank CIDs at the journal's tail.
         if (processCount > 1) {
@@ -896,7 +902,7 @@ void TestPluginCommand::postProcess(SQLite& db)
 bool TestPluginCommand::shouldEnableOnPrepareNotification(const SQLite& db, void(**handler)(SQLite & _db, int64_t tableID))
 {
     *handler = BedrockPlugin_TestPlugin::onPrepareHandler;
-    return request.methodLine == "preparehandler";
+    return request.methodLine == "preparehandler" || (request.methodLine == "readonlycommit" && request.test("writeInPrepare"));
 }
 
 void BedrockPlugin_TestPlugin::upgradeDatabase(SQLite& db)
