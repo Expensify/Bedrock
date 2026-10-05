@@ -91,7 +91,7 @@ int main(int argc, char* argv[])
         BedrockTester::ENABLE_HCTREE = true;
         cout << "HCTree enabled" << endl;
     }
-    if (args.isSet("-enableHctreeExperimentalMode")) {
+    if (BedrockTester::ENABLE_HCTREE && args.isSet("-enableHctreeExperimentalMode")) {
         BedrockTester::ENABLE_HCTREE_EXPERIMENTAL_MODE = true;
         cout << "HCTree experimental mode enabled" << endl;
     }
