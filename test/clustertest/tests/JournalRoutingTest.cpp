@@ -58,7 +58,7 @@ struct JournalRoutingTest : tpunit::TestFixture
 
     void routesReadsAroundCutover()
     {
-        if (!BedrockTester::ENABLE_HCTREE) {
+        if (!BedrockTester::ENABLE_HCTREE_EXPERIMENTAL_MODE) {
             return;
         }
         BedrockTester node(args, {}, 0, 0, 0, false);
@@ -105,7 +105,7 @@ struct JournalRoutingTest : tpunit::TestFixture
 
     void freshDatabaseSkipsLegacy()
     {
-        if (!BedrockTester::ENABLE_HCTREE) {
+        if (!BedrockTester::ENABLE_HCTREE_EXPERIMENTAL_MODE) {
             return;
         }
         BedrockTester node(args, {});
@@ -119,7 +119,7 @@ struct JournalRoutingTest : tpunit::TestFixture
 
     void trimmingPreservesLegacySnapshot()
     {
-        if (!BedrockTester::ENABLE_HCTREE) {
+        if (!BedrockTester::ENABLE_HCTREE_EXPERIMENTAL_MODE) {
             return;
         }
         BedrockTester node(args, {}, 0, 0, 0, false);
@@ -170,7 +170,7 @@ struct JournalRoutingTest : tpunit::TestFixture
 
     void trimmingPreservesPromotionBoundary()
     {
-        if (!BedrockTester::ENABLE_HCTREE) {
+        if (!BedrockTester::ENABLE_HCTREE_EXPERIMENTAL_MODE) {
             return;
         }
         BedrockTester node(args, {}, 0, 0, 0, false);

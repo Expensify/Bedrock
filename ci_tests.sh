@@ -6,6 +6,9 @@ source ./ci_utils.sh
 # If ENABLE_HCTREE is set, add a flag to the test called -enableHctree
 if [ "$ENABLE_HCTREE" == "true" ]; then
   ENABLE_HCTREE_FLAG="-enableHctree"
+  if [ "${ENABLE_HCTREE_EXPERIMENTAL_MODE:-true}" == "true" ]; then
+    ENABLE_HCTREE_EXPERIMENTAL_MODE_FLAG="-enableHctreeExperimentalMode"
+  fi
 fi
 
 git config --global --add safe.directory `pwd`
@@ -34,10 +37,10 @@ done
 
 cd test
 mark_fold start test_bedrock
-./test -threads 128 $ENABLE_HCTREE_FLAG
+./test -threads 128 $ENABLE_HCTREE_FLAG $ENABLE_HCTREE_EXPERIMENTAL_MODE_FLAG
 mark_fold end test_bedrock
 
 cd clustertest
 mark_fold start test_bedrock_cluster
-./clustertest -threads 8 $ENABLE_HCTREE_FLAG
+./clustertest -threads 8 $ENABLE_HCTREE_FLAG $ENABLE_HCTREE_EXPERIMENTAL_MODE_FLAG
 mark_fold end test_bedrock_cluster

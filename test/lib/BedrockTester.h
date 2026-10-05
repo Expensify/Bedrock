@@ -9,6 +9,7 @@ class SQLite;
 class BedrockTester {
 public:
     static bool ENABLE_HCTREE;
+    static bool ENABLE_HCTREE_EXPERIMENTAL_MODE;
     static bool VERBOSE_LOGGING;
     static bool QUIET_LOGGING;
 

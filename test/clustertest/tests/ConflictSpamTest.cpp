@@ -169,7 +169,7 @@ struct ConflictSpamTest : tpunit::TestFixture
 
     void blankCommitsReplicateAndSynchronize()
     {
-        if (!BedrockTester::ENABLE_HCTREE) {
+        if (!BedrockTester::ENABLE_HCTREE_EXPERIMENTAL_MODE) {
             return;
         }
 
