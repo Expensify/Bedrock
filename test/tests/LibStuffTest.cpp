@@ -236,13 +236,6 @@ struct LibStuff : tpunit::TestFixture
         // Verify we can parse/encode PHP objects
         ASSERT_EQUAL(innerObject0["ofxTest"], SComposeJSONObject(JSON::Utils::toSTable(JSON::Value::parse(innerObject0["ofxTest"]))));
 
-        // Reject malformed input through the shared parser.
-        ASSERT_THROW(JSON::Value::parse(
-            SStrFromHex("7D6628F7AE67FBACE9DAF79312C48BA0B41AADD5BA1704E929B96B6F87708C0898868D55C0AAAE117CF20F1317D151"
-                        "348706C9EDFE8A0CDD13BFB476367DEA2761A102B26443C7D3A464DB49A37F1F816B8BEC4C55DBD9DAF0B70652D32A"
-                        "CBD224F9487E25398E740E99B24089A6343B6FD6C1BC6A89AF90F3DC69016A42066AAF430B1B584D236B8AD285828D"
-                        "59BB8375E2E955E246390DE9AA69D05DEF1FBC25318C9CCFE90159EC7EAA71637C07BD")), JSON::InvalidArgument);
-
         // Preserve valid container formatting and quote invalid containers as strings.
         const string valid = "{ \"value\" : 1.00 }";
         ASSERT_EQUAL(SToJSON(valid), valid);

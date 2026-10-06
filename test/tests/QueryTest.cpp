@@ -23,12 +23,11 @@ struct QueryTest : tpunit::TestFixture
     }
 
     BedrockTester* tester;
-    uint16_t mysqlPort;
+    uint16_t mysqlPort = 0;
 
     void setup()
     {
-        mysqlPort = BedrockTester::ports.getPort();
-        tester = new BedrockTester({{"-plugins", "db,mysql"}, {"-mysql.host", "127.0.0.1:" + to_string(mysqlPort)}}, {
+        tester = new BedrockTester({}, {
             "CREATE TABLE queryTest (key INTEGER, value TEXT);",
         });
     }
@@ -36,7 +35,9 @@ struct QueryTest : tpunit::TestFixture
     void tearDown()
     {
         delete tester;
-        BedrockTester::ports.returnPort(mysqlPort);
+        if (mysqlPort) {
+            BedrockTester::ports.returnPort(mysqlPort);
+        }
     }
 
     void testMissing()
@@ -70,7 +71,9 @@ struct QueryTest : tpunit::TestFixture
 
     void testInvalidMySQLResult()
     {
-        STCPManager::Socket socket(tester->getArg("-mysql.host"), false);
+        mysqlPort = BedrockTester::ports.getPort();
+        BedrockTester mysqlTester({{"-plugins", "db,mysql"}, {"-mysql.host", "127.0.0.1:" + to_string(mysqlPort)}}, {});
+        STCPManager::Socket socket(mysqlTester.getArg("-mysql.host"), false);
         MySQLPacket response;
         auto receivePacket = [&] {
             const uint64_t deadline = STimeNow() + 5'000'000;
