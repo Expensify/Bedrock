@@ -14,6 +14,7 @@
 #include <unistd.h>
 
 namespace BedrockTestPorts {
+using namespace std;
 
 constexpr uint32_t VERSION = 1;
 constexpr uint16_t START_PORT = 10000;
@@ -23,7 +24,8 @@ constexpr int TIMEOUT_MS = 10000;
 enum class Operation : uint32_t { REGISTER, GET_PORT, RETURN_PORT, DISCONNECT };
 
 // Local IPC only. Responses repeat the operation and use negative errno values for errors.
-struct Message {
+struct Message
+{
     uint32_t version = VERSION;
     Operation operation = Operation::REGISTER;
     int32_t value = 0;
@@ -32,17 +34,33 @@ static_assert(sizeof(Message) == 12);
 
 class FD {
 public:
-    explicit FD(int value = -1) : value(value) {}
-    ~FD() { if (value >= 0) { close(value); } }
+    explicit FD(int value = -1) : value(value)
+    {
+    }
+
+    ~FD()
+    {
+        if (value >= 0) {
+            close(value);
+        }
+    }
+
     FD(const FD&) = delete;
     FD& operator=(const FD&) = delete;
-    int release() { const int result = value; value = -1; return result; }
+
+    int release()
+    {
+        const int result = value;
+        value = -1;
+        return result;
+    }
+
     int value;
 };
 
-inline std::system_error error(const std::string& operation, int code = errno)
+inline system_error error(const string& operation, int code = errno)
 {
-    return std::system_error(code, std::generic_category(), "Test port server: " + operation);
+    return system_error(code, generic_category(), "Test port server: " + operation);
 }
 
 inline void configureSocket(int fd, bool nonblocking = false)
@@ -68,12 +86,12 @@ inline ssize_t sendBytes(int fd, const void* bytes, size_t size)
 #endif
 }
 
-inline std::string directory()
+inline string directory()
 {
-    return "/tmp/bedrock-test-ports-" + std::to_string(getuid());
+    return "/tmp/bedrock-test-ports-" + to_string(getuid());
 }
 
-inline void ensureDirectory(const std::string& path = directory())
+inline void ensureDirectory(const string& path = directory())
 {
     if (mkdir(path.c_str(), 0700) < 0 && errno != EEXIST) {
         throw error("create runtime directory");
@@ -85,11 +103,11 @@ inline void ensureDirectory(const std::string& path = directory())
     }
 }
 
-inline sockaddr_un address(const std::string& runtimeDirectory = directory())
+inline sockaddr_un address(const string& runtimeDirectory = directory())
 {
     sockaddr_un result = {};
     result.sun_family = AF_UNIX;
-    const std::string path = runtimeDirectory + "/server.sock";
+    const string path = runtimeDirectory + "/server.sock";
     if (path.size() >= sizeof(result.sun_path)) {
         throw error("socket path too long", ENAMETOOLONG);
     }
@@ -142,5 +160,4 @@ inline void clientTimeout(int fd)
         throw error("configure client timeout");
     }
 }
-
 } // namespace BedrockTestPorts

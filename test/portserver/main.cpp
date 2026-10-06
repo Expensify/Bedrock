@@ -10,6 +10,8 @@
 #include <cstdlib>
 #endif
 
+using namespace std;
+
 int main(int argc, char* argv[])
 {
     if (argc != 2) {
@@ -41,7 +43,7 @@ int main(int argc, char* argv[])
 #endif
     try {
         return runTestPortServer(4, 3, argv[1]);
-    } catch (const std::exception& exception) {
+    } catch (const exception& exception) {
         fprintf(stderr, "%s\n", exception.what());
         return 1;
     }

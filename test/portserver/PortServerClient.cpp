@@ -23,8 +23,8 @@ using namespace std;
 using namespace BedrockTestPorts;
 
 namespace {
-
-struct Registry {
+struct Registry
+{
     mutex lock;
     set<PortServerClient*> clients;
     once_flag forkHandlers;
@@ -153,14 +153,16 @@ int startServer(int lockFD, const string& runtimeDirectory)
     }
     // The helper can outlive its launching suite's connection. Reap it independently of clients.
     thread([pid]() {
-        while (waitpid(pid, nullptr, 0) < 0 && errno == EINTR) {}
+        while (waitpid(pid, nullptr, 0) < 0 && errno == EINTR) {
+        }
     }).detach();
     return client.release();
 }
-
 } // namespace
 
-PortServerClient::PortServerClient(uint16_t from) : PortServerClient(from, directory()) {}
+PortServerClient::PortServerClient(uint16_t from) : PortServerClient(from, directory())
+{
+}
 
 PortServerClient::PortServerClient(uint16_t from, const string& runtimeDirectory) :
     _from(from), _directory(runtimeDirectory)
@@ -303,7 +305,8 @@ void PortServerClient::disconnectLocked()
         // Disconnect is also used by destructors. Socket closure remains sufficient if the RPC fails.
         try {
             BedrockTestPorts::request(_socket, Operation::DISCONNECT);
-        } catch (...) {}
+        } catch (...) {
+        }
         close(_socket);
         _socket = -1;
     }
@@ -329,7 +332,8 @@ int PortServerClient::waitForPort(uint16_t port)
     addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
     addr.sin_port = htons(port);
     const auto deadline = chrono::steady_clock::now() + chrono::seconds(5);
-    do {
+    do
+    {
         if (::bind(fd.value, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == 0) {
             return 0;
         }

@@ -17,10 +17,10 @@ using namespace std;
 using namespace BedrockTestPorts;
 
 namespace {
-
 using Clock = chrono::steady_clock;
 
-struct Client {
+struct Client
+{
     pid_t pid = 0;
     Message message;
     size_t received = 0;
@@ -246,15 +246,18 @@ private:
                     }
                 }
                 return -EADDRNOTAVAIL;
+
             case Operation::RETURN_PORT:
                 if (message.value < START_PORT || message.value > MAX_PORT || !client.ports.erase(message.value)) {
                     return -EINVAL;
                 }
                 allocated.erase(message.value);
                 return 0;
+
             case Operation::DISCONNECT:
                 client.disconnecting = true;
                 return 0;
+
             default:
                 return -EINVAL;
         }
@@ -297,7 +300,6 @@ private:
         return true;
     }
 };
-
 } // namespace
 
 int runTestPortServer(int lockFD, int bootstrapFD, const string& runtimeDirectory)
