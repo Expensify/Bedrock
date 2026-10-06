@@ -5,6 +5,7 @@
 #include <map>
 #include <netinet/in.h>
 #include <set>
+#include <syslog.h>
 #include <vector>
 
 #ifdef __APPLE__
@@ -93,6 +94,7 @@ public:
         }
         clients.emplace(bootstrap.value, Client{});
         bootstrap.release();
+        syslog(LOG_INFO, "Started port server on %s", socketAddress.sun_path);
     }
 
     ~Server()
@@ -106,6 +108,7 @@ public:
         if (ownsSocket) {
             unlink(socketAddress.sun_path);
         }
+        syslog(LOG_INFO, "Stopped port server on %s", socketAddress.sun_path);
     }
 
     void run()
@@ -141,7 +144,7 @@ public:
                 const int fd = it->first;
                 ++it;
                 if (exited.count(clients.at(fd).pid)) {
-                    removeClient(fd);
+                    removeClient(fd, "PID exited");
                 }
             }
 
@@ -190,12 +193,14 @@ private:
     map<pid_t, int> processes;
     set<uint16_t> allocated;
 
-    void removeClient(int fd)
+    void removeClient(int fd, const char* reason = "client disconnected")
     {
         const auto& client = clients.at(fd);
         const pid_t pid = client.pid;
         for (uint16_t port : client.ports) {
             allocated.erase(port);
+            syslog(LOG_INFO, "Freed port %d from client PID %d (connection %d, %s)",
+                   static_cast<int>(port), static_cast<int>(pid), fd, reason);
         }
         close(fd);
         clients.erase(fd);
@@ -210,7 +215,7 @@ private:
         }
     }
 
-    int32_t execute(Client& client)
+    int32_t execute(Client& client, int fd)
     {
         const Message& message = client.message;
         if (message.version != VERSION) {
@@ -242,6 +247,8 @@ private:
                     if (!allocated.count(port) && canBind(port)) {
                         allocated.insert(port);
                         client.ports.insert(port);
+                        syslog(LOG_INFO, "Allocated port %d to client PID %d (connection %d)",
+                               port, static_cast<int>(client.pid), fd);
                         return port;
                     }
                 }
@@ -252,6 +259,8 @@ private:
                     return -EINVAL;
                 }
                 allocated.erase(message.value);
+                syslog(LOG_INFO, "Freed port %d from client PID %d (connection %d, port returned)",
+                       static_cast<int>(message.value), static_cast<int>(client.pid), fd);
                 return 0;
 
             case Operation::DISCONNECT:
@@ -277,7 +286,7 @@ private:
             }
             client.received += count;
             if (client.received == sizeof(Message)) {
-                client.message.value = execute(client);
+                client.message.value = execute(client, fd);
                 client.message.version = VERSION;
                 client.responding = true;
             }
@@ -305,6 +314,7 @@ private:
 int runTestPortServer(int lockFD, int bootstrapFD, const string& runtimeDirectory)
 {
     FD lock(lockFD);
+    openlog("bedrock-test-port-server", LOG_PID | LOG_NDELAY, LOG_USER);
     Server server(bootstrapFD, runtimeDirectory);
     server.run();
     return 0;

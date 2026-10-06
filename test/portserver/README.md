@@ -30,6 +30,11 @@ descriptors. Client fork handlers close inherited sessions and release client
 mutexes in children; allocations in a child establish a connection under its own
 PID. Client sockets are also close-on-exec.
 
+The helper logs startup, shutdown, allocations, and releases to syslog at INFO
+level under `bedrock-test-port-server`. Allocation and release messages include
+the client PID and connection; releases identify returned ports, disconnects, or
+PID exits. The syslog tag includes the server PID.
+
 When the last connection disappears, the server removes its socket and exits
 before releasing the singleton lock. A registration racing with shutdown retries.
 Once a connection has registered, transport failure invalidates that client
