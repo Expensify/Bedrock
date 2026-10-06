@@ -13,19 +13,22 @@
 
 using namespace BedrockTestPorts;
 
-struct PortServerTest : tpunit::TestFixture {
+struct PortServerTest : tpunit::TestFixture
+{
     PortServerTest() : tpunit::TestFixture("PortServer",
-        BEFORE(PortServerTest::setUp), AFTER(PortServerTest::tearDown),
-        TEST(PortServerTest::clientOwnership),
-        TEST(PortServerTest::occupiedAndExhausted),
-        TEST(PortServerTest::threadedAllocation),
-        TEST(PortServerTest::concurrentStartup),
-        TEST(PortServerTest::forkIsolation),
-        TEST(PortServerTest::launcherCanExit),
-        TEST(PortServerTest::pidExitWithInheritedSockets),
-        TEST(PortServerTest::shutdownRace),
-        TEST(PortServerTest::serverCrash),
-        TEST(PortServerTest::partialProtocol)) {}
+                                           BEFORE(PortServerTest::setUp), AFTER(PortServerTest::tearDown),
+                                           TEST(PortServerTest::clientOwnership),
+                                           TEST(PortServerTest::occupiedAndExhausted),
+                                           TEST(PortServerTest::threadedAllocation),
+                                           TEST(PortServerTest::concurrentStartup),
+                                           TEST(PortServerTest::forkIsolation),
+                                           TEST(PortServerTest::launcherCanExit),
+                                           TEST(PortServerTest::pidExitWithInheritedSockets),
+                                           TEST(PortServerTest::shutdownRace),
+                                           TEST(PortServerTest::serverCrash),
+                                           TEST(PortServerTest::partialProtocol))
+    {
+    }
 
     string runtimeDirectory;
     vector<pid_t> children;
@@ -33,7 +36,8 @@ struct PortServerTest : tpunit::TestFixture {
     static bool waitUntil(const function<bool()>& condition)
     {
         const auto deadline = chrono::steady_clock::now() + chrono::seconds(5);
-        do {
+        do
+        {
             if (condition()) {
                 return true;
             }
@@ -61,10 +65,14 @@ struct PortServerTest : tpunit::TestFixture {
     {
         for (pid_t pid : children) {
             kill(pid, SIGKILL);
-            while (waitpid(pid, nullptr, 0) < 0 && errno == EINTR) {}
+            while (waitpid(pid, nullptr, 0) < 0 && errno == EINTR) {
+            }
         }
         children.clear();
-        EXPECT_TRUE(waitUntil([&]() { return unlocked(); }));
+        const bool released = waitUntil([&]() {
+            return unlocked();
+        });
+        EXPECT_TRUE(released);
         unlink(address(runtimeDirectory).sun_path);
         unlink((runtimeDirectory + "/server.lock").c_str());
         rmdir(runtimeDirectory.c_str());
@@ -137,7 +145,10 @@ struct PortServerTest : tpunit::TestFixture {
         ASSERT_NOT_EQUAL(d, c);
         first.disconnect();
         second.disconnect();
-        ASSERT_TRUE(waitUntil([&]() { return access(address(runtimeDirectory).sun_path, F_OK) != 0 && unlocked(); }));
+        const bool stopped = waitUntil([&]() {
+            return access(address(runtimeDirectory).sun_path, F_OK) != 0 && unlocked();
+        });
+        ASSERT_TRUE(stopped);
     }
 
     void occupiedAndExhausted()
@@ -150,6 +161,9 @@ struct PortServerTest : tpunit::TestFixture {
         ASSERT_EQUAL(port, reserved);
         first.returnPort(port);
         FD blocker(socket(AF_INET, SOCK_STREAM, IPPROTO_TCP));
+        // Match Bedrock's bind settings so TIME_WAIT connections do not prevent this listener.
+        int reuse = 1;
+        ASSERT_EQUAL(setsockopt(blocker.value, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse)), 0);
         sockaddr_in addr = {};
         addr.sin_family = AF_INET;
         addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
@@ -170,9 +184,13 @@ struct PortServerTest : tpunit::TestFixture {
             throw;
         }
         FD lastBlocker(socket(AF_INET, SOCK_STREAM, IPPROTO_TCP));
+        ASSERT_EQUAL(setsockopt(lastBlocker.value, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse)), 0);
         addr.sin_port = htons(PortMap::MAX_PORT);
         const int bound = ::bind(lastBlocker.value, reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
         ASSERT_TRUE(bound == 0 || errno == EADDRINUSE);
+        if (bound == 0) {
+            ASSERT_EQUAL(listen(lastBlocker.value, 1), 0);
+        }
         PortMap last(PortMap::MAX_PORT, runtimeDirectory);
         ASSERT_THROW(last.getPort(), system_error);
         if (bound == 0) {
@@ -212,7 +230,8 @@ struct PortServerTest : tpunit::TestFixture {
         }
     }
 
-    struct Report {
+    struct Report
+    {
         pid_t server = 0;
         array<uint16_t, 16> ports = {};
     };
@@ -281,7 +300,10 @@ struct PortServerTest : tpunit::TestFixture {
         for (pid_t pid : pids) {
             ASSERT_EQUAL(reap(pid), 0);
         }
-        ASSERT_TRUE(waitUntil([&]() { return access(address(runtimeDirectory).sun_path, F_OK) != 0 && unlocked(); }));
+        const bool stopped = waitUntil([&]() {
+            return access(address(runtimeDirectory).sun_path, F_OK) != 0 && unlocked();
+        });
+        ASSERT_TRUE(stopped);
     }
 
     void forkIsolation()
@@ -303,7 +325,8 @@ struct PortServerTest : tpunit::TestFixture {
                 try {
                     client.returnPort(parentPort);
                     _exit(2);
-                } catch (const system_error&) {}
+                } catch (const system_error&) {
+                }
                 client.returnPort(childPort);
                 client.disconnect();
                 _exit(0);
@@ -453,7 +476,10 @@ struct PortServerTest : tpunit::TestFixture {
             first.disconnect();
             newcomer.get();
         }
-        ASSERT_TRUE(waitUntil([&]() { return access(address(runtimeDirectory).sun_path, F_OK) != 0 && unlocked(); }));
+        const bool stopped = waitUntil([&]() {
+            return access(address(runtimeDirectory).sun_path, F_OK) != 0 && unlocked();
+        });
+        ASSERT_TRUE(stopped);
     }
 
     void serverCrash()
@@ -461,7 +487,10 @@ struct PortServerTest : tpunit::TestFixture {
         PortMap first(PortMap::START_PORT, runtimeDirectory);
         first.getPort();
         ASSERT_EQUAL(kill(serverPID(), SIGKILL), 0);
-        ASSERT_TRUE(waitUntil([&]() { return unlocked(); }));
+        const bool released = waitUntil([&]() {
+            return unlocked();
+        });
+        ASSERT_TRUE(released);
         ASSERT_THROW(first.getPort(), system_error);
         ASSERT_THROW(first.getPort(), system_error);
         PortMap fresh(PortMap::START_PORT, runtimeDirectory);
