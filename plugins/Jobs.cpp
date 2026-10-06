@@ -97,6 +97,10 @@ static string preserveRerunIfDataChangedSQL(const string& newDataExpression)
 // Job metadata keys are case-insensitive and must match in full, including embedded NULs.
 static string findJobDataKey(const JSON::Value& data, const string& key)
 {
+    // Prefer the canonical spelling used by SQL when updating job metadata.
+    if (data.hasMember(key)) {
+        return key;
+    }
     for (const auto& [storedKey, value] : JSON::ConstObjectValue(data)) {
         if (storedKey.size() == key.size() && SIEquals(storedKey, key)) {
             return storedKey;
