@@ -1,3 +1,4 @@
+#include <libstuff/JSON/Value.h>
 #include <libstuff/SData.h>
 #include <test/clustertest/BedrockClusterTester.h>
 
@@ -33,9 +34,9 @@ struct UpgradeDBTest : tpunit::TestFixture
 
         // Capture the leader's commit count now that the INSERT has landed. Followers
         // replicate asynchronously, so without waiting they might not yet have the row.
-        string leaderCommitCount = SParseJSONObject(
+        string leaderCommitCount = JSON::Value::parse(
             tester->getTester(0).executeWaitVerifyContent(SData("Status"), "200", true)
-            )["CommitCount"];
+            )["CommitCount"].serialize();
         for (auto i : {1, 2}) {
             ASSERT_TRUE(tester->getTester(i).waitForStatusTerm("CommitCount", leaderCommitCount));
         }
