@@ -10,9 +10,9 @@
 #include <format>
 
 thread_local function<string()> SSignalHandlerDieFunc;
-static atomic<bool (*)() noexcept> fatalSignalHook{nullptr};
+static atomic<void (*)() noexcept> fatalSignalHook{nullptr};
 
-void SSetFatalSignalHook(bool (*hook)() noexcept) noexcept
+void SSetFatalSignalHook(void (*hook)() noexcept) noexcept
 {
     static_assert(decltype(fatalSignalHook)::is_always_lock_free);
     fatalSignalHook.store(hook);
@@ -223,12 +223,8 @@ void _SSignal_StackTrace(int signum, siginfo_t* info, void* ucontext)
         if (!_SSignal_threadCaughtSignalNumber) {
             _SSignal_threadCaughtSignalNumber = signum;
 
-            // Restore redirected test output before attempting syslog or crash-file writes.
-            const auto hook = fatalSignalHook.load();
-            const bool printToStderr = hook && hook();
-            if (printToStderr) {
-                constexpr char message[] = "\n*** Fatal signal while running tests. Stack trace: ***\n\n";
-                write(STDERR_FILENO, message, sizeof(message) - 1);
+            if (const auto hook = fatalSignalHook.load()) {
+                hook();
             }
 
             SWARN("Signal " << strsignal(_SSignal_threadCaughtSignalNumber) << "(" << _SSignal_threadCaughtSignalNumber << ") caused crash, logging stack trace.");
@@ -256,12 +252,6 @@ void _SSignal_StackTrace(int signum, siginfo_t* info, void* ucontext)
 
             if (depth > 40) {
                 SWARN("Stack depth is " << depth << " only logging first and last 20 frames.");
-            }
-
-            if (printToStderr) {
-                backtrace_symbols_fd(callstack, depth, STDERR_FILENO);
-                constexpr char newline[] = "\n";
-                write(STDERR_FILENO, newline, sizeof(newline) - 1);
             }
 
             // We mainly depend on syslog to investigate crashes, but when performance is real bad, sometimes we lose those logs.

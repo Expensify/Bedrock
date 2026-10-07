@@ -12,6 +12,7 @@
 #include <atomic>
 #include <cstdio>
 #include <fcntl.h>
+#include <execinfo.h>
 #include <iomanip>
 #include <iostream>
 #include <map>
@@ -394,17 +395,26 @@ void NcursesOutputWriter::restoreAfterSignal() noexcept
     write(STDERR_FILENO, newline, sizeof(newline) - 1);
 }
 
-bool NcursesOutputWriter::restoreActiveOutputAfterSignal() noexcept
+void NcursesOutputWriter::restoreActiveOutputAfterSignal() noexcept
 {
     static_assert(decltype(activeSignalOutput)::is_always_lock_free);
     NcursesOutputWriter* output = activeSignalOutput.load();
 
     // Test servers fork from the runner; only the owning process may restore its terminal.
     if (!output || getpid() != output->impl->ownerPID) {
-        return false;
+        return;
     }
     output->restoreAfterSignal();
-    return true;
+    constexpr char message[] = "\n*** Fatal signal while running tests. Stack trace: ***\n\n";
+    write(STDERR_FILENO, message, sizeof(message) - 1);
+
+    // Best-effort crash diagnostics, matching the runner's existing fatal-signal handler.
+    // Keep the trace bounded and write to stderr rather than relying on available disk space.
+    void* frames[50];
+    const int depth = backtrace(frames, 50);
+    backtrace_symbols_fd(frames, depth, STDERR_FILENO);
+    constexpr char newline[] = "\n";
+    write(STDERR_FILENO, newline, sizeof(newline) - 1);
 }
 
 void NcursesOutputWriter::runStarted(const vector<PlannedFixture>& plan)

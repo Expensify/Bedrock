@@ -44,7 +44,7 @@ public:
 
 private:
     static atomic<NcursesOutputWriter*> activeSignalOutput;
-    static bool restoreActiveOutputAfterSignal() noexcept;
+    static void restoreActiveOutputAfterSignal() noexcept;
 
     struct Impl;
     unique_ptr<Impl> impl;
