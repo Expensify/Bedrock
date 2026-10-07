@@ -33,6 +33,55 @@ struct PortServerTest : tpunit::TestFixture
     string runtimeDirectory;
     vector<pid_t> children;
 
+    static int streamSocketType()
+    {
+        int type = SOCK_STREAM;
+#ifdef SOCK_CLOEXEC
+        type |= SOCK_CLOEXEC;
+#endif
+        return type;
+    }
+
+    // Linux sets close-on-exec atomically so another fixture cannot fork between creation and fcntl.
+    static int createSocket(int family)
+    {
+        FD fd(socket(family, streamSocketType(), 0));
+        configureSocket(fd.value);
+        return fd.release();
+    }
+
+    static void createSocketPair(int pair[2])
+    {
+        if (socketpair(AF_UNIX, streamSocketType(), 0, pair) < 0) {
+            throw error("create test socket pair");
+        }
+        FD first(pair[0]);
+        FD second(pair[1]);
+        configureSocket(first.value);
+        configureSocket(second.value);
+        first.release();
+        second.release();
+    }
+
+    static void createPipe(int pair[2])
+    {
+#ifdef __linux__
+        const int result = pipe2(pair, O_CLOEXEC);
+#else
+        const int result = pipe(pair);
+#endif
+        if (result < 0) {
+            throw error("create test pipe");
+        }
+        FD first(pair[0]);
+        FD second(pair[1]);
+        if (fcntl(first.value, F_SETFD, FD_CLOEXEC) < 0 || fcntl(second.value, F_SETFD, FD_CLOEXEC) < 0) {
+            throw error("configure test pipe");
+        }
+        first.release();
+        second.release();
+    }
+
     static bool waitUntil(const function<bool()>& condition)
     {
         const auto deadline = chrono::steady_clock::now() + chrono::seconds(5);
@@ -46,6 +95,27 @@ struct PortServerTest : tpunit::TestFixture
         return false;
     }
 
+    static uint16_t waitForAvailablePort(PortMap& client)
+    {
+        uint16_t port = 0;
+        // A child forked before the listener closed can retain it briefly until exec.
+        const bool available = waitUntil([&]() {
+            try {
+                port = client.getPort();
+                return true;
+            } catch (const system_error& exception) {
+                if (exception.code().value() != EADDRNOTAVAIL) {
+                    throw;
+                }
+                return false;
+            }
+        });
+        if (!available) {
+            throw error("released test port did not become available", ETIMEDOUT);
+        }
+        return port;
+    }
+
     void setUp()
     {
         char path[] = "/tmp/bedrock-port-server-tests-XXXXXX";
@@ -57,7 +127,7 @@ struct PortServerTest : tpunit::TestFixture
 
     bool unlocked()
     {
-        FD lock(open((runtimeDirectory + "/server.lock").c_str(), O_RDWR));
+        FD lock(open((runtimeDirectory + "/server.lock").c_str(), O_RDWR | O_CLOEXEC));
         return lock.value < 0 || flock(lock.value, LOCK_EX | LOCK_NB) == 0;
     }
 
@@ -104,8 +174,7 @@ struct PortServerTest : tpunit::TestFixture
 
     int rawClient()
     {
-        FD fd(socket(AF_UNIX, SOCK_STREAM, 0));
-        configureSocket(fd.value);
+        FD fd(createSocket(AF_UNIX));
         clientTimeout(fd.value);
         const auto addr = address(runtimeDirectory);
         if (::connect(fd.value, reinterpret_cast<const sockaddr*>(&addr), sizeof(addr)) < 0) {
@@ -160,7 +229,7 @@ struct PortServerTest : tpunit::TestFixture
         const uint16_t port = first.getPort();
         ASSERT_EQUAL(port, reserved);
         first.returnPort(port);
-        FD blocker(socket(AF_INET, SOCK_STREAM, IPPROTO_TCP));
+        FD blocker(createSocket(AF_INET));
         // Match Bedrock's bind settings so TIME_WAIT connections do not prevent this listener.
         int reuse = 1;
         ASSERT_EQUAL(setsockopt(blocker.value, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse)), 0);
@@ -183,7 +252,7 @@ struct PortServerTest : tpunit::TestFixture
             }
             throw;
         }
-        FD lastBlocker(socket(AF_INET, SOCK_STREAM, IPPROTO_TCP));
+        FD lastBlocker(createSocket(AF_INET));
         ASSERT_EQUAL(setsockopt(lastBlocker.value, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse)), 0);
         addr.sin_port = htons(PortMap::MAX_PORT);
         const int bound = ::bind(lastBlocker.value, reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
@@ -195,12 +264,14 @@ struct PortServerTest : tpunit::TestFixture
         ASSERT_THROW(last.getPort(), system_error);
         if (bound == 0) {
             close(lastBlocker.release());
-            ASSERT_EQUAL(last.getPort(), PortMap::MAX_PORT);
+            const uint16_t reopened = waitForAvailablePort(last);
+            ASSERT_EQUAL(reopened, PortMap::MAX_PORT);
             PortMap competitor(PortMap::MAX_PORT, runtimeDirectory);
             ASSERT_THROW(competitor.getPort(), system_error);
             // Exhaustion is a rejected request, not loss of the client's existing reservations.
             last.returnPort(PortMap::MAX_PORT);
-            ASSERT_EQUAL(competitor.getPort(), PortMap::MAX_PORT);
+            const uint16_t returned = waitForAvailablePort(competitor);
+            ASSERT_EQUAL(returned, PortMap::MAX_PORT);
         }
         ASSERT_THROW(PortMap(PortMap::MAX_PORT + 1), system_error);
     }
@@ -240,7 +311,7 @@ struct PortServerTest : tpunit::TestFixture
     {
         // A leftover socket must not prevent the lock holder from starting a new server.
         {
-            FD stale(socket(AF_UNIX, SOCK_STREAM, 0));
+            FD stale(createSocket(AF_UNIX));
             const auto addr = address(runtimeDirectory);
             ASSERT_EQUAL(::bind(stale.value, reinterpret_cast<const sockaddr*>(&addr), sizeof(addr)), 0);
         }
@@ -248,7 +319,7 @@ struct PortServerTest : tpunit::TestFixture
         vector<pid_t> pids;
         for (int i = 0; i < 12; ++i) {
             int pair[2];
-            ASSERT_EQUAL(socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
+            createSocketPair(pair);
             FD parent(pair[0]);
             FD child(pair[1]);
             const pid_t pid = forkChild();
@@ -311,7 +382,7 @@ struct PortServerTest : tpunit::TestFixture
         PortMap client(PortMap::START_PORT, runtimeDirectory);
         const uint16_t parentPort = client.getPort();
         int pair[2];
-        ASSERT_EQUAL(socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
+        createSocketPair(pair);
         FD parent(pair[0]);
         FD child(pair[1]);
         const pid_t pid = forkChild();
@@ -349,8 +420,8 @@ struct PortServerTest : tpunit::TestFixture
     {
         int pair[2];
         int output[2];
-        ASSERT_EQUAL(socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
-        ASSERT_EQUAL(pipe(output), 0);
+        createSocketPair(pair);
+        createPipe(output);
         FD parent(pair[0]);
         FD child(pair[1]);
         FD outputRead(output[0]);
@@ -400,7 +471,7 @@ struct PortServerTest : tpunit::TestFixture
         PortMap keeper(PortMap::START_PORT, runtimeDirectory);
         keeper.getPort();
         int pair[2];
-        ASSERT_EQUAL(socketpair(AF_UNIX, SOCK_STREAM, 0, pair), 0);
+        createSocketPair(pair);
         FD parent(pair[0]);
         FD child(pair[1]);
         const pid_t owner = forkChild();
