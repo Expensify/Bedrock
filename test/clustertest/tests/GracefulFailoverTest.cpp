@@ -1,4 +1,3 @@
-#include <libstuff/JSON/Value.h>
 #include <libstuff/SData.h>
 #include <libstuff/SRandom.h>
 #include <test/clustertest/BedrockClusterTester.h>
@@ -151,9 +150,12 @@ struct GracefulFailoverTest : tpunit::TestFixture
         bool success = false;
         while (STimeNow() < start + 90'000'000) {
             string response = tester->getTester(0).executeWaitVerifyContent(SData("Status"));
-            JSON::Value json = JSON::Value::parse(response);
-            for (const auto& peerInfo : JSON::ArrayValue(json["peerList"])) {
-                if (peerInfo["name"].getString() == "cluster_node_2" && (peerInfo.getStringMemberWithDefault("state") == "" || SStartsWith(peerInfo.getStringMemberWithDefault("state"), "SEARCHING"))) {
+            STable json = SParseJSONObject(response);
+            string peerList = json["peerList"];
+            list<string> peers = SParseJSONArray(peerList);
+            for (auto& peer : peers) {
+                STable peerInfo = SParseJSONObject(peer);
+                if (peerInfo["name"] == "cluster_node_2" && (peerInfo["State"] == "" || SStartsWith(peerInfo["State"], "SEARCHING"))) {
                     success = true;
                     break;
                 }

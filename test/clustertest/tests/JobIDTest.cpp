@@ -1,4 +1,3 @@
-#include <libstuff/JSON/Value.h>
 #include <libstuff/SData.h>
 #include <test/clustertest/BedrockClusterTester.h>
 
@@ -49,8 +48,8 @@ struct JobIDTest : tpunit::TestFixture
         while (count++ < 50) {
             SData cmd("Status");
             string response = follower.executeWaitVerifyContent(cmd);
-            JSON::Value json = JSON::Value::parse(response);
-            if (json["isLeader"].getBool()) {
+            STable json = SParseJSONObject(response);
+            if (json["isLeader"] == "true") {
                 success = true;
                 break;
             }
@@ -73,8 +72,8 @@ struct JobIDTest : tpunit::TestFixture
         while (count++ < 50) {
             SData cmd("Status");
             string response = leader.executeWaitVerifyContent(cmd);
-            JSON::Value json = JSON::Value::parse(response);
-            if (json["isLeader"].getBool()) {
+            STable json = SParseJSONObject(response);
+            if (json["isLeader"] == "true") {
                 success = true;
                 break;
             }

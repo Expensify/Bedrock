@@ -1,4 +1,3 @@
-#include <libstuff/JSON/Value.h>
 #include <libstuff/SData.h>
 #include <test/clustertest/BedrockClusterTester.h>
 
@@ -33,11 +32,14 @@ struct MassiveQueryTest : tpunit::TestFixture
         for (size_t i = 0; i < 500; i++) {
             auto responseList = tester.getTester(2).executeWaitMultipleData({status});
             auto r2 = responseList[0];
-            auto json = JSON::Value::parse(r2.content);
+            auto json = SParseJSONObject(r2.content);
             try {
-                commitCount2 = json["CommitCount"].getUint();
-            } catch (const JSON::Error& e) {
-                cout << "Invalid commitCount2: " << e.what() << endl;
+                commitCount2 = stoull(json["CommitCount"]);
+            } catch (const invalid_argument& e) {
+                cout << "invalid_argument parsing commitCount2." << endl;
+                cout << r2.serialize() << endl;
+            } catch (const out_of_range& e) {
+                cout << "out_of_range parsing commitCount2." << endl;
                 cout << r2.serialize() << endl;
             }
             if (commitCount2 == commitCount) {
