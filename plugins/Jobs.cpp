@@ -1367,7 +1367,7 @@ void BedrockJobsCommand::process(SQLite& db)
                 string lastScheduled = nextRun;
 
                 // GetJobs only stores originalNextRun when the repeat was SCHEDULED at dequeue time. A caller can switch
-                // the repeat to SCHEDULED while the job runs, so anchor on nextRun when originalNextRun was never stored.
+                // the repeat to SCHEDULED while the job runs, so use `nextRun` when `originalNextRun` was never stored.
                 if (!retryAfter.empty() && SToUpper(repeat).find("SCHEDULED") != string::npos && !originalNextRun.empty()) {
                     lastScheduled = originalNextRun;
                 }

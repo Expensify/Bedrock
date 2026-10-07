@@ -292,7 +292,7 @@ struct FinishJobTest : tpunit::TestFixture
     }
 
     // A job dequeued with a FINISHED repeat has no originalNextRun. If the worker switches it to a SCHEDULED repeat
-    // while running, FinishJob anchors the next run on the nextRun the worker set.
+    // while running, FinishJob falls back to the `nextRun` the worker set.
     void repeatSwitchedToScheduledWhileRunning()
     {
         SData command("CreateJob");
