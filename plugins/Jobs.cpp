@@ -1365,7 +1365,10 @@ void BedrockJobsCommand::process(SQLite& db)
             const bool ignoreRepeat = request.test("ignoreRepeat");
             if (!repeat.empty() && !ignoreRepeat) {
                 string lastScheduled = nextRun;
-                if (!retryAfter.empty() && SToUpper(repeat).find("SCHEDULED") != string::npos) {
+
+                // GetJobs only stores originalNextRun when the repeat was SCHEDULED at dequeue time. A caller can switch
+                // the repeat to SCHEDULED while the job runs, so use `nextRun` when `originalNextRun` was never stored.
+                if (!retryAfter.empty() && SToUpper(repeat).find("SCHEDULED") != string::npos && !originalNextRun.empty()) {
                     lastScheduled = originalNextRun;
                 }
                 return _constructNextRunDATETIME(db, lastScheduled, lastRun, repeat);
