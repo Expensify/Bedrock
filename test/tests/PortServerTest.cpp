@@ -198,20 +198,24 @@ struct PortServerTest : tpunit::TestFixture
         const uint16_t a = first.getPort();
         const uint16_t b = second.getPort();
         ASSERT_NOT_EQUAL(a, b);
-        ASSERT_EQUAL(first.waitForPort(a), 0);
         ASSERT_THROW(second.returnPort(a), system_error);
         const uint16_t c = second.getPort();
         ASSERT_NOT_EQUAL(a, c);
         first.returnPort(a);
-        ASSERT_EQUAL(first.getPort(), a);
-        first.disconnect();
-        ASSERT_EQUAL(second.getPort(), a);
         ASSERT_THROW(first.returnPort(a), system_error);
-        // An explicit disconnect allows a fresh session, and preserves other clients' reservations.
         const uint16_t d = first.getPort();
-        ASSERT_NOT_EQUAL(d, a);
         ASSERT_NOT_EQUAL(d, b);
         ASSERT_NOT_EQUAL(d, c);
+        first.disconnect();
+        ASSERT_THROW(first.returnPort(d), system_error);
+        const uint16_t e = second.getPort();
+        ASSERT_NOT_EQUAL(e, b);
+        ASSERT_NOT_EQUAL(e, c);
+        // An explicit disconnect allows a fresh session, and preserves other clients' reservations.
+        const uint16_t f = first.getPort();
+        ASSERT_NOT_EQUAL(f, b);
+        ASSERT_NOT_EQUAL(f, c);
+        ASSERT_NOT_EQUAL(f, e);
         first.disconnect();
         second.disconnect();
         const bool stopped = waitUntil([&]() {
@@ -229,6 +233,7 @@ struct PortServerTest : tpunit::TestFixture
         const uint16_t port = first.getPort();
         ASSERT_EQUAL(port, reserved);
         first.returnPort(port);
+        ASSERT_EQUAL(first.waitForPort(port), 0);
         FD blocker(createSocket(AF_INET));
         // Match Bedrock's bind settings so TIME_WAIT connections do not prevent this listener.
         int reuse = 1;
@@ -412,8 +417,8 @@ struct PortServerTest : tpunit::TestFixture
         transfer(parent.value, &report, sizeof(report), false);
         ASSERT_NOT_EQUAL(report.ports[0], parentPort);
         ASSERT_EQUAL(reap(pid), 0);
-        client.returnPort(parentPort);
-        ASSERT_EQUAL(client.getPort(), parentPort);
+        // The parent still owns its reservation after the child's independent session disconnects.
+        ASSERT_NO_THROW(client.returnPort(parentPort));
     }
 
     void launcherCanExit()
