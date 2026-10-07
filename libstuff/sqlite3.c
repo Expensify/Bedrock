@@ -18,7 +18,7 @@
 ** separate file. This file contains only code for the core SQLite library.
 **
 ** The content in this amalgamation comes from Fossil check-in
-** 095887b665921b2aa55140933d6445ede7f9 with changes in files:
+** 6b83743f2a5fe8125f937b55eb019e5ff079 with changes in files:
 **
 **    
 */
@@ -476,10 +476,10 @@ extern "C" {
 */
 #define SQLITE_VERSION        "3.54.0"
 #define SQLITE_VERSION_NUMBER 3054000
-#define SQLITE_SOURCE_ID      "2026-09-26 16:10:38 095887b665921b2aa55140933d6445ede7f9a559e100fda86811fb8afbbdfe43"
+#define SQLITE_SOURCE_ID      "2026-10-07 17:00:11 6b83743f2a5fe8125f937b55eb019e5ff079490e6a68cda479475c39cc60c0b4"
 #define SQLITE_SCM_BRANCH     "hctree-bedrock-lcd-ex"
 #define SQLITE_SCM_TAGS       ""
-#define SQLITE_SCM_DATETIME   "2026-09-26T16:10:38.211Z"
+#define SQLITE_SCM_DATETIME   "2026-10-07T17:00:11.345Z"
 
 /*
 ** CAPI3REF: Run-Time Library Version Numbers
@@ -91044,10 +91044,14 @@ SQLITE_PRIVATE void sqlite3HctTMapScan(HctTMapClient*);
 /*
 ** The following API is used when switching a replication-enabled database
 ** to FOLLOWER or LEADER mode. In that case, a new HctTMap object must be
-** created during recovery to reflect the contents of the hct_journal table.
+** created to reflect the contents of the hct_journal table.
 */
-SQLITE_PRIVATE int sqlite3HctTMapRecoverySet(HctTMapClient*, u64 iTid, u64 iCid);
-SQLITE_PRIVATE void sqlite3HctTMapRecoveryFinish(HctTMapClient*, int rc);
+SQLITE_PRIVATE int sqlite3HctTMapPopulate(
+  HctTMapClient *pClient,
+  i64 iFirstTid,
+  i64 iLastTid,
+  i64 iCid
+);
 
 SQLITE_PRIVATE int sqlite3HctTMapServerSet(HctTMapServer *pServer, u64 iTid, u64 iCid);
 
@@ -275667,7 +275671,7 @@ static void fts5SourceIdFunc(
 ){
   assert( nArg==0 );
   UNUSED_PARAM2(nArg, apUnused);
-  sqlite3_result_text(pCtx, "fts5: 2026-09-26 16:10:38 095887b665921b2aa55140933d6445ede7f9a559e100fda86811fb8afbbdfe43", -1, SQLITE_TRANSIENT);
+  sqlite3_result_text(pCtx, "fts5: 2026-10-07 17:00:11 6b83743f2a5fe8125f937b55eb019e5ff079490e6a68cda479475c39cc60c0b4", -1, SQLITE_TRANSIENT);
 }
 
 /*
@@ -287759,8 +287763,14 @@ static void hctPutU32(u8 *a, u32 val){
 /*
 ** Return true if TID iTid maps to a commit-id visible to the current
 ** client. Or false otherwise.
+**
+** TID 0 is never allocated to a transaction. A cell with no TID field -
+** because its TID was removed when it was older than the safe TID - is
+** read as having TID 0. Such cells are visible to all clients.
 */
 static int hctDbTidIsVisible(HctDatabase *pDb, u64 iTid, int bNosnap){
+
+  if( iTid==0 ) return 1;
 
   /* It is tempting to return early if (iTid < pDb->iLocalMinTid) here.
   ** See comment in hctDbIsConflict() for why that is not possible. */
@@ -289906,6 +289916,28 @@ static int hctDbCsrSeekAndDescend(
   assert( pDb->eMode==HCT_MODE_VALIDATE || pDb->iTid==0 );
 
   rc = hctDbCsrSeek(pCsr, 0, 0, pRec, iKey, &bExact);
+
+  /* If the seek key is smaller than all keys on a page other than the
+  ** leftmost in the list, move the cursor to the last key on the previous
+  ** page. Callers assume that (pCsr->iCell<0) means that the seek key is
+  ** smaller than all keys in the tree.
+  **
+  ** This shouldn't happen. The leftmost key on the leaf page should
+  ** be a copy of the parent page key, and so the search should already
+  ** have been directed to the previous page. But, for a while, it was
+  ** possible for the rowid field of the leftmost key on a leaf page
+  ** of a UNIQUE index to be modified without also modifying the same
+  ** field on the parent page, leading to this case. So emit a log message
+  ** whenever it happens. */
+  if( rc==SQLITE_OK && pCsr->iCell<0 && hctIsLeftmost(pCsr->pg.aOld)==0 ){
+    assert( bExact==0 );
+    sqlite3_log(SQLITE_CORRUPT,
+        "hct: seek landed before first key of non-leftmost page "
+        "(root=%d, logical page %d, physical page %d) - stale FP key",
+        (int)pCsr->iRoot, (int)pCsr->pg.iPg, (int)pCsr->pg.iOldPg
+    );
+    rc = hctDbCsrGoLeft(pCsr, 0);
+  }
 
   while( rc==SQLITE_OK && (0==bExact || 0==hctDbCurrentIsVisible(pCsr)) ){
     HctRangePtr ptr;
@@ -293321,6 +293353,20 @@ static int hctDbInsert(
       op.eBalance = BALANCE_REQUIRED;
       pDb->stats.nBalanceUnderfull++;
       bUpdateInPlace = 0;
+    }else if( pRec && p->iHeight==0 && bDel==0 && op.nClobber
+           && op.iInsert==0 && hctIsLeftmost(aTarget)==0
+    ){
+      /* This is a clobber of the first key on an index leaf page other
+      ** than the leftmost. pRec has been trimmed to nUniqField fields, so
+      ** for a UNIQUE index the new key may differ from the one it replaces
+      ** (and from the FP key in the parent list) in its trailing fields -
+      ** e.g. the rowid following an INSERT OR REPLACE. Rebalance so that
+      ** the FP key in the parent list is updated to match.
+      **
+      ** Deletes are excluded. A delete may clobber cell 0 to update its
+      ** range pointer (see hctDbDelete()), but does not change its key.  */
+      op.eBalance = BALANCE_REQUIRED;
+      bUpdateInPlace = 0;
     }else if( hctDbFreegap(aTarget)<nReq && bUpdateInPlace==0 ){
       if( nFree>0 ){
         rc = hctDbDefragment(pDb, p, &op);
@@ -295102,8 +295148,28 @@ static int hctDbValidateIndex(HctDatabase *pDb, HctDbCsr *pCsr){
     if( rc!=SQLITE_OK ) break;
 
     if( pOp->pFirst!=0 && pOp->pLast==pOp->pFirst ){
-      assert( !sqlite3HctDbCsrEof(pCsr) );
-      rc = hctDbValidateEntry(pDb, pCsr);
+      /* This is a "point" read of a single key - pOp->pFirst. The cursor
+      ** now points to the smallest entry - live or in a history range -
+      ** that is greater than or equal to that key. Or is at EOF if there
+      ** is no such entry. There is a conflict only if this entry matches
+      ** the key that was read. If it is some other, larger, key, then
+      ** the key has not been written since it was read (as it was not
+      ** present then, and is still not present now).
+      **
+      ** pCsr->pRec still contains pOp->pFirst. It may contain only the
+      ** UNIQUE fields of the index key, so compare only those fields.  */
+      if( !sqlite3HctDbCsrEof(pCsr) ){
+        const u8 *aKey = 0;
+        int nKey = 0;
+        rc = sqlite3HctDbCsrData(pCsr, &nKey, &aKey);
+        if( rc==SQLITE_OK && nKey>0 ){
+          UnpackedRecord *pKey = pCsr->pRec;
+          pKey->default_rc = 0;
+          if( sqlite3VdbeRecordCompare(nKey, aKey, pKey)==0 ){
+            rc = hctDbValidateEntry(pDb, pCsr);
+          }
+        }
+      }
     }else{
       while( !sqlite3HctDbCsrEof(pCsr) ){
         int res = -1;
@@ -296889,10 +296955,6 @@ struct HctTMapStats {
 **
 ** pNextClient:
 **   Linked list of all clients associated with pServer.
-**
-** pBuild:
-**   This is used by the sqlite3HctTMapRecoveryXXX() API when constructing
-**   a new tmap object as part of sqlite_hct_journal recovery.
 */
 struct HctTMapClient {
   HctTMapServer *pServer;
@@ -296901,9 +296963,6 @@ struct HctTMapClient {
   HctTMapClient *pNextClient;
   HctTMapFull *pMap;
   HctTMapStats stats;
-
-  HctTMapFull *pBuild;
-  u64 iBuildMin;                  /* Min TID value explicitly set in pBuild */
 };
 
 #define HCT_LOCKVALUE_ACTIVE (((u64)0x01) << 56)
@@ -297426,114 +297485,88 @@ SQLITE_PRIVATE i64 sqlite3HctTMapStats(sqlite3 *db, int iStat, const char **pzSt
   return iVal;
 }
 
-SQLITE_PRIVATE int sqlite3HctTMapRecoverySet(HctTMapClient *p, u64 iTid, u64 iCid){
+/*
+** Create and populate a new transaction map containing entries for
+** TIDs iFirstTid to iLastTid, inclusive. Populate each entry with
+** "COMMITTED, CID=iCid".
+**
+** Before returning, update all existing clients to use the new map.
+**
+** The new map begins at the HCT_TMAP_PAGESIZE aligned TID at or before
+** iFirstTid. Entries for TIDs between this and iFirstTid are populated
+** with "COMMITTED, CID=1", as are entries for TIDs smaller than iFirstTid
+** in hctTMapInit(), so that they are visible to all readers. The map
+** also has room for TMAP_NPAGE_ALLOC pages of entries following iLastTid.
+*/
+SQLITE_PRIVATE int sqlite3HctTMapPopulate(
+  HctTMapClient *pClient,
+  i64 iFirstTid,
+  i64 iLastTid,
+  i64 iCid
+){
   int rc = SQLITE_OK;
-  HctTMapFull *pNew = p->pBuild;
-  if( pNew==0 ){
-    u64 iFirst = 0;
-    u64 iEof = p->pServer->pList->m.iFirstTid;
-    u64 iLast = iEof + (HCT_TMAP_PAGESIZE*2);
-    int nMap = 0;
-    if( iTid>=HCT_TMAP_PAGESIZE ){
-      iFirst = ((iTid / HCT_TMAP_PAGESIZE) - 1) * HCT_TMAP_PAGESIZE;
-    }
-    nMap = ((iLast - iFirst) + HCT_TMAP_PAGESIZE-1) / HCT_TMAP_PAGESIZE;
-    assert( nMap>0 );
+  HctTMapServer *pServer = pClient->pServer;
+  u64 iFirst = (iFirstTid / HCT_TMAP_PAGESIZE) * HCT_TMAP_PAGESIZE;
+  int nMap = 0;
+  HctTMapFull *pNew = 0;
 
-    p->pBuild = pNew = (HctTMapFull*)sqlite3HctMallocRc(&rc,
-        sizeof(HctTMapFull) + nMap*sizeof(u64*)
-    );
-    p->iBuildMin = iTid;
-    if( pNew ){
-      int ii;
-      pNew->m.iFirstTid = iFirst;
-      pNew->m.nMap = nMap;
-      pNew->m.aaMap = (u64**)&pNew[1];
-      pNew->nRef = 1;
-      for(ii=0; ii<nMap; ii++){
-        u64 *aMap = (u64*)sqlite3HctMallocRc(&rc,sizeof(u64) * HCT_TMAP_PAGESIZE);
-        pNew->m.aaMap[ii] = aMap;
-      }
-      if( rc==SQLITE_OK ){
-        u64 ee;
-        for(ee=iFirst; ee<iEof; ee++){
-          int iMap = (ee - iFirst) / HCT_TMAP_PAGESIZE;
-          int iOff = (ee - iFirst) % HCT_TMAP_PAGESIZE;
-          iOff = HCT_TMAP_ENTRYSLOT(iOff);
-          pNew->m.aaMap[iMap][iOff] = ((u64)1 | HCT_TMAP_COMMITTED);
-        }
-      }
-    }
-  }
-  p->iBuildMin = MIN(p->iBuildMin, iTid);
+  assert( iFirstTid>=0 && iFirstTid<=iLastTid+1 );
+  assert( (iCid & HCT_TMAP_CID_MASK)==iCid );
 
-  assert( pNew->m.iFirstTid<=iTid );
-  while( rc==SQLITE_OK && pNew->m.iFirstTid>iTid ){
-    int ii;
-    HctTMapFull *pAlloc = 0;
-    int nMap = pNew->m.nMap + 1;
-
-    pAlloc = (HctTMapFull*)sqlite3HctMallocRc(&rc,
-        sizeof(HctTMapFull) + nMap*sizeof(u64*)
-    );
-    pAlloc->nRef = 1;
-    pAlloc->m.nMap = nMap;
-    pAlloc->m.aaMap = (u64**)&pAlloc[1];
-    pAlloc->m.iFirstTid = pNew->m.iFirstTid - HCT_TMAP_PAGESIZE;
-    memcpy(&pAlloc->m.aaMap[1], pNew->m.aaMap, pNew->m.nMap*sizeof(u64*));
-    pAlloc->m.aaMap[0] = (u64*)sqlite3HctMallocRc(&rc,
-        sizeof(u64) * HCT_TMAP_PAGESIZE
-    );
-    for(ii=0; ii<HCT_TMAP_PAGESIZE; ii++){
-      pNew->m.aaMap[0][ii] = ((u64)1 | HCT_TMAP_COMMITTED);
-    }
-
-    assert( pNew->nRef==1 );
-    sqlite3_free(pNew);
-    p->pBuild = pNew = pAlloc;
-  }
-
-  if( rc==SQLITE_OK ){
-    int iMap = (iTid - pNew->m.iFirstTid) / HCT_TMAP_PAGESIZE;
-    int iOff = (iTid - pNew->m.iFirstTid) % HCT_TMAP_PAGESIZE;
-    iOff = HCT_TMAP_ENTRYSLOT(iOff);
-    pNew->m.aaMap[iMap][iOff] = (iCid | HCT_TMAP_COMMITTED);
-  }
-
-  return rc;
-}
-
-SQLITE_PRIVATE void sqlite3HctTMapRecoveryFinish(HctTMapClient *p, int rc){
-  HctTMapFull *pNew = p->pBuild;
+  nMap = (iLastTid / HCT_TMAP_PAGESIZE)
+       - (iFirst / HCT_TMAP_PAGESIZE)
+       + TMAP_NPAGE_ALLOC;
+  pNew = (HctTMapFull*)sqlite3HctMallocRc(&rc,
+      sizeof(HctTMapFull) + nMap*sizeof(u64*)
+  );
   if( pNew ){
-    p->pBuild = 0;
-    if( rc==SQLITE_OK ){
-      HctTMapClient *pCli = 0;
-      pNew->pNext = p->pServer->pList;
-      p->pServer->pList = pNew;
-      p->pServer->iMinMinTid = p->iBuildMin;
-      if( pNew->pNext ){
-        pNew->pNext->nRef--;
-        if( pNew->pNext->nRef==0 ){
-          hctTMapFreeMap(p->pServer, pNew->pNext);
-        }
-      }
+    int ii;
+    pNew->m.iFirstTid = iFirst;
+    pNew->m.nMap = nMap;
+    pNew->m.aaMap = (u64**)&pNew[1];
+    for(ii=0; ii<nMap; ii++){
+      pNew->m.aaMap[ii] = (u64*)sqlite3HctMallocRc(&rc,
+          sizeof(u64) * HCT_TMAP_PAGESIZE
+      );
+    }
 
-      ENTER_TMAP_MUTEX(p);
-      for(pCli=p->pServer->pClientList; pCli; pCli=pCli->pNextClient){
-        hctTMapUpdateSafe(pCli);
-      }
-      LEAVE_TMAP_MUTEX(p);
-
-    }else{
-      int ii;
-      for(ii=0; ii<pNew->m.nMap; ii++){
+    if( rc!=SQLITE_OK ){
+      for(ii=0; ii<nMap; ii++){
         sqlite3_free(pNew->m.aaMap[ii]);
       }
       sqlite3_free(pNew);
+    }else{
+      u64 t;
+      for(t=iFirst; t<(u64)iFirstTid; t++){
+        *hctTMapFind(pNew, t) = ((u64)1 | HCT_TMAP_COMMITTED);
+      }
+      for(t=iFirstTid; t<=(u64)iLastTid; t++){
+        *hctTMapFind(pNew, t) = ((u64)iCid | HCT_TMAP_COMMITTED);
+      }
+
+      ENTER_TMAP_MUTEX(pClient);
+      {
+        HctTMapClient *pCli = 0;
+        HctTMapFull *pOld = pServer->pList;
+        pNew->nRef = 1;             /* Server reference */
+        pNew->pNext = pOld;
+        pServer->pList = pNew;
+        HctAtomicStore(&pServer->iMinMinTid, (u64)iFirstTid);
+        if( pOld ){
+          pOld->nRef--;
+          if( pOld->nRef==0 ){
+            hctTMapFreeMap(pServer, pOld);
+          }
+        }
+        for(pCli=pServer->pClientList; pCli; pCli=pCli->pNextClient){
+          hctTMapUpdateSafe(pCli);
+        }
+      }
+      LEAVE_TMAP_MUTEX(pClient);
     }
-    p->iBuildMin = 0;
   }
+
+  return rc;
 }
 
 /*************************************************************************
@@ -298804,17 +298837,11 @@ SQLITE_API int sqlite3_hct_journal_setmode(sqlite3 *db, int eMode){
 #endif
 
     /* Populate a new transaction-map. */
-    {
+    if( rc==SQLITE_OK ){
       HctTMapClient *pTClient = sqlite3HctFileTMapClient(pFile);
       i64 iLastTid = sqlite3HctFilePeekTransid(pFile);
       i64 iFirstTid = MAX(1, (iLastTid+1 - HCT_MAX_LEADING_WRITE));
-      i64 ii;
-
-      for(ii=iFirstTid; rc==SQLITE_OK && ii<=iLastTid; ii++){
-        rc = sqlite3HctTMapRecoverySet(pTClient, ii, iCidMax);
-      }
-
-      sqlite3HctTMapRecoveryFinish(pTClient, rc);
+      rc = sqlite3HctTMapPopulate(pTClient, iFirstTid, iLastTid, iCidMax);
     }
 
     if( rc==SQLITE_OK ){
