@@ -17,6 +17,7 @@ struct FinishJobTest : tpunit::TestFixture
                               TEST(FinishJobTest::deleteFinishedJobWithNoChildren),
                               TEST(FinishJobTest::hasRepeat),
                               TEST(FinishJobTest::scheduledRetryAfterPreservesAnchorAcrossChildren),
+                              TEST(FinishJobTest::repeatSwitchedToScheduledWhileRunning),
                               TEST(FinishJobTest::inRunqueuedState),
                               TEST(FinishJobTest::hasRepeatWithDelay),
                               TEST(FinishJobTest::hasDelay),
@@ -288,6 +289,49 @@ struct FinishJobTest : tpunit::TestFixture
         clusterTester->getTester(0).readDB("SELECT DATETIME(" + SQ(firstRun) + ", '+1 DAY');", expected);
         ASSERT_EQUAL(result[0][0], expected[0][0]);
         ASSERT_TRUE(result[0][1].empty());
+    }
+
+    // A job dequeued with a FINISHED repeat has no originalNextRun. If the worker switches it to a SCHEDULED repeat
+    // while running, FinishJob anchors the next run on the nextRun the worker set.
+    void repeatSwitchedToScheduledWhileRunning()
+    {
+        SData command("CreateJob");
+        command["name"] = "job";
+        command["repeat"] = "FINISHED, +1 DAY, START OF DAY, +2 HOURS";
+        command["retryAfter"] = "+5 MINUTES";
+        command["data"] = "{\"policyID\":\"ABC\"}";
+        const string jobID = tester->executeWaitVerifyContentTable(command)["jobID"];
+
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "job";
+        STable runningJob = tester->executeWaitVerifyContentTable(command);
+
+        SQResult result;
+        clusterTester->getTester(0).readDB("SELECT state, JSON_EXTRACT(data, '$.originalNextRun') FROM jobs WHERE jobID=" + jobID + ";", result);
+        ASSERT_EQUAL(result[0][0], "RUNQUEUED");
+        ASSERT_TRUE(result[0][1].empty());
+
+        const string scheduledNextRun = SComposeTime("%Y-%m-%d %H:%M:%S", STimeNow() + STIME_US_PER_S * 60 * 60 * 24);
+        command.clear();
+        command.methodLine = "UpdateJob";
+        command["jobID"] = jobID;
+        command["data"] = runningJob["data"];
+        command["repeat"] = "SCHEDULED, +1 DAY";
+        command["nextRun"] = scheduledNextRun;
+        tester->executeWaitVerifyContent(command);
+
+        command.clear();
+        command.methodLine = "FinishJob";
+        command["jobID"] = jobID;
+        command["data"] = runningJob["data"];
+        tester->executeWaitVerifyContent(command);
+
+        clusterTester->getTester(0).readDB("SELECT state, nextRun FROM jobs WHERE jobID=" + jobID + ";", result);
+        SQResult expected;
+        clusterTester->getTester(0).readDB("SELECT DATETIME(" + SQ(scheduledNextRun) + ", '+1 DAY');", expected);
+        ASSERT_EQUAL(result[0][0], "QUEUED");
+        ASSERT_EQUAL(result[0][1], expected[0][0]);
     }
 
     void finishingParentUnPausesChildren()
