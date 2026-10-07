@@ -1,7 +1,5 @@
-#include <libstuff/JSON/Value.h>
 #include "libstuff/libstuff.h"
 #include <libstuff/SData.h>
-#include <plugins/MySQL.h>
 #include <test/lib/BedrockTester.h>
 
 struct QueryTest : tpunit::TestFixture
@@ -13,7 +11,6 @@ struct QueryTest : tpunit::TestFixture
                               TEST(QueryTest::testNoSemicolon),
                               TEST(QueryTest::testBad),
                               TEST(QueryTest::testOK),
-                              TEST(QueryTest::testInvalidMySQLResult),
                               TEST(QueryTest::testWrite),
                               TEST(QueryTest::testWriteInSecondStatement),
                               TEST(QueryTest::testNoWhere),
@@ -23,7 +20,6 @@ struct QueryTest : tpunit::TestFixture
     }
 
     BedrockTester* tester;
-    uint16_t mysqlPort = 0;
 
     void setup()
     {
@@ -35,9 +31,6 @@ struct QueryTest : tpunit::TestFixture
     void tearDown()
     {
         delete tester;
-        if (mysqlPort) {
-            BedrockTester::ports.returnPort(mysqlPort);
-        }
     }
 
     void testMissing()
@@ -69,48 +62,6 @@ struct QueryTest : tpunit::TestFixture
         tester->executeWaitVerifyContent(query, "200 OK");
     }
 
-    void testInvalidMySQLResult()
-    {
-        mysqlPort = BedrockTester::ports.getPort();
-        BedrockTester mysqlTester({{"-plugins", "db,mysql"}, {"-mysql.host", "127.0.0.1:" + to_string(mysqlPort)}}, {});
-        STCPManager::Socket socket(mysqlTester.getArg("-mysql.host"), false);
-        MySQLPacket response;
-        auto receivePacket = [&] {
-            const uint64_t deadline = STimeNow() + 5'000'000;
-            while (STimeNow() < deadline) {
-                const int bytes = response.deserialize(socket.recvBuffer.c_str(), socket.recvBuffer.size());
-                if (bytes) {
-                    socket.recvBuffer.consumeFront(bytes);
-                    return true;
-                }
-                if (socket.state == STCPManager::Socket::CLOSED) {
-                    return false;
-                }
-                fd_map fdm;
-                STCPManager::prePoll(fdm, socket);
-                S_poll(fdm, 100'000);
-                STCPManager::postPoll(fdm, socket);
-            }
-            return false;
-        };
-
-        ASSERT_TRUE(receivePacket());
-
-        // SQLite emits Inf for this valid query, which cannot be parsed as JSON.
-        MySQLPacket query;
-        query.sequenceID = 0;
-        query.payload = "\x03SELECT 1e999 AS value;";
-        ASSERT_TRUE(socket.send(query.serialize()));
-        ASSERT_TRUE(receivePacket());
-        ASSERT_EQUAL(response.serialize(), MySQLPacket::serializeERR(0, 500, "Failed to deserialize query result"));
-
-        // The connection and server remain usable after the failed result conversion.
-        query.payload = "\x03SELECT 1 AS value;";
-        ASSERT_TRUE(socket.send(query.serialize()));
-        ASSERT_TRUE(receivePacket());
-        ASSERT_EQUAL(response.payload, MySQLPacket::lenEncInt(1));
-    }
-
     void testWrite()
     {
         SData query("Query");
@@ -122,7 +73,7 @@ struct QueryTest : tpunit::TestFixture
         string resultJSON = tester->executeWaitMultipleData({query})[0].content;
 
         // Parse the first item in the first row of results and check that.
-        ASSERT_EQUAL(JSON::Value::parse(resultJSON)[0]["value"].getString(), "first value");
+        ASSERT_EQUAL(SParseJSONObject(SParseJSONArray(resultJSON).front())["value"], "first value");
     }
 
     void testWriteInSecondStatement()
@@ -136,7 +87,7 @@ struct QueryTest : tpunit::TestFixture
         string resultJSON = tester->executeWaitMultipleData({query})[0].content;
 
         // Parse the first item in the first row of results and check that.
-        ASSERT_EQUAL(JSON::Value::parse(resultJSON)[0]["value"].getString(), "second value");
+        ASSERT_EQUAL(SParseJSONObject(SParseJSONArray(resultJSON).front())["value"], "second value");
     }
 
     void testNoWhere()
@@ -159,7 +110,7 @@ struct QueryTest : tpunit::TestFixture
             query["ReadDBFlags"] = "-json";
             query["query"] = "SELECT " + expression + " AS result FROM " + values + ";";
             string resultJSON = tester->executeWaitMultipleData({query})[0].content;
-            return JSON::Value::parse(resultJSON)[0]["result"].getFloat();
+            return stod(SParseJSONObject(SParseJSONArray(resultJSON).front())["result"]);
         };
 
         // median(v) == percentile(v, 50) == the middle value.

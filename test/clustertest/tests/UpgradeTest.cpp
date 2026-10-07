@@ -1,4 +1,3 @@
-#include <libstuff/JSON/Value.h>
 #include <libstuff/SData.h>
 #include <libstuff/SRandom.h>
 #include <test/clustertest/BedrockClusterTester.h>
@@ -40,11 +39,11 @@ struct UpgradeTest : tpunit::TestFixture
         // Get status info from leader and follower.
         SData status("Status");
         auto results = tester.getTester(0).executeWaitMultipleData({status}, 1, false, true);
-        string leaderVersion = JSON::Value::parse(results[0].content)["version"].getString();
-        string leaderState = JSON::Value::parse(results[0].content)["state"].getString();
+        string leaderVersion = SParseJSONObject(results[0].content)["version"];
+        string leaderState = SParseJSONObject(results[0].content)["state"];
         results = tester.getTester(2).executeWaitMultipleData({status}, 1, false, true);
-        string followerVersion = JSON::Value::parse(results[0].content)["version"].getString();
-        string followerState = JSON::Value::parse(results[0].content)["state"].getString();
+        string followerVersion = SParseJSONObject(results[0].content)["version"];
+        string followerState = SParseJSONObject(results[0].content)["state"];
 
         // Verify it's what we expect.
         ASSERT_EQUAL(leaderState, "LEADING");

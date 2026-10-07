@@ -1,17 +1,18 @@
-#include <libstuff/JSON/Value.h>
 #include <libstuff/SData.h>
 #include <test/clustertest/BedrockClusterTester.h>
 
-// Returns the peer object named `peerName` from the Status
-// response of `node`, or an empty JSON object if not found within the timeout.
-static JSON::Value findPeer(BedrockTester& node, const string& peerName, uint64_t timeoutUS = 10'000'000)
+// Returns the peer object (parsed STable) named `peerName` from the Status
+// response of `node`, or an empty STable if not found within the timeout.
+static STable findPeer(BedrockTester& node, const string& peerName, uint64_t timeoutUS = 10'000'000)
 {
     uint64_t start = STimeNow();
     while (STimeNow() < start + timeoutUS) {
         try {
-            JSON::Value status = JSON::Value::parse(node.executeWaitVerifyContent(SData("Status"), "200", true));
-            for (const auto& peer : JSON::ArrayValue(status["peerList"])) {
-                if (peer["name"].getString() == peerName) {
+            STable status = SParseJSONObject(node.executeWaitVerifyContent(SData("Status"), "200", true));
+            list<string> peers = SParseJSONArray(status["peerList"]);
+            for (const string& raw : peers) {
+                STable peer = SParseJSONObject(raw);
+                if (peer["name"] == peerName) {
                     return peer;
                 }
             }
@@ -20,7 +21,7 @@ static JSON::Value findPeer(BedrockTester& node, const string& peerName, uint64_
         }
         usleep(100'000);
     }
-    return JSON::Value(JSON::OBJECT);
+    return {};
 }
 
 // Polls `node`'s peer list until the named peer matches the expected key/value, or times out.
@@ -28,8 +29,8 @@ static bool waitForPeerField(BedrockTester& node, const string& peerName, const 
 {
     uint64_t start = STimeNow();
     while (STimeNow() < start + timeoutUS) {
-        JSON::Value peer = findPeer(node, peerName, 1'000'000);
-        if (peer.hasMember(field) && (peer[field].isString() ? peer[field].getString() : peer[field].serialize()) == expected) {
+        STable peer = findPeer(node, peerName, 1'000'000);
+        if (peer[field] == expected) {
             return true;
         }
         usleep(100'000);

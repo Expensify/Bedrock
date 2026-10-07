@@ -1,5 +1,4 @@
 #pragma once
-#include <libstuff/JSON/Value.h>
 #include <iostream>
 #include <unistd.h>
 
@@ -174,7 +173,7 @@ ClusterTester<T>::ClusterTester(ClusterSize size,
             try {
                 SData status("Status");
                 string response = node.executeWaitVerifyContent(status);
-                JSON::Value json = JSON::Value::parse(response);
+                STable json = SParseJSONObject(response);
                 break;
             } catch (...) {
                 // This will happen if the server's not up yet. We'll just try again.

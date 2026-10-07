@@ -1,4 +1,3 @@
-#include <libstuff/JSON/Value.h>
 #include <libstuff/SData.h>
 #include <libstuff/SRandom.h>
 #include <test/clustertest/BedrockClusterTester.h>
@@ -44,8 +43,8 @@ struct LeadingTest : tpunit::TestFixture
 
                 SData cmd("Status");
                 string response = brtester.executeWaitVerifyContent(cmd);
-                JSON::Value json = JSON::Value::parse(response);
-                results[i] = json["state"].getString();
+                STable json = SParseJSONObject(response);
+                results[i] = json["state"];
             }
 
             if (results[0] == "LEADING" &&
@@ -69,8 +68,8 @@ struct LeadingTest : tpunit::TestFixture
         while (count++ < 50) {
             SData cmd("Status");
             string response = newLeader.executeWaitVerifyContent(cmd);
-            JSON::Value json = JSON::Value::parse(response);
-            if (json["state"].getString() == "LEADING") {
+            STable json = SParseJSONObject(response);
+            if (json["state"] == "LEADING") {
                 success = true;
                 break;
             }
@@ -119,13 +118,13 @@ struct LeadingTest : tpunit::TestFixture
             }
             threads.clear();
 
-            JSON::Value json0 = JSON::Value::parse(responses[0]);
-            JSON::Value json1 = JSON::Value::parse(responses[1]);
-            JSON::Value json2 = JSON::Value::parse(responses[2]);
+            STable json0 = SParseJSONObject(responses[0]);
+            STable json1 = SParseJSONObject(responses[1]);
+            STable json2 = SParseJSONObject(responses[2]);
 
-            if (json0["state"].getString() == "LEADING" &&
-                json1["state"].getString() == "FOLLOWING" &&
-                json2["state"].getString() == "FOLLOWING") {
+            if (json0["state"] == "LEADING" &&
+                json1["state"] == "FOLLOWING" &&
+                json2["state"] == "FOLLOWING") {
                 break;
             }
             sleep(1);
@@ -154,8 +153,8 @@ struct LeadingTest : tpunit::TestFixture
         bool wasSynchronizing = false;
         bool wasFollowing = false;
         string startstatus = tester->startNodeDontWait(1);
-        JSON::Value json = JSON::Value::parse(startstatus);
-        if (json["state"].getString() == "SYNCHRONIZING") {
+        STable json = SParseJSONObject(startstatus);
+        if (json["state"] == "SYNCHRONIZING") {
             wasSynchronizing = true;
         }
 
@@ -165,15 +164,15 @@ struct LeadingTest : tpunit::TestFixture
         while (1) {
             SData status("Status");
             auto result = follower.executeWaitVerifyContent(status, "200", true);
-            JSON::Value json = JSON::Value::parse(result);
+            STable json = SParseJSONObject(result);
 
             if (!wasSynchronizing) {
-                if (json["state"].getString() == "SYNCHRONIZING") {
+                if (json["state"] == "SYNCHRONIZING") {
                     wasSynchronizing = true;
                     continue;
                 }
             }
-            if (json["state"].getString() == "FOLLOWING") {
+            if (json["state"] == "FOLLOWING") {
                 // Make sure it was following before it was synchronizing.
                 ASSERT_TRUE(wasSynchronizing);
                 wasFollowing = true;

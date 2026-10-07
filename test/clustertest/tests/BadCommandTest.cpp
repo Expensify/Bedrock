@@ -1,4 +1,3 @@
-#include <libstuff/JSON/Value.h>
 #include <libstuff/SData.h>
 #include <test/clustertest/BedrockClusterTester.h>
 
@@ -74,8 +73,8 @@ struct BadCommandTest : tpunit::TestFixture
                     for (int i = 0; i < 500; i++) {
                         SData status("Status");
                         vector<SData> statusResult = follower.executeWaitMultipleData({status}, 1, true);
-                        JSON::Value json = JSON::Value::parse(statusResult[0].content);
-                        if (json["state"].getString() == "LEADING") {
+                        STable json = SParseJSONObject(statusResult[0].content);
+                        if (json["state"] == "LEADING") {
                             leading = true;
                             break;
                         }

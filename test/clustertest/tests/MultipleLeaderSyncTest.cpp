@@ -1,4 +1,3 @@
-#include <libstuff/JSON/Value.h>
 #include <libstuff/SData.h>
 #include <test/clustertest/BedrockClusterTester.h>
 
@@ -43,7 +42,7 @@ struct MultipleLeaderSyncTest : tpunit::TestFixture
         uint64_t start = STimeNow();
         while (STimeNow() < start + timeoutUS) {
             try {
-                string result = JSON::Value::parse(node.executeWaitVerifyContent(SData("Status"), "200", true))["CommitCount"].serialize();
+                string result = SParseJSONObject(node.executeWaitVerifyContent(SData("Status"), "200", true))["commitCount"];
 
                 // if the value matches, return, otherwise wait
                 if (SToUInt64(result) >= minCommitCount) {
@@ -112,8 +111,8 @@ struct MultipleLeaderSyncTest : tpunit::TestFixture
             uint64_t start = STimeNow();
             while (STimeNow() < start + 60'000'000) {
                 try {
-                    JSON::Value response = JSON::Value::parse(node2.executeWaitVerifyContent(SData("Status"), "200", true));
-                    if (response["state"].getString() == "LEADING") {
+                    STable response = SParseJSONObject(node2.executeWaitVerifyContent(SData("Status"), "200", true));
+                    if (response["state"] == "LEADING") {
                         node2Leading = true;
                         return;
                     }
@@ -128,11 +127,11 @@ struct MultipleLeaderSyncTest : tpunit::TestFixture
             uint64_t start = STimeNow();
             while (STimeNow() < start + 60'000'000) {
                 try {
-                    JSON::Value response = JSON::Value::parse(node1.executeWaitVerifyContent(SData("Status"), "200", true));
-                    if (response["state"].getString() == "SYNCHRONIZING") {
+                    STable response = SParseJSONObject(node1.executeWaitVerifyContent(SData("Status"), "200", true));
+                    if (response["state"] == "SYNCHRONIZING") {
                         node1Synchronizing = true;
                     }
-                    if (response["state"].getString() == "LEADING") {
+                    if (response["state"] == "LEADING") {
                         node1Leading = true;
                     }
                     if (node1Synchronizing && node1Leading) {
@@ -149,11 +148,11 @@ struct MultipleLeaderSyncTest : tpunit::TestFixture
             uint64_t start = STimeNow();
             while (STimeNow() < start + 60'000'000) {
                 try {
-                    JSON::Value response = JSON::Value::parse(node0.executeWaitVerifyContent(SData("Status"), "200", true));
-                    if (response["state"].getString() == "SYNCHRONIZING") {
+                    STable response = SParseJSONObject(node0.executeWaitVerifyContent(SData("Status"), "200", true));
+                    if (response["state"] == "SYNCHRONIZING") {
                         node0Synchronizing = true;
                     }
-                    if (response["state"].getString() == "LEADING") {
+                    if (response["state"] == "LEADING") {
                         node0Leading = true;
                     }
                     if (node0Synchronizing && node0Leading) {
