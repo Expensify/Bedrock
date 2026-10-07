@@ -2,10 +2,12 @@
 
 #include <test/lib/NcursesOutputWriter.h>
 #include <test/lib/ConsoleOutputWriter.h>
+#include <libstuff/libstuff.h>
 #include <ncurses.h>
 #include <algorithm>
 #include <sys/ioctl.h>
 #include <sys/syscall.h>
+#include <sys/stat.h>
 #include <unistd.h>
 #include <atomic>
 #include <cstdio>
@@ -22,6 +24,8 @@
 using namespace tpunit;
 using namespace std;
 using namespace chrono;
+
+atomic<NcursesOutputWriter*> NcursesOutputWriter::activeSignalOutput{nullptr};
 
 struct NcursesOutputWriter::Impl
 {
@@ -58,6 +62,9 @@ struct NcursesOutputWriter::Impl
     SCREEN* screen = nullptr;
     int oldStdout = -1;
     int oldStderr = -1;
+    int captureFd = -1;
+    int sinkFd = -1;
+    pid_t ownerPID = getpid();
     termios originalTermios{};
     bool hasOriginalTermios = false;
     bool finished = false;
@@ -232,7 +239,8 @@ NcursesOutputWriter::NcursesOutputWriter() : impl(make_unique<Impl>())
     impl->capture = tmpfile();
     impl->oldStdout = dup(STDOUT_FILENO);
     impl->oldStderr = dup(STDERR_FILENO);
-    if (!impl->capture || impl->oldStdout < 0 || impl->oldStderr < 0) {
+    impl->sinkFd = open("/dev/null", O_WRONLY | O_CLOEXEC);
+    if (!impl->capture || impl->oldStdout < 0 || impl->oldStderr < 0 || impl->sinkFd < 0) {
         endwin();
         delscreen(impl->screen);
         fclose(impl->tty);
@@ -245,11 +253,15 @@ NcursesOutputWriter::NcursesOutputWriter() : impl(make_unique<Impl>())
         if (impl->oldStderr >= 0) {
             close(impl->oldStderr);
         }
+        if (impl->sinkFd >= 0) {
+            close(impl->sinkFd);
+        }
         throw runtime_error("Could not capture test output");
     }
     fcntl(impl->oldStdout, F_SETFD, FD_CLOEXEC);
     fcntl(impl->oldStderr, F_SETFD, FD_CLOEXEC);
     fcntl(fileno(impl->capture), F_SETFD, FD_CLOEXEC);
+    impl->captureFd = fileno(impl->capture);
     cout.flush();
     cerr.flush();
     fflush(nullptr);
@@ -266,6 +278,8 @@ NcursesOutputWriter::NcursesOutputWriter() : impl(make_unique<Impl>())
             endwin();
         }
     });
+    activeSignalOutput.store(this);
+    SSetFatalSignalHook(restoreActiveOutputAfterSignal);
 }
 
 NcursesOutputWriter::~NcursesOutputWriter()
@@ -279,15 +293,32 @@ void NcursesOutputWriter::finish()
         return;
     }
     impl->finished = true;
-    impl->stopMode.store(1);
+    int running = 0;
+    impl->stopMode.compare_exchange_strong(running, 1);
     impl->renderer.join();
     delscreen(impl->screen);
-    fclose(impl->tty);
     cout.flush();
     cerr.flush();
     fflush(nullptr);
+    const bool captureFailed = ferror(stdout) || ferror(stderr) || cout.fail() || cerr.fail();
     dup2(impl->oldStdout, STDOUT_FILENO);
     dup2(impl->oldStderr, STDERR_FILENO);
+    if (impl->hasOriginalTermios) {
+        tcsetattr(STDIN_FILENO, TCSANOW, &impl->originalTermios);
+    }
+
+    // Fatal exits during renderer shutdown still need the saved terminal descriptors.
+    SSetFatalSignalHook(nullptr);
+    activeSignalOutput.store(nullptr);
+    fclose(impl->tty);
+    close(impl->sinkFd);
+    clearerr(stdout);
+    clearerr(stderr);
+    cout.clear();
+    cerr.clear();
+    if (captureFailed) {
+        cerr << "Test output capture failed (check available disk space); some diagnostics may be missing." << endl;
+    }
     close(impl->oldStdout);
     close(impl->oldStderr);
     lseek(fileno(impl->capture), 0, SEEK_SET);
@@ -319,22 +350,61 @@ void NcursesOutputWriter::finish()
 void NcursesOutputWriter::restoreAfterSignal() noexcept
 {
     static_assert(atomic<int>::is_always_lock_free);
-    impl->stopMode.store(2);
+    if (impl->stopMode.exchange(2) == 2) {
+        return;
+    }
+
+    // Keep the renderer from writing to the restored terminal while the signal handler cleans up.
+    // Reserve the sink at startup so descriptor exhaustion cannot prevent restoration.
+    dup2(impl->sinkFd, impl->terminalFd);
+    dup2(impl->oldStdout, STDOUT_FILENO);
+    dup2(impl->oldStderr, STDERR_FILENO);
     if (impl->hasOriginalTermios) {
         // Use the kernel ioctl directly; ncurses and stdio can hold locks in the interrupted thread.
         syscall(SYS_ioctl, STDIN_FILENO, TCSETS, &impl->originalTermios);
     }
-    constexpr char resetDisplay[] = "\033[?1049l\033[?25h\033[0m";
-    write(impl->terminalFd, resetDisplay, sizeof(resetDisplay) - 1);
+    constexpr char resetDisplay[] = "\033[?1049l\033[?25h\033[0m\r\n\r\n";
+    write(STDERR_FILENO, resetDisplay, sizeof(resetDisplay) - 1);
 
-    // Keep the renderer from writing to the restored terminal while the signal handler cleans up.
-    int sink = open("/dev/null", O_WRONLY);
-    if (sink >= 0) {
-        dup2(sink, impl->terminalFd);
-        close(sink);
+    // Replay a bounded tail without stdio, allocation, or additional disk writes. This can contain
+    // the fatal diagnostic that was otherwise hidden in the dashboard's unlinked capture file.
+    struct stat captureStatus {};
+    if (fstat(impl->captureFd, &captureStatus) == 0 && captureStatus.st_size > 0) {
+        constexpr off_t maxReplay = 16384;
+        off_t offset = max(static_cast<off_t>(0), captureStatus.st_size - maxReplay);
+        char buffer[4096];
+        while (offset < captureStatus.st_size) {
+            const ssize_t count = pread(impl->captureFd, buffer,
+                                        min(static_cast<off_t>(sizeof(buffer)), captureStatus.st_size - offset), offset);
+            if (count <= 0) {
+                break;
+            }
+            offset += count;
+            ssize_t written = 0;
+            while (written < count) {
+                const ssize_t amount = write(STDERR_FILENO, buffer + written, count - written);
+                if (amount <= 0) {
+                    return;
+                }
+                written += amount;
+            }
+        }
     }
-    dup2(impl->oldStdout, STDOUT_FILENO);
-    dup2(impl->oldStderr, STDERR_FILENO);
+    constexpr char newline[] = "\n\n";
+    write(STDERR_FILENO, newline, sizeof(newline) - 1);
+}
+
+bool NcursesOutputWriter::restoreActiveOutputAfterSignal() noexcept
+{
+    static_assert(decltype(activeSignalOutput)::is_always_lock_free);
+    NcursesOutputWriter* output = activeSignalOutput.load();
+
+    // Test servers fork from the runner; only the owning process may restore its terminal.
+    if (!output || getpid() != output->impl->ownerPID) {
+        return false;
+    }
+    output->restoreAfterSignal();
+    return true;
 }
 
 void NcursesOutputWriter::runStarted(const vector<PlannedFixture>& plan)
