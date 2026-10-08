@@ -128,26 +128,22 @@ struct GetJobTest : tpunit::TestFixture
 
     void testJobDataKeysWithNul()
     {
-        // Given caller-owned keys that extend Bedrock metadata names with embedded NULs
         SData command("CreateJob");
         command["name"] = "nul-metadata";
         command["retryAfter"] = "+1 HOUR";
         command["data"] = R"({"retryAfterCount\u0000caller":"10","_bedrockRerunIfDataChanged\u0000caller":true})";
-
-        // When the job is created
         const string jobID = tester->executeWaitVerifyContentTable(command)["jobID"];
 
-        // Then the caller-owned key survives removal of Bedrock's private marker
+        // A caller-owned key must not be removed as Bedrock's private marker when creating the job.
         const JSON::Value storedData = JSON::Value::parse(tester->readDB("SELECT data FROM jobs WHERE jobID = " + jobID + ";"));
         ASSERT_TRUE(storedData["_bedrockRerunIfDataChanged\0caller"s].getBool());
 
-        // When the job is dequeued
         command = SData("GetJob");
         command["name"] = "nul-metadata";
         const JSON::Value job = JSON::Value::parse(tester->executeWaitVerifyContent(command));
-
-        // Then the caller-owned counter does not trigger the retry limit
         ASSERT_EQUAL(job["jobID"].getInt(), SToInt64(jobID));
+
+        // A caller-owned key must not trigger the retry limit.
         ASSERT_EQUAL(job["data"]["retryAfterCount\0caller"s].getString(), "10");
     }
 

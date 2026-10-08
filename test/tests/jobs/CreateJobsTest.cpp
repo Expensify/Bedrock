@@ -96,26 +96,19 @@ struct CreateJobsTest : tpunit::TestFixture
 
     void preserveDataTypes()
     {
-        // Given mock job data with string values and a private rerun marker
+        // Mutating mock data and removing the private rerun marker must not convert string values into JSON scalars.
         SData command("CreateJobs");
         command["mockRequest"] = "true";
         command["jobs"] = R"([{"name":"typedData","unique":true,"rerunIfDataChanged":true,"data":{"number":"123","nested":{"enabled":"true"},"_bedrockRerunIfDataChanged":true}}])";
-
-        // When the job is created
         const auto created = JSON::Value::parse(tester->executeWaitVerifyContent(command));
-
-        // Then the batch contains one job
         ASSERT_EQUAL(created["jobIDs"].size(), 1);
 
-        // When the mocked job is dequeued
         command.clear();
         command.methodLine = "GetJob";
         command["name"] = "typedData";
         command["mockRequest"] = "true";
         const auto job = JSON::Value::parse(tester->executeWaitVerifyContent(command));
         const auto& data = job["data"];
-
-        // Then its string values survive and the private marker is hidden
         ASSERT_EQUAL(data["number"].getString(), "123");
         ASSERT_EQUAL(data["nested"]["enabled"].getString(), "true");
         ASSERT_TRUE(data["mockRequest"].getBool());

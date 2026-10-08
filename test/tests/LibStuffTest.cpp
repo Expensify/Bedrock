@@ -236,11 +236,8 @@ struct LibStuff : tpunit::TestFixture
         // Verify we can parse/encode PHP objects
         ASSERT_EQUAL(innerObject0["ofxTest"], SComposeJSONObject(JSON::Utils::toSTable(JSON::Value::parse(innerObject0["ofxTest"]))));
 
-        // Given a valid container with meaningful formatting
+        // Preserve valid container formatting and quote invalid containers as strings.
         const string valid = "{ \"value\" : 1.00 }";
-
-        // When containers are composed into JSON
-        // Then valid formatting survives and invalid containers are quoted as strings
         ASSERT_EQUAL(SToJSON(valid), valid);
         ASSERT_EQUAL(JSON::Value::parse(SToJSON(valid, true)).getString(), valid);
         ASSERT_EQUAL(JSON::Value::parse(SToJSON("[1,]")).getString(), "[1,]");

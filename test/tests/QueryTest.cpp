@@ -71,7 +71,6 @@ struct QueryTest : tpunit::TestFixture
 
     void testInvalidMySQLResult()
     {
-        // Given a MySQL connection to a running Bedrock server
         mysqlPort = BedrockTester::ports.getPort();
         BedrockTester mysqlTester({{"-plugins", "db,mysql"}, {"-mysql.host", "127.0.0.1:" + to_string(mysqlPort)}}, {});
         STCPManager::Socket socket(mysqlTester.getArg("-mysql.host"), false);
@@ -97,21 +96,17 @@ struct QueryTest : tpunit::TestFixture
 
         ASSERT_TRUE(receivePacket());
 
-        // When SQLite returns Inf, which cannot be parsed as JSON
+        // SQLite emits Inf for this valid query, which cannot be parsed as JSON.
         MySQLPacket query;
         query.sequenceID = 0;
         query.payload = "\x03SELECT 1e999 AS value;";
         ASSERT_TRUE(socket.send(query.serialize()));
-
-        // Then the client receives an error instead of losing the server
         ASSERT_TRUE(receivePacket());
         ASSERT_EQUAL(response.serialize(), MySQLPacket::serializeERR(0, 500, "Failed to deserialize query result"));
 
-        // When another valid query uses the same connection
+        // The connection and server remain usable after the failed result conversion.
         query.payload = "\x03SELECT 1 AS value;";
         ASSERT_TRUE(socket.send(query.serialize()));
-
-        // Then the connection and server still return a result
         ASSERT_TRUE(receivePacket());
         ASSERT_EQUAL(response.payload, MySQLPacket::lenEncInt(1));
     }
