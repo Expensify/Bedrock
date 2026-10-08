@@ -10,6 +10,14 @@
 #include <format>
 
 thread_local function<string()> SSignalHandlerDieFunc;
+static atomic<void (*)() noexcept> fatalSignalHook{nullptr};
+
+void SSetFatalSignalHook(void (*hook)() noexcept) noexcept
+{
+    static_assert(decltype(fatalSignalHook)::is_always_lock_free);
+    fatalSignalHook.store(hook);
+}
+
 void SSetSignalHandlerDieFunc(function<string()>&& func)
 {
     SSignalHandlerDieFunc = move(func);
@@ -214,6 +222,10 @@ void _SSignal_StackTrace(int signum, siginfo_t* info, void* ucontext)
         // second ABORT signal, and we don't want that to overwrite this value, so we only set it if unset.
         if (!_SSignal_threadCaughtSignalNumber) {
             _SSignal_threadCaughtSignalNumber = signum;
+
+            if (const auto hook = fatalSignalHook.load()) {
+                hook();
+            }
 
             SWARN("Signal " << strsignal(_SSignal_threadCaughtSignalNumber) << "(" << _SSignal_threadCaughtSignalNumber << ") caused crash, logging stack trace.");
 

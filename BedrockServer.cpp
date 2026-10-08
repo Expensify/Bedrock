@@ -813,7 +813,9 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                             // Tell the sync node that there's been a commit so that it can jump out of it's "poll"
                             // loop and send it to followers. NOTE: we don't check for null here, that should be
                             // impossible inside a worker thread.
-                            _syncNode->notifyCommit();
+                            if (transactionID) {
+                                _syncNode->notifyCommit();
+                            }
                             _conflictManager.recordTables(command->request.methodLine, db.getTablesUsed());
                             // So we must still be leading, and at this point our commit has succeeded, let's
                             // mark it as complete. We add the currentCommit count here as well.

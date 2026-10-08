@@ -80,16 +80,14 @@ public:
     // minJournalTables: Creates journal tables through the specified number. If `-1` is passed, only `journal` is
     //                   created. If some value larger than -1 is passed, then journals `journal0000 through
     //                   journalNNNN` are created (or left alone if such tables already exist). If -2 or less is
-    //                   passed, no tables are created.
+    //                   passed, no tables are created. Experimental HC-Tree databases never create legacy journals.
     //
     // mmapSizeGB: address space to use for memory-mapped IO, in GB.
     SQLite(const string& filename, int cacheSize, int maxJournalSize, int minJournalTables,
            int64_t mmapSizeGB = 0, bool hctree = false, const string& checkpointMode = "PASSIVE",
            vector<function<void()>> afterCommitCallbacks = {});
 
-    // This constructor is not exactly a copy constructor. It creates an other SQLite object based on the first except
-    // with a *different* journal table. This avoids a lot of locking around creating structures that we know already
-    // exist because we already have a SQLite object for this file.
+    // Opens a separate connection to the same database, sharing commit metadata and journal configuration.
     SQLite(const SQLite& from);
     virtual ~SQLite();
 
@@ -170,12 +168,12 @@ public:
     // truncating old journal entries. This function will not call runAfterCommit callbacks.
     bool writeLocalUnreplicated(const string& query);
 
-    // Deletes up to `batchSize` rows from one journal table, keeping the newest `-maxJournalSize` commits. A
-    // `batchSize` of zero deletes nothing. Returns false if the delete did not commit, which happens when another
-    // commit conflicts.
+    // Deletes up to `batchSize` rows from one journal table, keeping the newest `-maxJournalSize` commits.
+    // If `journalTableIndex` exceeds the number of trimmable tables, the table trimmed will be `journalTableIndex` modulo the number of relevant tables.
+    // A `batchSize` of zero deletes nothing. Returns false if the delete did not commit, which happens when another commit conflicts.
     bool trimJournalTable(size_t journalTableIndex, int64_t batchSize);
 
-    // The number of journal tables in this database. Any index passed to `trimJournalTable` is taken modulo this.
+    // The number of active journal tables to trim. Empty legacy tables are retired in experimental HC-Tree mode.
     size_t getJournalTableCount() const;
 
     // Enable or disable update-noop mode.
@@ -238,6 +236,10 @@ public:
     // preCheckpointCallback is an optional callback that will be called before the checkpoint code runs, after the commit has completed. Note that if the commit fails, this is not called.
     // The main purpose of this is to allow replications in SQLiteNode to notify other waiting threads that the commit has finished even before the checkpoint is done.
     int commit(const string& description = "UNSPECIFIED", const string& commandName = "", function<void()>* preCheckpointCallback = nullptr);
+
+    // journalCommitID is the actual journal ID, or zero if no entry was recorded. A failed HC-Tree leader commit can
+    // still record a blank entry; a successful read-only leader commit can finish without recording an entry.
+    int commit(uint64_t& journalCommitID, const string& description = "UNSPECIFIED", const string& commandName = "", function<void()>* preCheckpointCallback = nullptr);
 
     // Cancels the current transaction and rolls it back.
     void rollback(const string& commandName = "");
@@ -372,6 +374,9 @@ public:
     // The zstd dictionary ID to use when compressing journal entries. 0 means no compression.
     static atomic<int64_t> journalZstdDictionaryID;
 
+    // This is set only once at startup to enable experimental HC-Tree behavior on HC-Tree databases.
+    static atomic<bool> hctreeExperimentalMode;
+
     int64_t getLastConflictIdentifier() const;
 
     string getLastConflictLocation() const;
@@ -398,6 +403,10 @@ public:
 
     void exclusiveLockDB();
     void exclusiveUnlockDB();
+
+    // Called with exclusiveLockDB held when changing cluster roles.
+    void setHCTreeFollowerMode(bool following);
+    void prepareHCTreeLeadership();
 
 private:
     // This structure contains all of the data that's shared between a set of SQLite objects that share the same
@@ -426,8 +435,7 @@ public:
         string lastCommittedHash;
         uint64_t hashCommitID = 0;
 
-        // An identifier used to choose the next journal table to use with this set of DB handles. Only used to
-        // initialize new objects.
+        // Round-robin journal selection for transactions across all handles.
         atomic<int64_t> nextJournalCount;
 
         // When `SQLite::prepare` is called, we need to save a set of info that will be broadcast to peers when the
@@ -435,6 +443,9 @@ public:
         // query is in its post-prepare() form (a zstd frame when compression is enabled, raw SQL otherwise) and is
         // shipped directly to followers in TRANSACTION.
         void prepareTransactionInfo(uint64_t commitID, const string& query, const string& hash);
+
+        // Discard a prepared entry when the transaction completes without recording it in the journal.
+        void discardPreparedTransactionInfo(uint64_t commitID);
 
         // When a transaction that was prepared is committed, we move the data from the prepared list to the committed
         // list.
@@ -471,6 +482,19 @@ public:
         // This can be locked in exclusive mode to prevent all writes. This exists to support the `BlockWrites` command.
         shared_mutex writeLock;
 
+        // Count transactions that may still write after releasing writeLock.
+        atomic<uint64_t> openWriteTransactionCount{0};
+        atomic<bool> hctreeFollowerMode{true};
+
+        // These are set just after initialization of the DB and are used for deciding which journal tables we will need
+        // to read from/trim from as newer hct_journal DBs expire old entries from the journal.
+        uint64_t legacyMaxID = 0;
+        uint64_t hctMinID = 0;
+
+        // Physical table indexes eligible for trimming. Never used to exclude tables from older read snapshots.
+        mutex journalTrimMutex;
+        vector<size_t> journalTrimTables;
+
 private:
         // The data required to replicate transactions, in two lists, depending on whether this has only been prepared
         // or if it's been committed.
@@ -486,13 +510,15 @@ private:
     static string initializeFilename(const string& filename);
     static bool validateDBFormat(const string& filename, bool hctree);
     static sqlite3* initializeDB(const string& filename, int64_t mmapSizeGB, bool hctree);
-    static vector<string> initializeJournal(sqlite3* db, int minJournalTables);
+    static vector<string> initializeJournal(sqlite3* db, int minJournalTables, bool hctree);
+    static void initializeHCTreeJournal(sqlite3* db, const vector<string>& journalNames);
     void commonConstructorInitialization(bool hctree = false);
     static int getCheckpointModeFromString(const string& checkpointModeString);
 
     // This is also an initializer to support RAII-style allocation in the constructor but is pulled out separately as
     // it's not static and depends on several other members being initialized before it.
     SharedData& initializeSharedData();
+    uint64_t getLegacyCommitCount() const;
 
     // The filename of this DB, canonicalized to its full path on disk.
     const string _filename;
@@ -505,13 +531,13 @@ private:
     // The underlying sqlite3 DB handle.
     sqlite3* _db;
 
-    // Names of ALL journal tables for this database.
+    // Names of the legacy journal tables for this database. May be empty for experimental HC-Tree databases.
     const vector<string> _journalNames;
 
     // Pointer to our SharedData object, which is shared between all SQLite DB objects for the same file.
     SharedData& _sharedData;
 
-    // The name of the journal table that this particular DB handle with write to.
+    // The journal table selected for the current transaction.
     string _journalName;
 
     // Stored whenever we begin a transaction to allow stopping and restarting with the same transaction type.
@@ -519,6 +545,8 @@ private:
 
     // True when we have a transaction in progress.
     bool _insideTransaction = false;
+
+    bool _isWriteTransaction = false;
 
     // A blank journal entry is prepared even though both its query and hash are empty.
     bool _prepared = false;
@@ -529,9 +557,6 @@ private:
     // otherwise unchanged. This single representation is then both stored on disk and shipped to followers.
     string _uncommittedQuery;
     string _uncommittedHash;
-
-    // Returns the name of a journal table based on it's index.
-    static string getJournalTableName(vector<string>& journalNames, int64_t journalTableID, bool create = false);
 
     // Timing information.
     mutable uint64_t _beginElapsed = 0;
@@ -557,30 +582,16 @@ private:
     static thread_local uint64_t _commitLockWait;
 
     bool _writeIdempotent(const string& query, const map<string, Parameter>& params, SQResult& result, bool alwaysKeepQueries = false);
+    void beginWriteTransaction();
+    void finishWriteTransaction();
 
-    // Constructs a UNION query from a list of 'query parts' over each of our journal tables.
-    // Fore each table, queryParts will be joined with that table's name as a separator. I.e., if you have a tables
-    // named 'journal', 'journal00, and 'journal01', and queryParts of {"SELECT * FROM", "WHERE id > 1"}, we'll create
-    // the following subqueries from query parts:
-    //
-    // "SELECT * FROM journal WHERE id > 1"
-    // "SELECT * FROM journal00 WHERE id > 1"
-    // "SELECT * FROM journal01 WHERE id > 1"
-    //
-    // And then we'll join then using UNION into:
-    // "SELECT * FROM journal WHERE id > 1
-    //  UNION
-    //  SELECT * FROM journal00 WHERE id > 1
-    //  UNION
-    //  SELECT * FROM journal01 WHERE id > 1;"
-    //
-    //  Note that this wont work if you have a query like "SELECT * FROM journal", with no trailing WHERE clause, as we
-    //  only insert the table name *between* adjacent entries in queryParts. We provide the 'append' flag to get around
-    //  this limitation.
-    string _getJournalQuery(const list<string>& queryParts, bool append = false);
-
-    // Static version for initializers.
+    // Builds a UNION across legacy journals, inserting each table name between query parts.
+    // Set append when the table name belongs at the end, e.g. {"SELECT MAX(id) FROM"}.
     static string _getJournalQuery(const vector<string>& journalNames, const list<string>& queryParts, bool append = false);
+    static string _getHCTreeJournalQuery();
+    string _getJournalEntriesQuery(uint64_t fromIndex, uint64_t toIndex) const;
+    string _getLastNonBlankQuery(uint64_t index, bool legacy, bool hct) const;
+    void retireLegacyJournal(size_t journalTableIndex);
 
     // Callback function that we'll register for authorizing queries in sqlite.
     static int _sqliteAuthorizerCallback(void*, int, const char*, const char*, const char*, const char*);

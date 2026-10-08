@@ -244,6 +244,10 @@ struct SStopwatch
 // the general-purpose signal handling thread.
 void SInitializeSignals();
 
+// Process-wide hook called before fatal-signal diagnostics, even after other threads initialize signals.
+// The hook runs in the signal handler and must be signal-safe.
+void SSetFatalSignalHook(void (*hook)() noexcept) noexcept;
+
 // Returns true if the given signal has been raised. Clears the value of the given signal.
 bool SGetSignal(int signum);
 

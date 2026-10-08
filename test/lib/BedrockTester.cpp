@@ -97,6 +97,7 @@ BedrockTester::BedrockTester(const map<string, string>& args,
 
     if (ENABLE_HCTREE) {
         defaultArgs["-newDBsUseHctree"] = "";
+        defaultArgs["-hctreeExperimentalMode"] = "";
     }
     if (VERBOSE_LOGGING) {
         defaultArgs["-v"] = "";
@@ -212,7 +213,7 @@ void BedrockTester::autoAttachDebugger()
     ::close(socket);
 }
 
-string BedrockTester::startServer(bool wait)
+void BedrockTester::startServerInBackground()
 {
     SFileSave(_args["-testShutdownReasonFile"], "");
     int childPID = fork();
@@ -287,42 +288,66 @@ string BedrockTester::startServer(bool wait)
     } else {
         // We'll kill this later.
         _serverPID = childPID;
+    }
+}
 
-        // Wait for the server to start up.
-        // TODO: Make this not take so long, particularly in Travis. This probably really requires making the server
-        // come up faster, not a change in how we wait for it, though it would be nice if we could do something
-        // besides this 100ms polling.
-        bool needSocket = true;
-        uint64_t startTime = STimeNow();
-
-        while (1) {
-            // Give up after a minute. This will fail the remainder of the test, but won't hang indefinitely.
-            if (startTime + 60'000'000 < STimeNow()) {
-                cout << "startServer(): ran out of time waiting for server to start" << endl;
-                break;
-            }
-            if (needSocket) {
-                int socket = S_socket(wait ? _args["-serverHost"] : _args["-controlPort"], true, false, true);
-                if (socket == -1) {
-                    usleep(100000); // 0.1 seconds.
-                    continue;
-                }
-                S_close(&socket);
-                needSocket = false;
-            }
-
-            // We've successfully opened a socket, so let's try and send a command.
-            SData status("Status");
-            auto result = executeWaitMultipleData({status}, 1, !wait); //NOLINT(clang-analyzer-optin.cplusplus.VirtualCall)
-            if (result[0].methodLine == "200 OK") {
-                return result[0].content;
-            }
-            // This will happen if the server's not up yet. We'll just try again.
-            usleep(50'000); // 0.05 seconds.
-            continue;
+string BedrockTester::startServer(bool wait)
+{
+    startServerInBackground();
+    bool needSocket = true;
+    const uint64_t startTime = STimeNow();
+    while (true) {
+        if (startTime + 60'000'000 < STimeNow()) {
+            cout << "startServer(): ran out of time waiting for server to start" << endl;
+            break;
         }
+        if (needSocket) {
+            int socket = S_socket(wait ? _args["-serverHost"] : _args["-controlPort"], true, false, true);
+            if (socket == -1) {
+                usleep(100'000);
+                continue;
+            }
+            S_close(&socket);
+            needSocket = false;
+        }
+
+        SData status("Status");
+        auto result = executeWaitMultipleData({status}, 1, !wait); //NOLINT(clang-analyzer-optin.cplusplus.VirtualCall)
+        if (result[0].methodLine == "200 OK") {
+            return result[0].content;
+        }
+        usleep(50'000);
     }
     return "";
+}
+
+bool BedrockTester::waitForProcessExit(int pid, int& status, uint64_t timeoutUS)
+{
+    if (pid <= 0) {
+        return false;
+    }
+    const uint64_t deadline = STimeNow() + timeoutUS;
+    while (STimeNow() < deadline) {
+        const pid_t result = waitpid(pid, &status, WNOHANG);
+        if (result == pid) {
+            return true;
+        }
+        if (result < 0 && errno != EINTR) {
+            return false;
+        }
+        usleep(50'000);
+    }
+    kill(pid, SIGKILL);
+    while (waitpid(pid, &status, 0) < 0 && errno == EINTR) {
+    }
+    return false;
+}
+
+bool BedrockTester::waitForExit(int& status, uint64_t timeoutUS)
+{
+    const bool exited = waitForProcessExit(_serverPID, status, timeoutUS);
+    _serverPID = 0;
+    return exited;
 }
 
 void BedrockTester::stopServer(int signal)
