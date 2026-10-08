@@ -4,6 +4,7 @@
 
 #include <test/lib/OutputWriter.h>
 #include <memory>
+#include <atomic>
 
 namespace tpunit {
 // Owns the terminal until finish() restores stdout/stderr and prints the report.
@@ -42,6 +43,9 @@ public:
     void runFinished(const RunResult& result) override;
 
 private:
+    static atomic<NcursesOutputWriter*> activeSignalOutput;
+    static void restoreActiveOutputAfterSignal() noexcept;
+
     struct Impl;
     unique_ptr<Impl> impl;
 };
