@@ -1,3 +1,4 @@
+#include <libstuff/JSON/Value.h>
 #include <libstuff/SData.h>
 #include <test/clustertest/BedrockClusterTester.h>
 
@@ -50,12 +51,12 @@ struct StatusTest : tpunit::TestFixture
         threads.clear();
 
         for (int i = 0; i < 3; i++) {
-            STable json = SParseJSONObject(responses[i]);
-            auto peers = SParseJSONArray(json["peerList"]);
+            JSON::Value json = JSON::Value::parse(responses[i]);
+            auto peers = json["peerList"];
             if (i == 0) {
-                ASSERT_EQUAL(json["isLeader"], "true");
+                ASSERT_EQUAL(json["isLeader"].getBool(), true);
             } else {
-                ASSERT_EQUAL(json["isLeader"], "false");
+                ASSERT_EQUAL(json["isLeader"].getBool(), false);
             }
             ASSERT_EQUAL(peers.size(), 2);
         }

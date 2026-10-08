@@ -1,3 +1,4 @@
+#include <libstuff/JSON/Value.h>
 #include <iostream>
 #include <unistd.h>
 
@@ -89,10 +90,9 @@ struct FailedJobReplyTest : tpunit::TestFixture
                 command["jobs"] = SComposeJSONArray(jobs);
                 string response = tester->executeWaitVerifyContent(command);
 
-                STable responseJSON = SParseJSONObject(response);
-                list<string> ids = SParseJSONArray(responseJSON["jobIDs"]);
-                for (auto& id : ids) {
-                    createdJobIds.push_back(id);
+                JSON::Value responseJSON = JSON::Value::parse(response);
+                for (const auto& id : JSON::ArrayValue(responseJSON["jobIDs"])) {
+                    createdJobIds.push_back(id.serialize());
                 }
             }
 
@@ -104,7 +104,7 @@ struct FailedJobReplyTest : tpunit::TestFixture
             }
             command["name"] = job["name"];
             command["commandExecuteTime"] = to_string(STimeNow() + 1000000);
-            tester->executeWaitVerifyContentTable(command, "202");
+            ASSERT_TRUE(tester->executeWaitVerifyContentTable(command, "202").empty());
 
             // Wait for the command to run, where it will requeue jobs.
             sleep(2);
@@ -142,16 +142,15 @@ struct FailedJobReplyTest : tpunit::TestFixture
             }
 
             // Verify this looks correct.
-            STable responseJSON = SParseJSONObject(response);
+            JSON::Value responseJSON = JSON::Value::parse(response);
             if (commandName == "GetJob") {
                 ASSERT_EQUAL(createdJobIds.size(), 1);
-                ASSERT_EQUAL(createdJobIds.front(), responseJSON["jobID"]);
+                ASSERT_EQUAL(createdJobIds.front(), responseJSON["jobID"].serialize());
             } else {
-                list<string> jobs = SParseJSONArray(responseJSON["jobs"]);
+                const auto& jobs = responseJSON["jobs"];
                 ASSERT_EQUAL(jobs.size(), createdJobIds.size());
-                for (auto& j : jobs) {
-                    STable job = SParseJSONObject(j);
-                    string jobID = job["jobID"];
+                for (const auto& job : JSON::ConstArrayValue(jobs)) {
+                    string jobID = job["jobID"].serialize();
                     ASSERT_TRUE(find(createdJobIds.begin(), createdJobIds.end(), jobID) != createdJobIds.end());
                 }
             }
