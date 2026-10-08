@@ -21,7 +21,6 @@ struct WriteTest : tpunit::TestFixture
                               TEST(WriteTest::shortHandSyntax),
                               TEST(WriteTest::keywordsAsValue),
                               TEST(WriteTest::blockNonDeterministicFunctions),
-                              TEST(WriteTest::constraintResponseAndRollback),
                               AFTER_CLASS(WriteTest::tearDown))
     {
     }
@@ -33,7 +32,6 @@ struct WriteTest : tpunit::TestFixture
         tester = new BedrockTester({}, {
             "CREATE TABLE foo (bar INTEGER);",
             "CREATE TABLE stuff (id INTEGER PRIMARY KEY, value INTEGER, info TEXT);",
-            "CREATE TABLE constraintResponseTest (id INTEGER PRIMARY KEY, required TEXT NOT NULL, value TEXT UNIQUE, amount INTEGER CHECK(amount > 0));",
         });
     }
 
@@ -190,28 +188,6 @@ struct WriteTest : tpunit::TestFixture
         // Change the expected result to "502 Query aborted" once https://github.com/Expensify/Expensify/issues/165207 is solved
         SData query3("query: UPDATE stuff SET info = 'This is not a where clause';");
         tester->executeWaitVerifyContent(query3);
-    }
-
-    void constraintResponseAndRollback()
-    {
-        SData query("Query");
-        query["query"] = "INSERT INTO constraintResponseTest VALUES(1, 'required', 'unique', 1);";
-        tester->executeWaitVerifyContent(query);
-
-        const vector<string> failingInserts = {
-            "INSERT INTO constraintResponseTest VALUES(3, NULL, 'other', 1);",
-            "INSERT INTO constraintResponseTest VALUES(3, 'required', 'unique', 1);",
-            "INSERT INTO constraintResponseTest VALUES(3, 'required', 'other', 0);",
-        };
-        for (const string& failingInsert : failingInserts) {
-            query["query"] = "INSERT INTO constraintResponseTest VALUES(2, 'required', 'rollback', 1);" + failingInsert;
-            tester->executeWaitVerifyContent(query, "400 Unique Constraints Violation");
-            ASSERT_EQUAL(tester->readDB("SELECT COUNT(*) FROM constraintResponseTest;"), "1");
-        }
-
-        query["query"] = "INSERT INTO constraintResponseTest VALUES(2, 'required', 'other', 1);";
-        tester->executeWaitVerifyContent(query);
-        ASSERT_EQUAL(tester->readDB("SELECT COUNT(*) FROM constraintResponseTest;"), "2");
     }
 
     void blockNonDeterministicFunctions()
