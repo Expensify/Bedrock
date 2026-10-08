@@ -365,7 +365,7 @@ void NcursesOutputWriter::restoreAfterSignal() noexcept
         syscall(SYS_ioctl, STDIN_FILENO, TCSETS, &impl->originalTermios);
     }
     constexpr char resetDisplay[] = "\033[?1049l\033[?25h\033[0m\r\n\r\n";
-    write(STDERR_FILENO, resetDisplay, sizeof(resetDisplay) - 1);
+    write(impl->oldStdout, resetDisplay, sizeof(resetDisplay) - 1);
 
     // Replay a bounded tail without stdio, allocation, or additional disk writes. This can contain
     // the fatal diagnostic that was otherwise hidden in the dashboard's unlinked capture file.
