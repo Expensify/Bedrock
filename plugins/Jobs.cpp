@@ -1272,9 +1272,17 @@ void BedrockJobsCommand::process(SQLite& db)
             newNextRun = SQ(request["nextRun"]);
         }
 
+        // GetJob returns data before it stores originalNextRun. Keep that anchor when the schedule is unchanged.
+        string newDataExpression = SQ(newData);
+        if (request["repeat"].empty() && request["nextRun"].empty() && !SToInt(request["shouldClearRepeat"])) {
+            newDataExpression = "IIF(JSON_TYPE(data, '$.originalNextRun') = 'text', "
+                "JSON_SET(" + newDataExpression + ", '$.originalNextRun', JSON_EXTRACT(data, '$.originalNextRun')), " +
+                newDataExpression + ")";
+        }
+
         // Update the data
         if (!db.writeIdempotent("UPDATE jobs "
-                                "SET data = " + preserveRerunIfDataChangedSQL(SQ(newData)) +
+                                "SET data = " + preserveRerunIfDataChangedSQL(newDataExpression) +
                                 (SToInt(request["shouldClearRepeat"]) ? ", repeat=''" :
                                  request["repeat"].size() ? ", repeat=" + SQ(SToUpper(request["repeat"])) : "") +
                                 (!newNextRun.empty() ? ", nextRun=" + newNextRun : "") +
