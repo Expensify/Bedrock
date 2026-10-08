@@ -122,7 +122,7 @@ SQLite::SharedData& SQLite::initializeSharedData()
         // journals agree or are forked from one another.
         SQResult lastNonBlank;
         SASSERT(!SQuery(_db, _getLastNonBlankQuery(state.commitCount, !experimentalHCTree || sharedData->legacyMaxID, experimentalHCTree), lastNonBlank));
-        if (!lastNonBlank.empty()) {
+        if (!lastNonBlank.empty() && !lastNonBlank[0][0].empty()) {
             state.hashCommitID = SToUInt64(lastNonBlank[0][0]);
             state.hash = lastNonBlank[0][1];
         }
@@ -601,8 +601,9 @@ string SQLite::_getLastNonBlankQuery(uint64_t index, bool legacy, bool hct) cons
                              "FROM hct_journal WHERE cid <= {} AND length(CAST(query AS BLOB)) >= {}",
                              HCTREE_JOURNAL_HASH_BYTES, index, HCTREE_JOURNAL_HASH_BYTES + 1);
     }
+    // Filtering null IDs in SQL disables SQLite's MAX optimization and scans every journal table in full.
     return candidates.empty() ? "SELECT NULL AS id, '' AS hash WHERE 0" :
-           "SELECT id, hash FROM (" + candidates + ") WHERE id IS NOT NULL ORDER BY id DESC LIMIT 1";
+           "SELECT id, hash FROM (" + candidates + ") ORDER BY id DESC LIMIT 1";
 }
 
 uint64_t SQLite::getLegacyCommitCount() const
@@ -1751,14 +1752,14 @@ void SQLite::getLastNonBlankCommit(uint64_t index, uint64_t& commitID, string& h
     SQResult result;
     if (legacy && hct && _sharedData.legacyMaxID < _sharedData.hctMinID) {
         SASSERT(!SQuery(_db, _getLastNonBlankQuery(index, false, true), result));
-        if (result.empty()) {
+        if (result.empty() || result[0][0].empty()) {
             // Recheck both sources in one statement so the fallback has a consistent snapshot during trimming.
             SASSERT(!SQuery(_db, _getLastNonBlankQuery(index, true, true), result));
         }
     } else {
         SASSERT(!SQuery(_db, _getLastNonBlankQuery(index, legacy, hct), result));
     }
-    commitID = result.empty() ? 0 : SToUInt64(result[0][0]);
+    commitID = result.empty() || result[0][0].empty() ? 0 : SToUInt64(result[0][0]);
     hash = commitID ? result[0][1] : "";
 }
 
