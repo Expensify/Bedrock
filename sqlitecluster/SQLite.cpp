@@ -330,16 +330,17 @@ void SQLite::initializeHCTreeJournal(sqlite3* db, const vector<string>& journalN
 {
     SQResult legacy;
     if (!journalNames.empty()) {
+        // Handle null IDs below so SQLite can use its MAX optimization for each journal table.
         const string query = "SELECT id, query, hash FROM (" +
             _getJournalQuery(journalNames, {"SELECT MAX(id) AS id, query, hash FROM"}, true) +
-            ") WHERE id IS NOT NULL ORDER BY id DESC LIMIT 1";
+            ") ORDER BY id DESC LIMIT 1";
         SASSERT(!SQuery(db, query, legacy));
     }
 
     SASSERT(sqlite3_hct_journal_init(db) == SQLITE_OK);
     SASSERT(!SQuery(db, "BEGIN"));
     int result = SQLITE_OK;
-    if (!legacy.empty()) {
+    if (!legacy.empty() && !legacy[0]["id"].empty()) {
         const uint64_t legacyCommitID = SToUInt64(legacy[0]["id"]);
         SINFO("Initializing HC-Tree journal at legacy commit " << legacyCommitID);
         result = SQuery(db, "UPDATE hct_journal SET cid = :cid, query = :query WHERE cid = 1", {
