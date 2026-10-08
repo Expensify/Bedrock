@@ -28,7 +28,7 @@ LIBRARIES =-Wl,--exclude-libs,libjson.a -Wl,--start-group -lbedrock -lstuff -ljs
 .PHONY: all test clustertest clean testplugin checkjsonsymbols
 
 # This sets our default by being the first target, and also sets `all` in case someone types `make all`.
-all: bedrock test clustertest checkjsonsymbols
+all: bedrock bedrock-test-port-server test clustertest checkjsonsymbols
 test: test/test
 clustertest: test/clustertest/clustertest testplugin
 testplugin: test/clustertest/testplugin/testplugin.so
@@ -39,6 +39,7 @@ clean:
 	rm -rf libjson.a
 	rm -rf libbedrock.a
 	rm -rf bedrock
+	rm -rf bedrock-test-port-server
 	rm -rf test/test
 	rm -rf test/clustertest/clustertest
 	rm -rf test/clustertest/testplugin/testplugin.so
@@ -82,12 +83,12 @@ BEDROCKOBJ = $(BEDROCKCPP:%.cpp=$(INTERMEDIATEDIR)/%.o)
 BEDROCKDEP = $(BEDROCKCPP:%.cpp=$(INTERMEDIATEDIR)/%.d)
 
 # And the same for our tests. Exclude benchmarks from the unit test binary.
-TESTCPP = $(shell find test -name '*.cpp' -not -path 'test/clustertest*' -not -path 'test/benchmarks*')
+TESTCPP = $(shell find test -name '*.cpp' -not -path 'test/clustertest*' -not -path 'test/benchmarks*' -not -path 'test/portserver*')
 TESTOBJ = $(TESTCPP:%.cpp=$(INTERMEDIATEDIR)/%.o)
 TESTDEP = $(TESTCPP:%.cpp=$(INTERMEDIATEDIR)/%.d)
 
 # And the same for the cluster tests (manually adding one file from `test`). Exclude benchmarks too.
-CLUSTERTESTCPP = $(shell find test -name '*.cpp' -not -path 'test/tests*' -not -path 'test/benchmarks*' -not -path "test/main.cpp")
+CLUSTERTESTCPP = $(shell find test -name '*.cpp' -not -path 'test/tests*' -not -path 'test/benchmarks*' -not -path 'test/portserver*' -not -path "test/main.cpp")
 CLUSTERTESTCPP += test/tests/jobs/JobTestHelper.cpp
 CLUSTERTESTOBJ = $(CLUSTERTESTCPP:%.cpp=$(INTERMEDIATEDIR)/%.o)
 CLUSTERTESTDEP = $(CLUSTERTESTCPP:%.cpp=$(INTERMEDIATEDIR)/%.d)
@@ -113,11 +114,13 @@ libbedrock.a: $(LIBBEDROCKOBJ)
 BINPREREQS = libbedrock.a libstuff.a libjson.a mbedtls/library/libmbedcrypto.a
 
 # All of our binaries build in the same way.
-bedrock: $(BEDROCKOBJ) $(JSONMETRICSOBJ) $(BINPREREQS)
+bedrock: $(BEDROCKOBJ) $(JSONMETRICSOBJ) $(BINPREREQS) | bedrock-test-port-server
 	$(CXX) -o $@ $(BEDROCKOBJ) $(JSONMETRICSOBJ) $(LIBPATHS) -rdynamic $(LIBRARIES)
-test/test: $(TESTOBJ) $(BINPREREQS)
+bedrock-test-port-server: $(INTERMEDIATEDIR)/test/portserver/main.o $(INTERMEDIATEDIR)/test/portserver/PortServer.o
+	$(CXX) -o $@ $^ -lpthread
+test/test: $(TESTOBJ) $(BINPREREQS) bedrock-test-port-server
 	$(CXX) -o $@ $(TESTOBJ) $(LIBPATHS) -rdynamic $(LIBRARIES) -lncursesw
-test/clustertest/clustertest: $(CLUSTERTESTOBJ) $(BINPREREQS)
+test/clustertest/clustertest: $(CLUSTERTESTOBJ) $(BINPREREQS) bedrock-test-port-server
 	$(CXX) -o $@ $(CLUSTERTESTOBJ) $(LIBPATHS) -rdynamic $(LIBRARIES) -lncursesw
 
 checkjsonsymbols: bedrock
@@ -182,6 +185,9 @@ DEPS_TO_INCLUDE += $(TESTDEP)
 endif
 ifneq ($(filter all clustertest test/clustertest/clustertest,$(REQUESTED_GOALS)),)
 DEPS_TO_INCLUDE += $(CLUSTERTESTDEP)
+endif
+ifneq ($(filter all bedrock test test/test clustertest test/clustertest/clustertest bedrock-test-port-server,$(REQUESTED_GOALS)),)
+DEPS_TO_INCLUDE += $(INTERMEDIATEDIR)/test/portserver/main.d $(INTERMEDIATEDIR)/test/portserver/PortServer.d
 endif
 ifneq ($(filter all clustertest testplugin test/clustertest/testplugin/testplugin.so,$(REQUESTED_GOALS)),)
 DEPS_TO_INCLUDE += $(TESTPLUGINTDEP)
