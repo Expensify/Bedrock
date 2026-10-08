@@ -11,8 +11,7 @@ struct UpdateJobTest : tpunit::TestFixture
                               TEST(UpdateJobTest::updateJob),
                               TEST(UpdateJobTest::updateStringValueLookingLikeNumber),
                               TEST(UpdateJobTest::updateMockedJob),
-                              TEST(UpdateJobTest::dataUpdatePreservesOriginalNextRun),
-                              TEST(UpdateJobTest::scheduleUpdateDoesNotRestoreOriginalNextRun),
+                              TEST(UpdateJobTest::dataUpdatesPreserveOriginalNextRunUnlessRescheduled),
                               TEST(UpdateJobTest::clearRepeatWithShouldClearRepeat),
                               AFTER_CLASS(UpdateJobTest::tearDownClass))
     {
@@ -124,85 +123,71 @@ struct UpdateJobTest : tpunit::TestFixture
         ASSERT_EQUAL(currentJob[0][3], "2020-01-01 00:00:00");
     }
 
-    void dataUpdatePreservesOriginalNextRun()
+    /**
+     * Given a running SCHEDULED job whose worker data lacks originalNextRun,
+     * When UpdateJob replaces its data, with or without an explicit nextRun, and the job finishes,
+     * Then data updates keep the original schedule, while explicit reschedules use the requested time.
+     */
+    void dataUpdatesPreserveOriginalNextRunUnlessRescheduled()
     {
-        const string firstRun = SComposeTime("%Y-%m-%d %H:%M:%S", STimeNow() - STIME_US_PER_S);
+        for (const bool shouldReschedule : {false, true}) {
+            const string firstRun = SComposeTime("%Y-%m-%d %H:%M:%S", STimeNow() - STIME_US_PER_S);
+            const string jobName = shouldReschedule ? "schedule-update" : "data-update";
 
-        SData command("CreateJob");
-        command["name"] = "data-update";
-        command["firstRun"] = firstRun;
-        command["repeat"] = "SCHEDULED, +1 DAY";
-        command["retryAfter"] = "+5 MINUTES";
-        command["data"] = "{\"phase\":\"initial\",\"obsolete\":true}";
-        const string jobID = tester->executeWaitVerifyContentTable(command)["jobID"];
+            // Given a running daily job with a saved run time that is absent from the worker's snapshot
+            SData command("CreateJob");
+            command["name"] = jobName;
+            command["firstRun"] = firstRun;
+            command["repeat"] = "SCHEDULED, +1 DAY";
+            command["retryAfter"] = "+5 MINUTES";
+            command["data"] = "{\"phase\":\"initial\",\"obsolete\":true}";
+            const string jobID = tester->executeWaitVerifyContentTable(command)["jobID"];
 
-        command.clear();
-        command.methodLine = "GetJob";
-        command["name"] = "data-update";
-        STable runningJob = tester->executeWaitVerifyContentTable(command);
-        ASSERT_TRUE(SParseJSONObject(runningJob["data"])["originalNextRun"].empty());
+            command.clear();
+            command.methodLine = "GetJob";
+            command["name"] = jobName;
+            STable runningJob = tester->executeWaitVerifyContentTable(command);
+            ASSERT_TRUE(SParseJSONObject(runningJob["data"])["originalNextRun"].empty());
 
-        SQResult before;
-        tester->readDB("SELECT nextRun, JSON_EXTRACT(data, '$.originalNextRun') FROM jobs WHERE jobID=" + jobID + ";", before);
-        ASSERT_EQUAL(before[0][1], firstRun);
+            SQResult before;
+            tester->readDB("SELECT nextRun, JSON_EXTRACT(data, '$.originalNextRun') FROM jobs WHERE jobID=" + jobID + ";", before);
+            ASSERT_EQUAL(before[0][1], firstRun);
 
-        // The worker's replacement data lacks the anchor GetJob stored after taking its data snapshot.
-        command.clear();
-        command.methodLine = "UpdateJob";
-        command["jobID"] = jobID;
-        command["data"] = "{\"phase\":\"updated\"}";
-        tester->executeWaitVerifyContent(command);
+            // When the worker replaces its data, optionally requesting a different run time
+            const string nextRun = SComposeTime("%Y-%m-%d %H:%M:%S", STimeNow() + STIME_US_PER_S * 60 * 60 * 24);
+            command.clear();
+            command.methodLine = "UpdateJob";
+            command["jobID"] = jobID;
+            command["data"] = "{\"phase\":\"updated\"}";
+            if (shouldReschedule) {
+                command["nextRun"] = nextRun;
+            }
+            tester->executeWaitVerifyContent(command);
 
-        SQResult result;
-        tester->readDB("SELECT state, nextRun, data FROM jobs WHERE jobID=" + jobID + ";", result);
-        ASSERT_EQUAL(result[0][0], "RUNQUEUED");
-        ASSERT_EQUAL(result[0][1], before[0][0]);
-        STable updatedData = SParseJSONObject(result[0][2]);
-        ASSERT_EQUAL(updatedData["originalNextRun"], firstRun);
-        ASSERT_EQUAL(updatedData["phase"], "updated");
-        ASSERT_FALSE(SContains(updatedData, "obsolete"));
+            // Then only a data update preserves the stored originalNextRun, and caller data is still replaced
+            SQResult result;
+            tester->readDB("SELECT state, nextRun, data FROM jobs WHERE jobID=" + jobID + ";", result);
+            ASSERT_EQUAL(result[0][0], "RUNQUEUED");
+            ASSERT_EQUAL(result[0][1], shouldReschedule ? nextRun : before[0][0]);
+            STable updatedData = SParseJSONObject(result[0][2]);
+            ASSERT_EQUAL(updatedData["originalNextRun"], shouldReschedule ? "" : firstRun);
+            ASSERT_EQUAL(updatedData["phase"], "updated");
+            ASSERT_FALSE(SContains(updatedData, "obsolete"));
 
-        command.clear();
-        command.methodLine = "FinishJob";
-        command["jobID"] = jobID;
-        tester->executeWaitVerifyContent(command);
+            // When the job finishes
+            command.clear();
+            command.methodLine = "FinishJob";
+            command["jobID"] = jobID;
+            tester->executeWaitVerifyContent(command);
 
-        tester->readDB("SELECT state, nextRun, JSON_EXTRACT(data, '$.originalNextRun') FROM jobs WHERE jobID=" + jobID + ";", result);
-        SQResult expected;
-        tester->readDB("SELECT DATETIME(" + SQ(firstRun) + ", '+1 DAY');", expected);
-        ASSERT_EQUAL(result[0][0], "QUEUED");
-        ASSERT_EQUAL(result[0][1], expected[0][0]);
-        ASSERT_TRUE(result[0][2].empty());
-    }
-
-    void scheduleUpdateDoesNotRestoreOriginalNextRun()
-    {
-        SData command("CreateJob");
-        command["name"] = "schedule-update";
-        command["repeat"] = "SCHEDULED, +1 DAY";
-        command["retryAfter"] = "+5 MINUTES";
-        const string jobID = tester->executeWaitVerifyContentTable(command)["jobID"];
-
-        command.clear();
-        command.methodLine = "GetJob";
-        command["name"] = "schedule-update";
-        tester->executeWaitVerifyContent(command);
-
-        SQResult result;
-        tester->readDB("SELECT JSON_EXTRACT(data, '$.originalNextRun') FROM jobs WHERE jobID=" + jobID + ";", result);
-        ASSERT_FALSE(result[0][0].empty());
-
-        const string nextRun = SComposeTime("%Y-%m-%d %H:%M:%S", STimeNow() + STIME_US_PER_S * 60 * 60 * 24);
-        command.clear();
-        command.methodLine = "UpdateJob";
-        command["jobID"] = jobID;
-        command["data"] = "{\"phase\":\"rescheduled\"}";
-        command["nextRun"] = nextRun;
-        tester->executeWaitVerifyContent(command);
-
-        tester->readDB("SELECT nextRun, data FROM jobs WHERE jobID=" + jobID + ";", result);
-        ASSERT_EQUAL(result[0][0], nextRun);
-        ASSERT_EQUAL(result[0][1], "{\"phase\":\"rescheduled\"}");
+            // Then its next daily run uses the original schedule or the explicitly requested time
+            tester->readDB("SELECT state, nextRun, JSON_EXTRACT(data, '$.originalNextRun') FROM jobs WHERE jobID=" + jobID + ";", result);
+            SQResult expected;
+            tester->readDB("SELECT DATETIME(" + SQ(shouldReschedule ? nextRun : firstRun) + ", '+1 DAY');", expected);
+            ASSERT_EQUAL(result[0][0], "QUEUED");
+            ASSERT_EQUAL(result[0][1], expected[0][0]);
+            ASSERT_TRUE(result[0][2].empty());
+        }
     }
 
     void clearRepeatWithShouldClearRepeat()
