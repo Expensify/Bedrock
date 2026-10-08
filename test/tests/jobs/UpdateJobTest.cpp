@@ -123,11 +123,6 @@ struct UpdateJobTest : tpunit::TestFixture
         ASSERT_EQUAL(currentJob[0][3], "2020-01-01 00:00:00");
     }
 
-    /**
-     * Given a running SCHEDULED job whose worker data lacks originalNextRun,
-     * When UpdateJob replaces its data, with or without an explicit nextRun, and the job finishes,
-     * Then data updates keep the original schedule, while explicit reschedules use the requested time.
-     */
     void dataUpdatesPreserveOriginalNextRunUnlessRescheduled()
     {
         for (const bool shouldReschedule : {false, true}) {
