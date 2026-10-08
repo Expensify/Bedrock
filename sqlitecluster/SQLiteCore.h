@@ -16,6 +16,7 @@ public:
 
     // Commit the outstanding transaction on the DB.
     // Returns true on successful commit, false on conflict.
+    // On success, commitID and transactionHash identify the journal entry, or are zero/empty if none was recorded.
     bool commit(const SQLiteNode& node, uint64_t& commitID, string& transactionHash, const string& commandName, bool needsPluginNotifiation, void (*notificationHandler)(SQLite& _db, int64_t tableID) = nullptr, chrono::microseconds commitLockTimeout = chrono::hours(24), atomic<bool>* abortPtr = nullptr) noexcept;
 
     // Roll back a transaction if we've decided not to commit it.
