@@ -6,6 +6,8 @@
 #include <memory>
 #include <atomic>
 
+enum class SFatalSignalPhase;
+
 namespace tpunit {
 // Owns the terminal until finish() restores stdout/stderr and prints the report.
 class NcursesOutputWriter : public OutputWriter {
@@ -44,7 +46,7 @@ public:
 
 private:
     static atomic<NcursesOutputWriter*> activeSignalOutput;
-    static void restoreActiveOutputAfterSignal() noexcept;
+    static void handleFatalSignal(SFatalSignalPhase phase) noexcept;
 
     struct Impl;
     unique_ptr<Impl> impl;

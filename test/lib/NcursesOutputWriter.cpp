@@ -280,7 +280,7 @@ NcursesOutputWriter::NcursesOutputWriter() : impl(make_unique<Impl>())
         }
     });
     activeSignalOutput.store(this);
-    SSetFatalSignalHook(restoreActiveOutputAfterSignal);
+    SSetFatalSignalHook(handleFatalSignal);
 }
 
 NcursesOutputWriter::~NcursesOutputWriter()
@@ -395,7 +395,7 @@ void NcursesOutputWriter::restoreAfterSignal() noexcept
     write(STDERR_FILENO, newline, sizeof(newline) - 1);
 }
 
-void NcursesOutputWriter::restoreActiveOutputAfterSignal() noexcept
+void NcursesOutputWriter::handleFatalSignal(SFatalSignalPhase phase) noexcept
 {
     static_assert(decltype(activeSignalOutput)::is_always_lock_free);
     NcursesOutputWriter* output = activeSignalOutput.load();
@@ -404,17 +404,27 @@ void NcursesOutputWriter::restoreActiveOutputAfterSignal() noexcept
     if (!output || getpid() != output->impl->ownerPID) {
         return;
     }
-    output->restoreAfterSignal();
-    constexpr char message[] = "\n*** Fatal signal while running tests. Stack trace: ***\n\n";
-    write(STDERR_FILENO, message, sizeof(message) - 1);
+    int diagnosticFd = output->impl->captureFd;
+    if (phase == SFatalSignalPhase::TERMINATION) {
+        if (output->impl->stopMode.load() == 2) {
+            return;
+        }
+        output->restoreAfterSignal();
+        diagnosticFd = STDERR_FILENO;
+    }
+
+    // Keep the dashboard alive until termination is reached. If the handler throws and the test
+    // continues, finish() will replay this trace with the rest of the captured output.
+    constexpr char message[] = "\n*** Signal while running tests. Stack trace: ***\n\n";
+    write(diagnosticFd, message, sizeof(message) - 1);
 
     // Best-effort crash diagnostics, matching the runner's existing fatal-signal handler.
-    // Keep the trace bounded and write to stderr rather than relying on available disk space.
+    // Reprint directly to the terminal on termination in case the capture file ran out of space.
     void* frames[50];
     const int depth = backtrace(frames, 50);
-    backtrace_symbols_fd(frames, depth, STDERR_FILENO);
+    backtrace_symbols_fd(frames, depth, diagnosticFd);
     constexpr char newline[] = "\n";
-    write(STDERR_FILENO, newline, sizeof(newline) - 1);
+    write(diagnosticFd, newline, sizeof(newline) - 1);
 }
 
 void NcursesOutputWriter::runStarted(const vector<PlannedFixture>& plan)
