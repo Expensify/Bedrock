@@ -1193,7 +1193,8 @@ bool SQLite::trimJournalTable(size_t journalTableIndex, int64_t batchSize)
         return true;
     }
 
-    const bool committed = writeLocalUnreplicated("DELETE FROM " + journalName + " WHERE id < " + SQ(oldestCommitToKeep) + " ORDER BY id LIMIT " + SQ(batchSize) + ";");
+    const bool committed = writeLocalUnreplicated("DELETE FROM " + journalName + " WHERE id < " + SQ(oldestCommitToKeep) +
+                                                 (experimentalHCTree ? " ORDER BY id" : "") + " LIMIT " + SQ(batchSize) + ";");
     if (committed && experimentalHCTree && oldestCommitToKeep > _sharedData.legacyMaxID &&
         batchSize > 0 && getLastWriteChangeCount() < static_cast<uint64_t>(batchSize)) {
         retireLegacyJournal(journalTableIndex);
