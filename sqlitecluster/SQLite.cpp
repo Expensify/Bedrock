@@ -114,7 +114,7 @@ SQLite::SharedData& SQLite::initializeSharedData()
 
         // Read the highest commit count from the database.
         const string query = experimentalHCTree ? "SELECT MAX(cid) FROM hct_journal" :
-            "SELECT MAX(id) FROM (" + _getJournalQuery(_journalNames, {"SELECT MAX(id) AS id FROM"}, true) + ")";
+            "SELECT MAX(maxIDs) FROM (" + _getJournalQuery(_journalNames, {"SELECT MAX(id) as maxIDs FROM"}, true) + ")";
         SASSERT(!SQuery(_db, query, result));
         CommitState state{result.empty() ? 0 : SToUInt64(result[0][0]), 0, ""};
 
