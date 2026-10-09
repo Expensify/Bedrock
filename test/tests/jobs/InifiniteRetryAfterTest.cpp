@@ -14,37 +14,37 @@ struct InfiniteRetryAfterJobTest : tpunit::TestFixture
     {
     }
 
-    /**
-     * This tests that a job with a retryAfter won't get requeued forever.
-     * We want it to fail after 10 tries.
-     */
     void testInfiniteTries()
     {
+        // Given a job that automatically retries when its worker does not finish
         BedrockTester tester = BedrockTester({{"-plugins", "Jobs,DB"}}, {});
 
-        // Create a job
         SData createJob("CreateJob");
         createJob["name"] = "infinite-job";
         createJob["retryAfter"] = "+1 SECOND";
         const string jobID = tester.executeWaitVerifyContentTable(createJob)["jobID"];
 
-        // Get the job 10 times in a row
         for (size_t i = 0; i <= 10; ++i) {
+            // When a worker dequeues the job and writes back its snapshot without finishing
             SData getJobs("GetJob");
             getJobs["name"] = "infinite-job";
             STable getJobResponse = tester.executeWaitVerifyContentTable(getJobs);
+            if (i < 10) {
+                SData updateJob("UpdateJob");
+                updateJob["jobID"] = jobID;
+                updateJob["data"] = getJobResponse["data"];
+                tester.executeWaitVerifyContent(updateJob);
+            }
 
-            // Verify the job state:
+            // Then the stored count advances despite the stale snapshot, and the job fails after ten attempts
             SQResult result;
             tester.readDB("SELECT state, JSON_EXTRACT(data, '$.retryAfterCount') FROM jobs WHERE jobID = " + SQ(jobID) + ";", result);
             ASSERT_FALSE(result.empty());
             const string state = result[0][0];
             const size_t retryAfterCount = SToInt(result[0][1]);
             if (i == 10) {
-                // For the last loop, after the 10th time, it should be FAILED (and the jobs isn't returned, since it gets failed)
                 EXPECT_EQUAL(state, "FAILED");
             } else {
-                // For the first 10 times, it should be in the RUNQUEUED state
                 EXPECT_EQUAL(retryAfterCount, i + 1);
                 EXPECT_EQUAL(state, "RUNQUEUED");
                 EXPECT_EQUAL(getJobResponse["jobID"], jobID);
