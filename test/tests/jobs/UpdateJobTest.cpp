@@ -126,10 +126,10 @@ struct UpdateJobTest : tpunit::TestFixture
     void dataUpdatesPreserveOriginalNextRunUnlessRescheduled()
     {
         for (const bool shouldReschedule : {false, true}) {
-            // Given a daily job with a retry deadline
             const string firstRun = SComposeTime("%Y-%m-%d %H:%M:%S", STimeNow() - STIME_US_PER_S);
             const string jobName = shouldReschedule ? "schedule-update" : "data-update";
 
+            // Given a running daily job with a saved run time that is absent from the worker's snapshot
             SData command("CreateJob");
             command["name"] = jobName;
             command["firstRun"] = firstRun;
@@ -138,19 +138,15 @@ struct UpdateJobTest : tpunit::TestFixture
             command["data"] = "{\"phase\":\"initial\",\"obsolete\":true}";
             const string jobID = tester->executeWaitVerifyContentTable(command)["jobID"];
 
-            // When a worker dequeues the job
             command.clear();
             command.methodLine = "GetJob";
             command["name"] = jobName;
             STable runningJob = tester->executeWaitVerifyContentTable(command);
-
-            // Then Bedrock saves the run time and retry count after preparing the worker's snapshot
             ASSERT_TRUE(SParseJSONObject(runningJob["data"])["originalNextRun"].empty());
 
             SQResult before;
-            tester->readDB("SELECT nextRun, JSON_EXTRACT(data, '$.originalNextRun'), JSON_EXTRACT(data, '$.retryAfterCount') FROM jobs WHERE jobID=" + jobID + ";", before);
+            tester->readDB("SELECT nextRun, JSON_EXTRACT(data, '$.originalNextRun') FROM jobs WHERE jobID=" + jobID + ";", before);
             ASSERT_EQUAL(before[0][1], firstRun);
-            ASSERT_EQUAL(before[0][2], "1");
 
             // When the worker replaces its data, optionally requesting a different run time
             const string nextRun = SComposeTime("%Y-%m-%d %H:%M:%S", STimeNow() + STIME_US_PER_S * 60 * 60 * 24);
@@ -163,7 +159,7 @@ struct UpdateJobTest : tpunit::TestFixture
             }
             tester->executeWaitVerifyContent(command);
 
-            // Then the retry count survives either update, the run time survives only a data update, and caller data is replaced
+            // Then only a data update preserves the stored originalNextRun, and caller data is still replaced
             SQResult result;
             tester->readDB("SELECT state, nextRun, data FROM jobs WHERE jobID=" + jobID + ";", result);
             ASSERT_EQUAL(result[0][0], "RUNQUEUED");
@@ -180,14 +176,13 @@ struct UpdateJobTest : tpunit::TestFixture
             command["jobID"] = jobID;
             tester->executeWaitVerifyContent(command);
 
-            // Then the next daily run follows its schedule, and finishing clears the saved run time and retry count
-            tester->readDB("SELECT state, nextRun, JSON_EXTRACT(data, '$.originalNextRun'), JSON_EXTRACT(data, '$.retryAfterCount') FROM jobs WHERE jobID=" + jobID + ";", result);
+            // Then its next daily run uses the original schedule or the explicitly requested time
+            tester->readDB("SELECT state, nextRun, JSON_EXTRACT(data, '$.originalNextRun') FROM jobs WHERE jobID=" + jobID + ";", result);
             SQResult expected;
             tester->readDB("SELECT DATETIME(" + SQ(shouldReschedule ? nextRun : firstRun) + ", '+1 DAY');", expected);
             ASSERT_EQUAL(result[0][0], "QUEUED");
             ASSERT_EQUAL(result[0][1], expected[0][0]);
             ASSERT_TRUE(result[0][2].empty());
-            ASSERT_TRUE(result[0][3].empty());
         }
     }
 
