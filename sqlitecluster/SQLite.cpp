@@ -968,7 +968,7 @@ bool SQLite::_writeIdempotent(const string& query, const map<string, Parameter>&
     // If we got a constraints error, throw that.
     if (resultCode == SQLITE_CONSTRAINT) {
         _currentlyWriting = false;
-        throw constraint_error();
+        throw constraint_error(sqlite3_extended_errcode(_db), sqlite3_errmsg(_db));
     }
 
     _writeElapsed += STimeNow() - before;

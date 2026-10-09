@@ -343,7 +343,10 @@ BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& comm
             const string& requestOrigin = request["requestOrigin"];
             originSuffix = ", origin: " + (requestOrigin.empty() ? "unknown"s : requestOrigin);
         }
-        SWARN("Unique Constraints Violation, command: " << request.methodLine << originSuffix);
+        SWARN("Constraint Violation, command: " << request.methodLine << originSuffix
+              << ", extended result code: " << e.getExtendedResultCode() << ", error: " << e.getMessage());
+
+        // Callers match this exact response for constraint errors, regardless of the constraint type.
         command->response.methodLine = "400 Unique Constraints Violation";
         _db.rollback(command->getMethodName());
         needsCommit = false;
