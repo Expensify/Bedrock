@@ -1169,6 +1169,8 @@ void BedrockJobsCommand::process(SQLite& db)
                 if (!SStartsWith(job["name"], "manual")) {
                     // Set this so we don't retry infinitely for non manual jobs (see above)
                     // We also set originalNextRun so we don't lose track of the original nextRun (which we are overriding here)
+                    // If we add new fields here that should be kept during job updates,
+                    // make sure UpdateJob keeps them too.
                     dataUpdateQuery = ", data = JSON_SET(data, '$.retryAfterCount', COALESCE(JSON_EXTRACT(data, '$.retryAfterCount'), 0) + 1" + (isRepeatBasedOnScheduledTime ? ", '$.originalNextRun', " + SQ(job["nextRun"]) + ") ": ") ");
                 }
                 string updateQuery = "UPDATE jobs "
@@ -1272,17 +1274,20 @@ void BedrockJobsCommand::process(SQLite& db)
             newNextRun = SQ(request["nextRun"]);
         }
 
+        // Preserve the stored retry count even if the worker sends an older value. FinishJob and RetryJob reset it.
+        string updatedDataSQL = "IIF(JSON_TYPE(data, '$.retryAfterCount') IS NOT NULL, "
+            "JSON_SET(" + SQ(newData) + ", '$.retryAfterCount', JSON_EXTRACT(data, '$.retryAfterCount')), " + SQ(newData) + ")";
+
         // GetJob returns data before it stores originalNextRun. Keep that anchor when the schedule is unchanged.
-        string newDataExpression = SQ(newData);
         if (request["repeat"].empty() && request["nextRun"].empty() && !SToInt(request["shouldClearRepeat"])) {
-            newDataExpression = "IIF(JSON_TYPE(data, '$.originalNextRun') = 'text', "
-                "JSON_SET(" + newDataExpression + ", '$.originalNextRun', JSON_EXTRACT(data, '$.originalNextRun')), " +
-                newDataExpression + ")";
+            updatedDataSQL = "IIF(JSON_TYPE(data, '$.originalNextRun') = 'text', "
+                "JSON_SET(" + updatedDataSQL + ", '$.originalNextRun', JSON_EXTRACT(data, '$.originalNextRun')), " +
+                updatedDataSQL + ")";
         }
 
         // Update the data
         if (!db.writeIdempotent("UPDATE jobs "
-                                "SET data = " + preserveRerunIfDataChangedSQL(newDataExpression) +
+                                "SET data = " + preserveRerunIfDataChangedSQL(updatedDataSQL) +
                                 (SToInt(request["shouldClearRepeat"]) ? ", repeat=''" :
                                  request["repeat"].size() ? ", repeat=" + SQ(SToUpper(request["repeat"])) : "") +
                                 (!newNextRun.empty() ? ", nextRun=" + newNextRun : "") +

@@ -166,6 +166,7 @@ struct UpdateJobTest : tpunit::TestFixture
             ASSERT_EQUAL(result[0][1], shouldReschedule ? nextRun : before[0][0]);
             STable updatedData = SParseJSONObject(result[0][2]);
             ASSERT_EQUAL(updatedData["originalNextRun"], shouldReschedule ? "" : firstRun);
+            ASSERT_EQUAL(updatedData["retryAfterCount"], "1");
             ASSERT_EQUAL(updatedData["phase"], "updated");
             ASSERT_FALSE(SContains(updatedData, "obsolete"));
 
