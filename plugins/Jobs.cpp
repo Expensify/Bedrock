@@ -1169,8 +1169,8 @@ void BedrockJobsCommand::process(SQLite& db)
                 if (!SStartsWith(job["name"], "manual")) {
                     // Set this so we don't retry infinitely for non manual jobs (see above)
                     // We also set originalNextRun so we don't lose track of the original nextRun (which we are overriding here)
-                    // Workers receive data before these fields are updated. UpdateJob preserves retryAfterCount,
-                    // and preserves originalNextRun only when the schedule is unchanged.
+                    // If we add new fields here that should be kept during job updates,
+                    // make sure UpdateJob keeps them too.
                     dataUpdateQuery = ", data = JSON_SET(data, '$.retryAfterCount', COALESCE(JSON_EXTRACT(data, '$.retryAfterCount'), 0) + 1" + (isRepeatBasedOnScheduledTime ? ", '$.originalNextRun', " + SQ(job["nextRun"]) + ") ": ") ");
                 }
                 string updateQuery = "UPDATE jobs "
