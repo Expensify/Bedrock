@@ -1,3 +1,4 @@
+#include <libstuff/JSON/Value.h>
 #include <libstuff/SData.h>
 #include <test/lib/BedrockTester.h>
 
@@ -15,20 +16,21 @@ struct CommandPortTest : tpunit::TestFixture
         // When we close the command port with a reason
         SData closeCommandPort("SuppressCommandPort");
         closeCommandPort["reason"] = "testCommandPort";
-        STable response = SParseJSONObject(tester.executeWaitMultipleData({closeCommandPort})[0].content);
+        tester.executeWaitMultipleData({closeCommandPort});
+        JSON::Value response;
 
         // The status command should show it in commandPortBlockReasons
         SData status("Status");
-        response = SParseJSONObject(tester.executeWaitMultipleData({status}, 10, true)[0].content);
-        ASSERT_EQUAL(SParseJSONArray(response["commandPortBlockReasons"]), list<string>{"testCommandPort"});
+        response = JSON::Value::parse(tester.executeWaitMultipleData({status}, 10, true)[0].content);
+        ASSERT_EQUAL(static_cast<list<string>>(response["commandPortBlockReasons"]), list<string>{"testCommandPort"});
 
         // When we run ClearCommandPort with a reason different from the one used to close it
         SData badClearCommandPort("ClearCommandPort");
         tester.executeWaitMultipleData({badClearCommandPort}, 10, true);
 
         // The command port should stay close and the status command should still show the reason the port is closed in commandPortBlockReasons
-        response = SParseJSONObject(tester.executeWaitMultipleData({status}, 10, true)[0].content);
-        ASSERT_EQUAL(SParseJSONArray(response["commandPortBlockReasons"]), list<string>{"testCommandPort"});
+        response = JSON::Value::parse(tester.executeWaitMultipleData({status}, 10, true)[0].content);
+        ASSERT_EQUAL(static_cast<list<string>>(response["commandPortBlockReasons"]), list<string>{"testCommandPort"});
 
         // When we run ClearCommandPort with the same reason as the one used to close it
         SData clearCommandPort("ClearCommandPort");
@@ -36,18 +38,18 @@ struct CommandPortTest : tpunit::TestFixture
         tester.executeWaitMultipleData({clearCommandPort}, 10, true);
 
         // Then the command port should open and the reason should be removed from commandPortBlockReasons
-        response = SParseJSONObject(tester.executeWaitMultipleData({status})[0].content);
-        ASSERT_EQUAL(SParseJSONArray(response["commandPortBlockReasons"]), list<string>{});
+        response = JSON::Value::parse(tester.executeWaitMultipleData({status})[0].content);
+        ASSERT_EQUAL(static_cast<list<string>>(response["commandPortBlockReasons"]), list<string>{});
 
         SData setMaxOutstandingWALFrames("SetMaxOutstandingWALFrames");
         setMaxOutstandingWALFrames["maxOutstandingWALFrames"] = "300000";
         tester.executeWaitMultipleData({setMaxOutstandingWALFrames}, 10, true);
-        response = SParseJSONObject(tester.executeWaitMultipleData({status}, 10, true)[0].content);
-        ASSERT_EQUAL(response["maxOutstandingWALFrames"], "300000");
+        response = JSON::Value::parse(tester.executeWaitMultipleData({status}, 10, true)[0].content);
+        ASSERT_EQUAL(response["maxOutstandingWALFrames"].getUint(), 300000);
 
         setMaxOutstandingWALFrames["maxOutstandingWALFrames"] = "0";
         tester.executeWaitMultipleData({setMaxOutstandingWALFrames}, 10, true);
-        response = SParseJSONObject(tester.executeWaitMultipleData({status}, 10, true)[0].content);
-        ASSERT_EQUAL(response["maxOutstandingWALFrames"], "0");
+        response = JSON::Value::parse(tester.executeWaitMultipleData({status}, 10, true)[0].content);
+        ASSERT_EQUAL(response["maxOutstandingWALFrames"].getUint(), 0);
     }
 } __CommandPortTest;
