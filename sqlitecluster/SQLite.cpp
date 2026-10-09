@@ -1729,7 +1729,9 @@ bool SQLite::getCommit(uint64_t id, string* query, string* hash)
 {
     // Look up the query and/or hash (whichever are supplied) for the given commit
     string firstQueryPart = "SELECT "s + (query ? "decompress(query)" : "1") + ", " + (hash ? "hash" : "1") + " FROM";
-    string internalQuery = firstQueryPart + " (" + _getJournalEntriesQuery(id, id) + ")";
+    string internalQuery = _hctree && hctreeExperimentalMode ?
+        firstQueryPart + " (" + _getJournalEntriesQuery(id, id) + ")" :
+        _getJournalQuery(_journalNames, {firstQueryPart, "WHERE id = " + SQ(id)});
     SQResult result;
     SASSERT(!SQuery(_db, internalQuery, result));
     if (result.empty()) {
