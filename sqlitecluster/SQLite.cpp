@@ -1780,7 +1780,10 @@ int SQLite::getCompressedCommits(uint64_t fromIndex, uint64_t toIndex, SQResult&
 {
     // Look up all the queries within that range. Returns raw query data which may be compressed.
     SASSERTWARN(fromIndex >= 1 && (!toIndex || fromIndex <= toIndex));
-    string query = "SELECT hash, query FROM (" + _getJournalEntriesQuery(fromIndex, toIndex) + ") ORDER BY id";
+    string entriesQuery = _hctree && hctreeExperimentalMode ? _getJournalEntriesQuery(fromIndex, toIndex) :
+        _getJournalQuery(_journalNames, {"SELECT id, hash, query FROM", "WHERE id >= " + SQ(fromIndex) +
+                                       (toIndex ? " AND id <= " + SQ(toIndex) : "")});
+    string query = "SELECT hash, query FROM (" + entriesQuery + ") ORDER BY id";
     SDEBUG("Getting commits #" << fromIndex << "-" << toIndex);
     if (timeoutLimitUS) {
         setTimeout(timeoutLimitUS);
