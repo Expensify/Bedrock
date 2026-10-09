@@ -1194,7 +1194,7 @@ bool SQLite::trimJournalTable(size_t journalTableIndex, int64_t batchSize)
     }
 
     const bool committed = writeLocalUnreplicated("DELETE FROM " + journalName + " WHERE id < " + SQ(oldestCommitToKeep) +
-                                                 (experimentalHCTree ? " ORDER BY id" : "") + " LIMIT " + SQ(batchSize) + ";");
+                                                  (experimentalHCTree ? " ORDER BY id" : "") + " LIMIT " + SQ(batchSize) + ";");
     if (committed && experimentalHCTree && oldestCommitToKeep > _sharedData.legacyMaxID &&
         batchSize > 0 && getLastWriteChangeCount() < static_cast<uint64_t>(batchSize)) {
         retireLegacyJournal(journalTableIndex);
@@ -1783,7 +1783,7 @@ int SQLite::getCompressedCommits(uint64_t fromIndex, uint64_t toIndex, SQResult&
     SASSERTWARN(fromIndex >= 1 && (!toIndex || fromIndex <= toIndex));
     string entriesQuery = _hctree && hctreeExperimentalMode ? _getJournalEntriesQuery(fromIndex, toIndex) :
         _getJournalQuery(_journalNames, {"SELECT id, hash, query FROM", "WHERE id >= " + SQ(fromIndex) +
-                                       (toIndex ? " AND id <= " + SQ(toIndex) : "")});
+                                         (toIndex ? " AND id <= " + SQ(toIndex) : "")});
     string query = "SELECT hash, query FROM (" + entriesQuery + ") ORDER BY id";
     SDEBUG("Getting commits #" << fromIndex << "-" << toIndex);
     if (timeoutLimitUS) {
