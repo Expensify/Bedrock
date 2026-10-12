@@ -44,6 +44,13 @@ public:
     // accepting requests. Otherwise, returns as soon as the control port is open and can return `Status`.
     string startServer(bool wait = true);
 
+    // Launch without a readiness check, for tests that expect startup or synchronization to abort.
+    void startServerInBackground();
+
+    // Wait for an expected exit, killing and reaping the child on timeout. Returns false on timeout/error.
+    static bool waitForProcessExit(int pid, int& status, uint64_t timeoutUS = 15'000'000);
+    bool waitForExit(int& status, uint64_t timeoutUS = 15'000'000);
+
     // Stop a server by sending it a signal.
     virtual void stopServer(int signal = SIGTERM);
 
