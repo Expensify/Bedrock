@@ -15,7 +15,7 @@
  * -except          : comma separated list of tests to skip.
  * -dontStartServer : Doesn't start the server, just prints the command that would have been run.
  * -wait            : Waits before running tests, in case you want to connect with the debugger.
- * -useNewOutput    : Shows a live test dashboard when running in a terminal.
+ * -useNewOutput    : Show the live test dashboard in a terminal (default). Pass false for console output.
  */
 
 static tpunit::NcursesOutputWriter* activeOutput = nullptr;
@@ -118,7 +118,10 @@ int main(int argc, char* argv[])
     int retval = 0;
     tpunit::ConsoleOutputWriter outputWriter(args.isSet("-v"));
     unique_ptr<tpunit::NcursesOutputWriter> newOutput;
-    if (args.isSet("-useNewOutput") && tpunit::NcursesOutputWriter::available()) {
+    const bool shouldUseNewOutput = !args.isSet("-useNewOutput") ||
+        args["-useNewOutput"].empty() ||
+        args.test("-useNewOutput");
+    if (shouldUseNewOutput && tpunit::NcursesOutputWriter::available()) {
         try {
             newOutput = make_unique<tpunit::NcursesOutputWriter>();
             activeOutput = newOutput.get();
