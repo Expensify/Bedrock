@@ -256,6 +256,7 @@ int main(int argc, char* argv[])
         << endl;
         cout << "-journalDeleterBatchSize <#rows>  Number of journal rows the background deleter removes per pass, 0 to pause trimming (default 10)"
         << endl;
+        cout << "-hctreeExperimentalMode        Enable experimental HC-Tree features" << endl;
         cout << "-maxOutstandingWALFrames <#frames>  Close the public command port above this many outstanding WAL frames, 0 to disable (default 200000)"
         << endl;
         cout << "-checkpointMode <mode>      Accepts PASSIVE|FULL|RESTART|TRUNCATE, which is the value passed to https://www.sqlite.org/c3ref/wal_checkpoint_v2.html" << endl;
@@ -341,6 +342,8 @@ int main(int argc, char* argv[])
 
     // We default to PASSIVE checkpoint everywhere as that has been the value proven to work fine for many years.
     SETDEFAULT("-checkpointMode", "PASSIVE");
+
+    SQLite::hctreeExperimentalMode = args.isSet("-hctreeExperimentalMode");
 
     // Reset the database if requested
     if (args.isSet("-clean") || args.isSet("-bootstrap")) {

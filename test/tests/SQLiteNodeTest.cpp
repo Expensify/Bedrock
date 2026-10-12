@@ -271,33 +271,33 @@ struct SQLiteNodeTest : tpunit::TestFixture
     {
         {
             SQLite& db = dbPool->getBase();
-            ASSERT_EQUAL(db.getCommitCount(), 0ull);
+            ASSERT_EQUAL(db.getCommitCount(), 1ull);
             SQLiteNode node(server, dbPool, "test", "", peerList, configuredPriority, maxOutstandingWALFrames, 1000000000, "1.0");
             SQLitePeer* peer = node.getPeerByName("peer1");
             SData response("SYNCHRONIZE_RESPONSE");
             response["NumCommits"] = "2";
-            for (int i = 1; i <= 2; ++i) {
+            for (int i = 2; i <= 3; ++i) {
                 SData commit("COMMIT");
                 commit["CommitIndex"] = to_string(i);
                 commit["Hash"] = "";
                 response.content += commit.serialize();
             }
             node._recvSynchronize(peer, response);
-            EXPECT_EQUAL(db.getCommitCount(), 2ull);
+            EXPECT_EQUAL(db.getCommitCount(), 3ull);
             EXPECT_EQUAL(db.getCommitState().hashCommitID, 0ull);
             EXPECT_TRUE(db.getCommittedHash().empty());
-            peer->setCommit(1, "", 0);
+            peer->setCommit(2, "", 0);
             SData outgoing("SYNCHRONIZE_RESPONSE");
             node._queueSynchronize(&node, peer, db, outgoing, true);
             EXPECT_EQUAL(outgoing["NumCommits"], "1");
             EXPECT_FALSE(outgoing.isSet("hashMismatchNumber"));
-            peer->setCommit(1, "nonblank hash", 1);
+            peer->setCommit(2, "nonblank hash", 2);
             SData mismatch("SYNCHRONIZE_RESPONSE");
             node._queueSynchronize(&node, peer, db, mismatch, true);
             EXPECT_TRUE(mismatch.isSet("hashMismatchNumber"));
         }
         restartDB();
-        EXPECT_EQUAL(dbPool->getBase().getCommitCount(), 2ull);
+        EXPECT_EQUAL(dbPool->getBase().getCommitCount(), 3ull);
         EXPECT_EQUAL(dbPool->getBase().getCommitState().hashCommitID, 0ull);
         EXPECT_TRUE(dbPool->getBase().getCommittedHash().empty());
     }
