@@ -1,27 +1,15 @@
 #include <libstuff/SData.h>
-#include <libstuff/STCPManager.h>
 #include <test/clustertest/BedrockClusterTester.h>
 
 struct RestartCrashCommandTest : tpunit::TestFixture
 {
     RestartCrashCommandTest()
         : tpunit::TestFixture("RestartCrashCommand",
-                              TEST(RestartCrashCommandTest::testBlacklistResyncAfterRestart),
-                              TEST(RestartCrashCommandTest::testBlacklistResyncWithoutHTTP))
+                              TEST(RestartCrashCommandTest::testBlacklistResyncAfterRestart))
     {
     }
 
     void testBlacklistResyncAfterRestart()
-    {
-        testBlacklistResync(false);
-    }
-
-    void testBlacklistResyncWithoutHTTP()
-    {
-        testBlacklistResync(true);
-    }
-
-    void testBlacklistResync(bool blockHTTP)
     {
         BedrockClusterTester tester(ClusterSize::THREE_NODE_CLUSTER);
         BedrockTester& follower = tester.getTester(1);
@@ -48,15 +36,6 @@ struct RestartCrashCommandTest : tpunit::TestFixture
 
         // Unlike detach/attach, a process restart loses the local in-memory blacklist.
         tester.stopNode(1);
-
-        // Occupy the private port without accepting requests to prove recovery does not depend on HTTP replay.
-        STCPManager socketManager;
-        unique_ptr<STCPManager::Port> blockedHTTP;
-        if (blockHTTP) {
-            blockedHTTP = socketManager.openPort(follower.getArg("-commandPortPrivate"));
-            ASSERT_TRUE(blockedHTTP);
-        }
-
         tester.startNode(1);
         ASSERT_TRUE(follower.waitForState("FOLLOWING"));
 

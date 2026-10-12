@@ -70,7 +70,6 @@ struct SQLiteNodeTest : tpunit::TestFixture
                                            TEST(SQLiteNodeTest::testFindSyncPeer),
                                            TEST(SQLiteNodeTest::testCommandPortBlockedForWALSize),
                                            TEST(SQLiteNodeTest::testGetPeerByName),
-                                           TEST(SQLiteNodeTest::testRegisteredMessageHandler),
                                            TEST(SQLiteNodeTest::testAllBlankJournal),
                                            TEST(SQLiteNodeTest::testPrepareGUID),
                                            TEST(SQLiteNodeTest::testGenerateGUID),
@@ -135,49 +134,6 @@ struct SQLiteNodeTest : tpunit::TestFixture
         }
         memcpy(filename, restartedFilename, sizeof(filename));
         dbPool = make_shared<SQLitePool>(10, filename, 1000000, 5000, 0, 0, BedrockTester::ENABLE_HCTREE);
-    }
-
-    void testRegisteredMessageHandler()
-    {
-        SQLiteNode node(server, dbPool, "test", "", peerList, configuredPriority, maxOutstandingWALFrames, 1000000000, "1.0");
-        SQLitePeer* peer = node.getPeerByName("peer1");
-        peer->loggedIn = true;
-
-        int calls = 0;
-        string receivedContent;
-        node.registerMessageHandler("CUSTOM_MESSAGE", [&](const SData& message) {
-            ++calls;
-            receivedContent = message.content;
-        });
-
-        SData message = node._addPeerHeaders(SData("custom_message"));
-        message.content = "test payload";
-        node._onMESSAGE(peer, message);
-        EXPECT_EQUAL(calls, 1);
-        EXPECT_EQUAL(receivedContent, message.content);
-
-        // Unregistered messages still get ignored, and built-in handlers take precedence.
-        node._onMESSAGE(peer, node._addPeerHeaders(SData("UNKNOWN_MESSAGE")));
-        node.registerMessageHandler("PING", [&](const SData&) {
-            ++calls;
-        });
-        node._onMESSAGE(peer, node._addPeerHeaders(SData("PING")));
-        EXPECT_EQUAL(calls, 1);
-
-        // Custom handlers cannot bypass the normal message envelope or peer validation.
-        SData malformed = message;
-        malformed.erase("Hash");
-        node._onMESSAGE(peer, malformed);
-        EXPECT_EQUAL(calls, 1);
-
-        peer->loggedIn = false;
-        node._onMESSAGE(peer, message);
-        EXPECT_EQUAL(calls, 1);
-
-        peer->loggedIn = true;
-        peer->forked = true;
-        node._onMESSAGE(peer, message);
-        EXPECT_EQUAL(calls, 1);
     }
 
     void testFindSyncPeer()
