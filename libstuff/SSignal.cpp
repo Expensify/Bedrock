@@ -10,6 +10,14 @@
 #include <format>
 
 thread_local function<string()> SSignalHandlerDieFunc;
+static atomic<void (*)(SFatalSignalPhase) noexcept> fatalSignalHook{nullptr};
+
+void SSetFatalSignalHook(void (*hook)(SFatalSignalPhase) noexcept) noexcept
+{
+    static_assert(decltype(fatalSignalHook)::is_always_lock_free);
+    fatalSignalHook.store(hook);
+}
+
 void SSetSignalHandlerDieFunc(function<string()>&& func)
 {
     SSignalHandlerDieFunc = move(func);
@@ -215,6 +223,10 @@ void _SSignal_StackTrace(int signum, siginfo_t* info, void* ucontext)
         if (!_SSignal_threadCaughtSignalNumber) {
             _SSignal_threadCaughtSignalNumber = signum;
 
+            if (const auto hook = fatalSignalHook.load()) {
+                hook(SFatalSignalPhase::DIAGNOSTICS);
+            }
+
             SWARN("Signal " << strsignal(_SSignal_threadCaughtSignalNumber) << "(" << _SSignal_threadCaughtSignalNumber << ") caused crash, logging stack trace.");
 
             // What we'd like to do here is log a stack trace to syslog. Unfortunately, neither computing the stack
@@ -301,9 +313,16 @@ void _SSignal_StackTrace(int signum, siginfo_t* info, void* ucontext)
         // If we weren't already in ABORT, we'll call that. The second call will skip the above callstack generation.
         if (signum != SIGABRT) {
             SWARN("Aborting.");
-            abort();
         } else {
             SWARN("Already in ABORT.");
+        }
+
+        // Notify only after diagnostic handling completes; it can throw before reaching this point.
+        if (const auto hook = fatalSignalHook.load()) {
+            hook(SFatalSignalPhase::TERMINATION);
+        }
+        if (signum != SIGABRT) {
+            abort();
         }
     } else {
         SALERT("Non-signal thread got signal " << strsignal(signum) << "(" << signum << "), which wasn't expected");

@@ -33,6 +33,12 @@ struct InfiniteRetryAfterJobTest : tpunit::TestFixture
             SData getJobs("GetJob");
             getJobs["name"] = "infinite-job";
             STable getJobResponse = tester.executeWaitVerifyContentTable(getJobs);
+            if (i < 10) {
+                SData updateJob("UpdateJob");
+                updateJob["jobID"] = jobID;
+                updateJob["data"] = getJobResponse["data"];
+                tester.executeWaitVerifyContent(updateJob);
+            }
 
             // Verify the job state:
             SQResult result;

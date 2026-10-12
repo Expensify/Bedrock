@@ -72,6 +72,7 @@ jobs:
         name: bedrock-binaries
         path: |
           bedrock
+          bedrock-test-port-server
           test/test
           test/clustertest/clustertest
           test/clustertest/testplugin/testplugin.so
@@ -115,6 +116,13 @@ jobs:
       env:
         ENABLE_HCTREE: "false"
       run: "./ci_tests.sh"
+    - name: Upload crash logs
+      if: failure()
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: bedrock-crash-logs
+        path: /tmp/bedrock_crash_*.log
+        if-no-files-found: ignore
   BedrockTestsWithHCTree:
     name: "Bedrock Tests with HCTree"
     runs-on: blacksmith-4vcpu-ubuntu-2404
@@ -150,6 +158,13 @@ jobs:
       run: exit 1
     - name: Run tests
       run: "ENABLE_HCTREE=true ./ci_tests.sh"
+    - name: Upload crash logs
+      if: failure()
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: bedrock-crash-logs-hctree
+        path: /tmp/bedrock_crash_*.log
+        if-no-files-found: ignore
   Upload_Bedrock_Binaries:
     name: "Upload Bedrock Binaries"
     if: "${{ startsWith(github.ref, 'refs/tags/') }}"

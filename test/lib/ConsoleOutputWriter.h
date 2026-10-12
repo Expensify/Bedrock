@@ -198,6 +198,6 @@ inline void ConsoleOutputWriter::runFinished(const RunResult& result)
         << (static_cast<double>(testTime.first.count()) / totalTestTime) * 100.0
         << "% of total test time" << endl;
     }
-    output << "Total test time across threads: " << totalTestTime << "ms" << endl;
+    output << "Total test time across threads: " << totalTestTime << "ms\n" << endl;
 }
 }

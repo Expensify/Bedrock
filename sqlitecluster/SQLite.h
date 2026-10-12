@@ -59,7 +59,8 @@ private:
     // re-runs the command after the other command (the `DELETE`) has finished.
     class constraint_error : public exception {
 public:
-        constraint_error()
+        constraint_error(int extendedResultCode = SQLITE_CONSTRAINT, const string& message = "constraint_error")
+            : _extendedResultCode(extendedResultCode), _message(message)
         {
         };
         virtual ~constraint_error()
@@ -69,6 +70,20 @@ public:
         {
             return "constraint_error";
         }
+
+        int getExtendedResultCode() const noexcept
+        {
+            return _extendedResultCode;
+        }
+
+        const string& getMessage() const noexcept
+        {
+            return _message;
+        }
+
+private:
+        int _extendedResultCode;
+        string _message;
     };
 
     // Constant to use like a sqlite result code when commits are disabled (see: https://www.sqlite.org/rescode.html)
