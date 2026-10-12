@@ -65,7 +65,7 @@ class SQLiteNode : public STCPManager {
     friend class SQLiteNodeTester;
 
 public:
-    using MessageHandler = function<void(const SData&)>;
+    using MessageHandler = function<void (const SData&)>;
 
     // This is a globally accessible pointer to some node instance. The intention here is to let signal handling code attempt to kill outstanding
     // peer connections on this node before shutting down. Generally, there is only a single node instance per application, and this will
