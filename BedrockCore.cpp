@@ -7,15 +7,6 @@ BedrockCore::BedrockCore(SQLite& db, const BedrockServer& server) : SQLiteCore(d
 {
 }
 
-static uint64_t blockingCommandTimeoutMS(const BedrockCommand& command)
-{
-    // Reimbursement batches need more time to finish while holding the exclusive transaction.
-    if (SIEquals(command.request.methodLine, "BatchReimbursements")) {
-        return 30'000;
-    }
-    return command.isSynchronous ? BedrockCommand::SYNCHRONOUS_COMMAND_TIMEOUT : BedrockCommand::DEFAULT_PROCESS_TIMEOUT;
-}
-
 // RAII-style mechanism for automatically setting and unsetting query rewriting
 class AutoScopeRewrite {
 public:
@@ -177,7 +168,7 @@ BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command
             }
 
             if (exclusive) {
-                decreaseCommandTimeout(command, blockingCommandTimeoutMS(*command));
+                decreaseCommandTimeout(command, _blockingCommandTimeoutMS(*command));
             }
 
             // We start the timer here to avoid including the time spent acquiring the lock _sharedData.commitLock
@@ -279,7 +270,7 @@ BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& comm
             }
 
             if (exclusive) {
-                decreaseCommandTimeout(command, blockingCommandTimeoutMS(*command));
+                decreaseCommandTimeout(command, _blockingCommandTimeoutMS(*command));
             }
         }
 
@@ -494,4 +485,13 @@ void BedrockCore::decreaseCommandTimeout(unique_ptr<BedrockCommand>& command, ui
         _db.setTimeout(newRemainingTimeUS);
         SINFO("Decreased command timeout from " << STIMESTAMP(STimeNow() + remainingTimeUS.count()) << " to " << STIMESTAMP(STimeNow() + newRemainingTimeUS.count()));
     }
+}
+
+uint64_t BedrockCore::_blockingCommandTimeoutMS(const BedrockCommand& command)
+{
+    // Reimbursement batches need more time to finish while holding the exclusive transaction.
+    if (SIEquals(command.request.methodLine, "BatchReimbursements")) {
+        return 30'000;
+    }
+    return command.isSynchronous ? BedrockCommand::SYNCHRONOUS_COMMAND_TIMEOUT : BedrockCommand::DEFAULT_PROCESS_TIMEOUT;
 }

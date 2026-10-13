@@ -76,6 +76,9 @@ private:
     static chrono::microseconds getRemainingTime(const unique_ptr<BedrockCommand>& command, bool isProcessing);
 
 private:
+    // Maximum time an exclusive transaction may hold the blocking commit thread, in milliseconds.
+    static uint64_t _blockingCommandTimeoutMS(const BedrockCommand& command);
+
     // When called in the context of handling an exception, returns the demangled (if possible) name of the exception.
     string _getExceptionName();
 
