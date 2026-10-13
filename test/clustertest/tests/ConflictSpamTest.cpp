@@ -1,3 +1,4 @@
+#include <libstuff/JSON/Utils.h>
 #include <libstuff/SData.h>
 #include <libstuff/SQResult.h>
 #include <test/clustertest/BedrockClusterTester.h>
@@ -138,14 +139,14 @@ struct ConflictSpamTest : tpunit::TestFixture
 
     STable journalState(BedrockTester& node)
     {
-        return SParseJSONObject(node.executeWaitVerifyContent(SData("getjournalteststate")));
+        return JSON::Utils::toSTable(JSON::Value::parse(node.executeWaitVerifyContent(SData("getjournalteststate"))));
     }
 
     void verifyPeerCommit(BedrockTester& observer, const string& peerName, const STable& expected)
     {
-        const STable status = SParseJSONObject(observer.executeWaitVerifyContent(SData("Status"), "200", true));
-        for (const string& entry : SParseJSONArray(status.at("peerList"))) {
-            const STable peer = SParseJSONObject(entry);
+        const JSON::Value status = JSON::Value::parse(observer.executeWaitVerifyContent(SData("Status"), "200", true));
+        for (const auto& entry : JSON::ConstArrayValue(status["peerList"])) {
+            const STable peer = JSON::Utils::toSTable(entry);
             if (peer.at("name") == peerName) {
                 EXPECT_EQUAL(peer.at("commitCount"), expected.at("commitCount"));
                 EXPECT_EQUAL(peer.at("hashCommitID"), expected.at("hashCommitID"));
