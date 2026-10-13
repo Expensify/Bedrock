@@ -1,3 +1,4 @@
+#include <libstuff/JSON/Utils.h>
 #include <libstuff/SData.h>
 #include <libstuff/SQResult.h>
 #include <test/lib/BedrockTester.h>
@@ -35,7 +36,7 @@ struct JournalRoutingTest : tpunit::TestFixture
         command["to"] = to_string(to);
         command["rounds"] = to_string(rounds);
         command["batchSize"] = to_string(batchSize);
-        return SParseJSONObject(node.executeWaitVerifyContent(command));
+        return JSON::Utils::toSTable(JSON::Value::parse(node.executeWaitVerifyContent(command)));
     }
 
     string expectedRows(BedrockTester& node, uint64_t from, uint64_t to)
