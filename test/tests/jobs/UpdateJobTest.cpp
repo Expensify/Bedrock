@@ -1,3 +1,4 @@
+#include <libstuff/JSON/Value.h>
 #include <libstuff/SData.h>
 #include <libstuff/SQResult.h>
 #include <test/lib/BedrockTester.h>
@@ -142,7 +143,7 @@ struct UpdateJobTest : tpunit::TestFixture
             command.methodLine = "GetJob";
             command["name"] = jobName;
             STable runningJob = tester->executeWaitVerifyContentTable(command);
-            ASSERT_TRUE(SParseJSONObject(runningJob["data"])["originalNextRun"].empty());
+            ASSERT_TRUE(JSON::Value::parse(runningJob["data"]).getStringMemberWithDefault("originalNextRun").empty());
 
             SQResult before;
             tester->readDB("SELECT nextRun, JSON_EXTRACT(data, '$.originalNextRun') FROM jobs WHERE jobID=" + jobID + ";", before);
@@ -164,11 +165,11 @@ struct UpdateJobTest : tpunit::TestFixture
             tester->readDB("SELECT state, nextRun, data FROM jobs WHERE jobID=" + jobID + ";", result);
             ASSERT_EQUAL(result[0][0], "RUNQUEUED");
             ASSERT_EQUAL(result[0][1], shouldReschedule ? nextRun : before[0][0]);
-            STable updatedData = SParseJSONObject(result[0][2]);
-            ASSERT_EQUAL(updatedData["originalNextRun"], shouldReschedule ? "" : firstRun);
-            ASSERT_EQUAL(updatedData["retryAfterCount"], "1");
-            ASSERT_EQUAL(updatedData["phase"], "updated");
-            ASSERT_FALSE(SContains(updatedData, "obsolete"));
+            const JSON::Value updatedData = JSON::Value::parse(result[0][2]);
+            ASSERT_EQUAL(updatedData.getStringMemberWithDefault("originalNextRun"), shouldReschedule ? "" : firstRun);
+            ASSERT_EQUAL(updatedData["retryAfterCount"].getInt(), 1);
+            ASSERT_EQUAL(updatedData["phase"].getString(), "updated");
+            ASSERT_FALSE(updatedData.hasMember("obsolete"));
 
             // When the job finishes
             command.clear();

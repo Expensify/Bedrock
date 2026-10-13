@@ -1463,7 +1463,12 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message)
                 }
             }
         } else {
-            PINFO("unrecognized message: " + message.methodLine);
+            auto handler = _messageHandlers.find(SToUpper(message.methodLine));
+            if (handler != _messageHandlers.end()) {
+                handler->second(message);
+            } else {
+                PINFO("unrecognized message: " + message.methodLine);
+            }
         }
     } catch (const SException& e) {
         SWARN("Error processing message, reconnecting", {
@@ -1597,6 +1602,18 @@ void SQLiteNode::_sendToPeer(SQLitePeer* peer, const SData& message)
         return;
     }
     peer->sendMessage(_addPeerHeaders(message));
+}
+
+void SQLiteNode::registerMessageHandler(const string& messageName, MessageHandler handler)
+{
+    unique_lock<decltype(_stateMutex)> lock(_stateMutex);
+    _messageHandlers[SToUpper(messageName)] = move(handler);
+}
+
+void SQLiteNode::sendMessageToPeer(SQLitePeer* peer, const SData& message)
+{
+    SASSERT(isSyncThread);
+    _sendToPeer(peer, message);
 }
 
 void SQLiteNode::_sendToAllPeers(const SData& message, bool subscribedOnly)

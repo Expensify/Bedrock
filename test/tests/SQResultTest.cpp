@@ -177,6 +177,18 @@ struct SQResultTest : tpunit::TestFixture
         ASSERT_EQUAL(result[0]["name"], "first");
         ASSERT_TRUE(result.deserialize(R"({"headers":["value","name"],"rows":[["third","fourth"]]})"));
         ASSERT_EQUAL(result[0]["name"], "fourth");
+        // SQLite column order and repeated names survive parsing; SQL NULL remains an empty cell.
+        ASSERT_TRUE(result.deserialize(R"([{"z":1,"a":null,"z":3},{"z":4,"a":5,"z":6}])"));
+        ASSERT_TRUE(result.getHeaders() == vector<string>({"z", "a", "z"}));
+        ASSERT_EQUAL(result[0][0], "1");
+        ASSERT_EQUAL(result[0][1], "");
+        ASSERT_EQUAL(result[0][2], "3");
+        ASSERT_EQUAL(result[1][2], "6");
+
+        // Legacy Bedrock results retain the literal null string.
+        ASSERT_TRUE(result.deserialize(R"({"headers":["nothing"],"rows":[[null]]})"));
+        ASSERT_EQUAL(result[0][0], "null");
+
         ASSERT_FALSE(result.deserialize("invalid"));
         ASSERT_TRUE(result.empty());
         ASSERT_TRUE(result.getHeaders().empty());

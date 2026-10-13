@@ -444,6 +444,9 @@ private:
     // and responded to upon return
     bool _handleIfStatusOrControlCommand(unique_ptr<BedrockCommand>& command);
 
+    // Apply a crash-command blacklist entry received through either HTTP or the cluster connection.
+    void _handleCrashCommand(const SData& message);
+
     // Check a command against the list of crash commands, and return whether we think the command would crash.
     bool _wouldCrash(const unique_ptr<BedrockCommand>& command);
 

@@ -1,3 +1,4 @@
+#include <libstuff/JSON/Value.h>
 #include <libstuff/SData.h>
 #include <test/clustertest/BedrockClusterTester.h>
 
@@ -46,9 +47,9 @@ struct BlockingQueueRateLimitTest : tpunit::TestFixture
         leader.executeWaitVerifyContent(disableGlobal, "200", true);
 
         SData status("Status");
-        STable json = SParseJSONObject(leader.executeWaitVerifyContent(status, "200", true));
-        ASSERT_EQUAL(json["blockingBlockedIdentifiers"], "");
-        ASSERT_EQUAL(json["globalRateLimiterTriggered"], "false");
+        JSON::Value json = JSON::Value::parse(leader.executeWaitVerifyContent(status, "200", true));
+        ASSERT_EQUAL(json["blockingBlockedIdentifiers"].getString(), "");
+        ASSERT_EQUAL(json["globalRateLimiterTriggered"].getBool(), false);
     }
 
     void testControlCommands()
@@ -67,14 +68,14 @@ struct BlockingQueueRateLimitTest : tpunit::TestFixture
         leader.executeWaitVerifyContent(setLimits, "200", true);
 
         SData status("Status");
-        STable json = SParseJSONObject(leader.executeWaitVerifyContent(status, "200", true));
-        ASSERT_EQUAL(json["blockingTimeWindowMS"], "180000");
-        ASSERT_EQUAL(json["blockingIdentifierThresholdMS"], "20000");
-        ASSERT_EQUAL(json["blockingCommandThresholdMS"], "40000");
-        ASSERT_EQUAL(json["blockingBlockDurationMS"], "60000");
-        ASSERT_EQUAL(json["globalRateLimiterWindowMS"], "60000");
-        ASSERT_EQUAL(json["globalRateLimiterThresholdMS"], "55000");
-        ASSERT_EQUAL(json["globalRateLimiterBlockDurationMS"], "60000");
+        JSON::Value json = JSON::Value::parse(leader.executeWaitVerifyContent(status, "200", true));
+        ASSERT_EQUAL(json["blockingTimeWindowMS"].getUint(), 180000);
+        ASSERT_EQUAL(json["blockingIdentifierThresholdMS"].getUint(), 20000);
+        ASSERT_EQUAL(json["blockingCommandThresholdMS"].getUint(), 40000);
+        ASSERT_EQUAL(json["blockingBlockDurationMS"].getUint(), 60000);
+        ASSERT_EQUAL(json["globalRateLimiterWindowMS"].getUint(), 60000);
+        ASSERT_EQUAL(json["globalRateLimiterThresholdMS"].getUint(), 55000);
+        ASSERT_EQUAL(json["globalRateLimiterBlockDurationMS"].getUint(), 60000);
     }
 
     void testTimeRateLimiting()
@@ -97,8 +98,8 @@ struct BlockingQueueRateLimitTest : tpunit::TestFixture
         leader.executeWaitVerifyContent(setConflict, "200", true);
 
         SData status("Status");
-        STable json = SParseJSONObject(leader.executeWaitVerifyContent(status, "200", true));
-        ASSERT_EQUAL(json["blockingIdentifierThresholdMS"], "10");
+        JSON::Value json = JSON::Value::parse(leader.executeWaitVerifyContent(status, "200", true));
+        ASSERT_EQUAL(json["blockingIdentifierThresholdMS"].getUint(), 10);
 
         atomic<int> count503(0);
         atomic<int> count200(0);
@@ -134,15 +135,15 @@ struct BlockingQueueRateLimitTest : tpunit::TestFixture
         ASSERT_TRUE(count503.load() > 0);
 
         // The identifier must register as blocked in Status.
-        json = SParseJSONObject(leader.executeWaitVerifyContent(status, "200", true));
-        ASSERT_TRUE(SContains(json["blockingBlockedIdentifiers"], "timeuser"));
+        json = JSON::Value::parse(leader.executeWaitVerifyContent(status, "200", true));
+        ASSERT_TRUE(SContains(json["blockingBlockedIdentifiers"].getString(), "timeuser"));
 
         SData clearBlocks("SetBlockingQueueTimeRateLimit");
         clearBlocks["ClearBlocks"] = "true";
         leader.executeWaitVerifyContent(clearBlocks, "200", true);
 
-        json = SParseJSONObject(leader.executeWaitVerifyContent(status, "200", true));
-        ASSERT_EQUAL(json["blockingBlockedIdentifiers"], "");
+        json = JSON::Value::parse(leader.executeWaitVerifyContent(status, "200", true));
+        ASSERT_EQUAL(json["blockingBlockedIdentifiers"].getString(), "");
 
         // Reset leader state.
         SData resetConflict("SetConflictParams");
@@ -209,17 +210,17 @@ struct BlockingQueueRateLimitTest : tpunit::TestFixture
 
         // The global rate limiter did all the rejecting, so no identifier or command is blocked.
         SData status("Status");
-        STable json = SParseJSONObject(leader.executeWaitVerifyContent(status, "200", true));
-        ASSERT_EQUAL(json["globalRateLimiterTriggered"], "true");
-        ASSERT_EQUAL(json["blockingBlockedIdentifiers"], "");
-        ASSERT_EQUAL(json["blockingBlockedCommands"], "");
+        JSON::Value json = JSON::Value::parse(leader.executeWaitVerifyContent(status, "200", true));
+        ASSERT_EQUAL(json["globalRateLimiterTriggered"].getBool(), true);
+        ASSERT_EQUAL(json["blockingBlockedIdentifiers"].getString(), "");
+        ASSERT_EQUAL(json["blockingBlockedCommands"].getString(), "");
 
         SData clearBlocks("SetBlockingQueueTimeRateLimit");
         clearBlocks["ClearBlocks"] = "true";
         leader.executeWaitVerifyContent(clearBlocks, "200", true);
 
-        json = SParseJSONObject(leader.executeWaitVerifyContent(status, "200", true));
-        ASSERT_EQUAL(json["globalRateLimiterTriggered"], "false");
+        json = JSON::Value::parse(leader.executeWaitVerifyContent(status, "200", true));
+        ASSERT_EQUAL(json["globalRateLimiterTriggered"].getBool(), false);
 
         // Reset leader state.
         SData resetConflict("SetConflictParams");

@@ -1,3 +1,4 @@
+#include <libstuff/JSON/Value.h>
 #include <fstream>
 
 #include <libstuff/SData.h>
@@ -96,8 +97,8 @@ struct CompressionTest : tpunit::TestFixture
     {
         SData status("Status");
         string response = node.executeWaitVerifyContent(status);
-        STable json = SParseJSONObject(response);
-        return SToUInt64(json["commitCount"]);
+        JSON::Value json = JSON::Value::parse(response);
+        return json["CommitCount"].getUint();
     }
 
     // Run a SELECT query against the journal tables via the bedrock server's DB plugin.

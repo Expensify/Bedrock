@@ -139,6 +139,9 @@ void BedrockServer::sync()
     atomic_store(&_syncNode, make_shared<SQLiteNode>(*this, _dbPool, args["-nodeName"], args["-nodeHost"],
                                                             args["-peerList"], _configuredPriority, _maxOutstandingWALFrames,
                                                             firstTimeout, _version, args["-commandPortPrivate"]));
+    _syncNode->registerMessageHandler("CRASH_COMMAND", [this](const SData& message) {
+        _handleCrashCommand(message);
+    });
 
     _clusterMessenger = make_shared<SQLiteClusterMessenger>(_syncNode);
 
@@ -1790,26 +1793,7 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command)
             response["newValue"] = SQLite::enableTrace ? "true" : "false";
         }
     } else if (SIEquals(command->request.methodLine, "CRASH_COMMAND")) {
-        SData request;
-        request.deserialize(command->request.content);
-        if (request.empty()) {
-            SINFO("Got CRASH_COMMAND with malformed command body. Is someone running this by hand? Nothing to blacklist.");
-            return;
-        }
-
-        // Take a unique lock so nobody else can read from this table while we update it.
-        unique_lock<decltype(_crashCommandMutex)> lock(_crashCommandMutex);
-
-        // Strip Content-Length before storing to prevent the same identifiers from being stored twice
-        request.nameValueMap.erase("Content-Length");
-
-        // Add the blacklisted command to the map.
-        _crashCommands[request.methodLine].insert(request.nameValueMap);
-        size_t totalCount = 0;
-        for (const auto& s : _crashCommands) {
-            totalCount += s.second.size();
-        }
-        SALERT("Blacklisting command (now have " << totalCount << " blacklisted commands): " << request.serialize());
+        _handleCrashCommand(command->request);
     } else if (SIEquals(command->request.methodLine, "ClearBlockingQueue")) {
         auto commands = _blockingCommandQueue.getAll();
         list<string> methodLines;
@@ -2104,6 +2088,29 @@ bool BedrockServer::shouldBackup()
     return _shouldBackup;
 }
 
+void BedrockServer::_handleCrashCommand(const SData& message)
+{
+    SData request;
+    request.deserialize(message.content);
+    if (request.empty()) {
+        SINFO("Got CRASH_COMMAND with malformed command body. Is someone running this by hand? Nothing to blacklist.");
+        return;
+    }
+
+    // Take a unique lock so nobody else can read from this table while we update it.
+    unique_lock<decltype(_crashCommandMutex)> lock(_crashCommandMutex);
+
+    // Strip Content-Length before storing to prevent the same identifiers from being stored twice.
+    request.nameValueMap.erase("Content-Length");
+
+    _crashCommands[request.methodLine].insert(request.nameValueMap);
+    size_t totalCount = 0;
+    for (const auto& s : _crashCommands) {
+        totalCount += s.second.size();
+    }
+    SALERT("Blacklisting command (now have " << totalCount << " blacklisted commands): " << request.serialize());
+}
+
 SData BedrockServer::_generateCrashMessage(const unique_ptr<BedrockCommand>& command)
 {
     SHMMM("Generating CRASH_COMMAND command for " << command->request.methodLine);
@@ -2140,21 +2147,27 @@ void BedrockServer::broadcastCommand(const SData& command, const string& peerNam
 void BedrockServer::onNodeLogin(SQLitePeer* peer)
 {
     list<unique_ptr<BedrockCommand>> crashCommandsToSend;
-    shared_lock<decltype(_crashCommandMutex)> lock(_crashCommandMutex);
-    for (const auto& p : _crashCommands) {
-        for (const auto& table : p.second) {
-            SALERT("Sending crash command " << p.first << " to node " << peer->name << " on login");
-            SData crashCommandSpec(p.first);
-            crashCommandSpec.nameValueMap = table;
-            unique_ptr<BedrockCommand> crashCommand = getCommandFromPlugins(move(crashCommandSpec));
-            for (const auto& fields : table) {
-                crashCommand->crashIdentifyingValues.insert(fields.first);
+    {
+        shared_lock<decltype(_crashCommandMutex)> lock(_crashCommandMutex);
+        for (const auto& p : _crashCommands) {
+            for (const auto& table : p.second) {
+                SALERT("Sending crash command " << p.first << " to node " << peer->name << " on login");
+                SData crashCommandSpec(p.first);
+                crashCommandSpec.nameValueMap = table;
+                unique_ptr<BedrockCommand> crashCommand = getCommandFromPlugins(move(crashCommandSpec));
+                for (const auto& fields : table) {
+                    crashCommand->crashIdentifyingValues.insert(fields.first);
+                }
+                crashCommandsToSend.push_back(make_unique<BedrockCommand>(_generateCrashMessage(crashCommand), nullptr));
             }
-            crashCommandsToSend.push_back(make_unique<BedrockCommand>(_generateCrashMessage(crashCommand), nullptr));
         }
     }
 
     for (auto& peerCommand : crashCommandsToSend) {
+        // The cluster connection is already established, even if the peer's private command port is still closed.
+        _syncNode->sendMessageToPeer(peer, peerCommand->request);
+
+        // Keep HTTP replay for older nodes that ignore cluster CRASH_COMMAND messages. Remove once all nodes support it.
         auto _clusterMessengerCopy = _clusterMessenger;
         auto peerName = peer->name;
         if (_clusterMessengerCopy) {

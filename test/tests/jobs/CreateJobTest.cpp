@@ -1,3 +1,4 @@
+#include <libstuff/JSON/Value.h>
 #include <iostream>
 #include <unistd.h>
 
@@ -800,7 +801,9 @@ struct CreateJobTest : tpunit::TestFixture
             try {
                 // Let it repeat until it works or we run out of retries.
                 response = tester->executeWaitVerifyContentTable(command);
-                ASSERT_EQUAL(response["data"], "{\"retryAfterCount\":1,\"originalNextRun\":\"" + originalJob[0][4] + "\"}");
+                const auto data = JSON::Value::parse(response["data"]);
+                ASSERT_EQUAL(data["retryAfterCount"].getInt(), 1);
+                ASSERT_EQUAL(data["originalNextRun"].getString(), originalJob[0][4]);
                 ASSERT_EQUAL(response["jobID"], jobID);
                 ASSERT_EQUAL(response["name"], jobName);
             } catch (...) {
