@@ -36,6 +36,7 @@
  *
  * `_replicate` is a special exception because it runs in multiple threads internally. It needs to handle locking if it
  * changes any internal state (and it calls `changeState`, which does).
+ * `sendMessageToPeer` is another exception: sync-thread callbacks call it with _stateMutex already held.
  *
  */
 
@@ -64,6 +65,8 @@ class SQLiteNode : public STCPManager {
     friend class SQLiteNodeTester;
 
 public:
+    using MessageHandler = function<void (const SData&)>;
+
     // This is a globally accessible pointer to some node instance. The intention here is to let signal handling code attempt to kill outstanding
     // peer connections on this node before shutting down. Generally, there is only a single node instance per application, and this will
     // refer to that node, there may be exceptions in cases like test harnesses.
@@ -148,6 +151,14 @@ public:
 
     // Handle any read/write events that occurred.
     void postPoll(fd_map& fdm, uint64_t& nextActivity);
+
+    // Register a handler for otherwise unrecognized peer messages. Handlers run on the sync thread with _stateMutex
+    // held, after normal peer validation. They must not block or call methods that acquire _stateMutex.
+    void registerMessageHandler(const string& messageName, MessageHandler handler);
+
+    // Queue a message with the normal cluster headers. Only call from sync-thread callbacks with _stateMutex held;
+    // this deliberately does not acquire the lock again. Does not wait for the peer to receive the message.
+    void sendMessageToPeer(SQLitePeer* peer, const SData& message);
 
     // Constructor/Destructor
     SQLiteNode(SQLiteServer& server, const shared_ptr<SQLitePool>& dbPool, const string& name, const string& host,
@@ -308,6 +319,8 @@ private:
 
     // Pointer to the peer that is the leader. Null if we're the leader, or if we don't have a leader yet.
     atomic<SQLitePeer*> _leadPeer;
+
+    map<string, MessageHandler> _messageHandlers;
 
     // We can spin up threads to handle responding to `SYNCHRONIZE` messages out-of-band. We want to make sure we don't
     // shut down in the middle of running these, so we keep a count of them.
