@@ -1,4 +1,4 @@
-#include <libstuff/JSON/Value.h>
+#include <libstuff/JSON/Utils.h>
 #include <libstuff/SData.h>
 #include <libstuff/SRandom.h>
 #include <test/clustertest/BedrockClusterTester.h>
@@ -222,7 +222,7 @@ struct GracefulFailoverTest : tpunit::TestFixture
         BedrockTester& leader = tester->getTester(0);
         clients.blockedLeader = &leader;
         leader.executeWaitVerifyContent(SData("BlockWrites"), "200 Blocked", true);
-        const string checkpointID = SParseJSONObject(leader.executeWaitVerifyContent(SData("Status"), "200", true))["commitCount"];
+        const string checkpointID = JSON::Utils::toSTable(JSON::Value::parse(leader.executeWaitVerifyContent(SData("Status"), "200", true)))["commitCount"];
         SData getCheckpoint("GetCommitHash");
         getCheckpoint["commitCount"] = checkpointID;
         const SData checkpoint = leader.executeWaitMultipleData({getCheckpoint}, 1, true).front();

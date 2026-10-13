@@ -1,3 +1,4 @@
+#include <libstuff/JSON/Utils.h>
 #include <libstuff/SData.h>
 #include <libstuff/SQResult.h>
 #include <libstuff/sqlite3.h>
@@ -20,7 +21,7 @@ struct HCTreeJournalModeTest : tpunit::TestFixture
 
     uint64_t commitCount(BedrockTester& node)
     {
-        return SToUInt64(SParseJSONObject(node.executeWaitVerifyContent(SData("Status")))["commitCount"]);
+        return SToUInt64(JSON::Utils::toSTable(JSON::Value::parse(node.executeWaitVerifyContent(SData("Status"))))["commitCount"]);
     }
 
     void verifyHCTreeCommit(BedrockTester& node, uint64_t cid)
