@@ -1,5 +1,6 @@
 #include <iostream>
 #include <memory>
+#include <unistd.h>
 
 #include <libstuff/SData.h>
 #include <libstuff/libstuff.h>
@@ -121,7 +122,7 @@ int main(int argc, char* argv[])
     const bool shouldUseNewOutput = !args.isSet("-useNewOutput") ||
         args["-useNewOutput"].empty() ||
         args.test("-useNewOutput");
-    if (shouldUseNewOutput && tpunit::NcursesOutputWriter::available()) {
+    if (shouldUseNewOutput && isatty(STDERR_FILENO) && tpunit::NcursesOutputWriter::available()) {
         try {
             newOutput = make_unique<tpunit::NcursesOutputWriter>();
             activeOutput = newOutput.get();
