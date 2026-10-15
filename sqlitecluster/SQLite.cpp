@@ -737,12 +737,15 @@ bool SQLite::checkJournalVisibility(uint64_t requiredCommit, string& details)
     sqlite3_hct_diag_read_state(_db, after, 6);
     sqlite3_int64 journalSnapshot = -1;
     sqlite3_hct_journal_snapshot(_db, &journalSnapshot);
+    // hct_journal reads ignore the snapshot in LEADER and FOLLOWER mode, so the snapshot itself is what has to cover
+    // requiredCommit. HC-Tree scales journal CIDs by HCT_CID_INCREMENT (16) internally.
+    const uint64_t snapshotCommit = static_cast<uint64_t>(after[1]) / 16;
     const uint64_t visible = (!queryResult && !result.empty() && !result[0].empty()) ? SToUInt64(result[0][0]) : 0;
-    details = format("required={} commitCount={} visibleJournalCID={} queryResult={} openReadBefore={} readSnapshot={} "
-                     "localMinTid={} localMaxTid={} peekTid={} jrnlSnapshotAtRead={} journalSnapshotNow={}",
-                     requiredCommit, commitCountBefore, visible, queryResult, before[0], after[1], after[2], after[3], after[4],
-                     after[5], journalSnapshot);
-    return !queryResult && visible >= requiredCommit && before[0] == 0;
+    details = format("required={} commitCount={} snapshotCommit={} visibleJournalCID={} queryResult={} openReadBefore={} "
+                     "readSnapshot={} localMinTid={} localMaxTid={} peekTid={} jrnlSnapshotAtRead={} journalSnapshotNow={}",
+                     requiredCommit, commitCountBefore, snapshotCommit, visible, queryResult, before[0], after[1], after[2], after[3],
+                     after[4], after[5], journalSnapshot);
+    return !queryResult && snapshotCommit >= requiredCommit && before[0] == 0;
 }
 
 SQLite::TRANSACTION_TYPE SQLite::getLastTransactionType()

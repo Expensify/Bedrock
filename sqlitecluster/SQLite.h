@@ -424,8 +424,8 @@ private:
     void prepareHCTreeLeadership();
 
     // Diagnostics for Expensify/Expensify#691107. On an HC-Tree follower outside a transaction, starts a read and
-    // checks that it can see the journal entry for requiredCommit, with no read transaction already open. Returns
-    // false if either check fails. Always fills details unless the handle isn't an HC-Tree follower.
+    // checks that its snapshot includes requiredCommit, with no read transaction already open. Returns false if either
+    // check fails. Always fills details unless the handle isn't an HC-Tree follower.
     bool checkJournalVisibility(uint64_t requiredCommit, string& details);
 
 private:
