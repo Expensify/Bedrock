@@ -794,6 +794,7 @@ bool SQLite::beginTransaction(SQLite::TRANSACTION_TYPE type, bool beginOnly)
     _tablesUsed.clear();
     _readQueryCount = 0;
     _writeQueryCount = 0;
+    _transactionChanges = 0;
     _cacheHits = 0;
     _beginElapsed = STimeNow() - before;
     _readElapsed = 0;
@@ -1266,6 +1267,7 @@ bool SQLite::_writeIdempotent(const string& query, const map<string, Parameter>&
     SASSERT(!results.empty() && !results[0].empty());
     uint64_t schemaAfter = SToUInt64(results[0][0]);
     uint64_t changesAfter = sqlite3_total_changes(_db);
+    _transactionChanges += changesAfter - changesBefore;
 
     // If something changed, or we're always keeping queries, then save this.
     if (alwaysKeepQueries || (schemaAfter > schemaBefore) || (changesAfter > changesBefore)) {
@@ -1552,6 +1554,21 @@ int SQLite::commit(uint64_t& journalCommitID, const string& description, const s
             // A read-only HC-Tree leader transaction can succeed without allocating a CID.
             _sharedData.discardPreparedTransactionInfo(_sharedData.commitCount + 1);
         }
+        if (_hctree && hctreeExperimentalMode) {
+            // Diagnostics for Expensify/Expensify#691107: lets each node's changes for a commit be compared, along with
+            // the snapshot the transaction ran against and what a new read can see afterwards.
+            sqlite3_int64 readState[6] = {};
+            sqlite3_hct_diag_read_state(_db, readState, 6);
+            const bool follower = _sharedData.hctreeFollowerMode.load();
+            sqlite3_int64 journalSnapshot = -1;
+            if (follower) {
+                sqlite3_hct_journal_snapshot(_db, &journalSnapshot);
+            }
+            SINFO(format("691107-COMMIT cid={} follower={} changes={} queryBytes={} hash={} commitCount={} txnSnapshot={} "
+                         "txnLocalMinTid={} txnPeekTid={} journalSnapshotAfter={}",
+                         journalCommitID, follower ? 1 : 0, _transactionChanges, _uncommittedQuery.size(), _uncommittedHash.substr(0, 12),
+                         _sharedData.commitCount.load(), readState[1], readState[2], readState[4], journalSnapshot));
+        }
         _insideTransaction = false;
         _prepared = false;
         _uncommittedHash.clear();
@@ -1619,6 +1636,10 @@ int SQLite::commit(uint64_t& journalCommitID, const string& description, const s
         _lastConflictLocation = "";
     } else {
         // The commit failed, we will rollback.
+        if (_hctree && hctreeExperimentalMode) {
+            SINFO(format("691107-COMMIT-FAILED cid={} result={} follower={} changes={} commitCount={}", journalCommitID, result,
+                         _sharedData.hctreeFollowerMode.load() ? 1 : 0, _transactionChanges, _sharedData.commitCount.load()));
+        }
     }
 
     // if we got SQLITE_BUSY_SNAPSHOT, then we're *still* holding commitLock, and it will need to be unlocked by
