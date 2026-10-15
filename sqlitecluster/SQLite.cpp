@@ -720,6 +720,31 @@ void SQLite::prepareHCTreeLeadership()
     }
 }
 
+bool SQLite::checkJournalVisibility(uint64_t requiredCommit, string& details)
+{
+    if (!_hctree || !hctreeExperimentalMode || !_sharedData.hctreeFollowerMode.load() || _insideTransaction) {
+        return true;
+    }
+
+    // A read transaction should never be open here, outside of a Bedrock transaction. If one is, every autocommit read
+    // on this handle keeps using its old snapshot.
+    sqlite3_int64 before[6] = {};
+    sqlite3_hct_diag_read_state(_db, before, 6);
+    const uint64_t commitCountBefore = _sharedData.commitCount.load();
+    SQResult result;
+    const int queryResult = SQuery(_db, "SELECT MAX(cid) FROM hct_journal;", result);
+    sqlite3_int64 after[6] = {};
+    sqlite3_hct_diag_read_state(_db, after, 6);
+    sqlite3_int64 journalSnapshot = -1;
+    sqlite3_hct_journal_snapshot(_db, &journalSnapshot);
+    const uint64_t visible = (!queryResult && !result.empty() && !result[0].empty()) ? SToUInt64(result[0][0]) : 0;
+    details = format("required={} commitCount={} visibleJournalCID={} queryResult={} openReadBefore={} readSnapshot={} "
+                     "localMinTid={} localMaxTid={} peekTid={} jrnlSnapshotAtRead={} journalSnapshotNow={}",
+                     requiredCommit, commitCountBefore, visible, queryResult, before[0], after[1], after[2], after[3], after[4],
+                     after[5], journalSnapshot);
+    return !queryResult && visible >= requiredCommit && before[0] == 0;
+}
+
 SQLite::TRANSACTION_TYPE SQLite::getLastTransactionType()
 {
     return _lastTransactionType;
