@@ -86,6 +86,14 @@ int sqlite3_hct_journal_snapshot(sqlite3 *db, sqlite3_int64 *piCid);
 */
 int sqlite3_hct_journal_local_commit(sqlite3 *db);
 
+/*
+** Diagnostics for Expensify/Expensify#691107. Fill up to nOut values of: the
+** read snapshot currently open on db (0 if none), then the snapshot, local-min
+** TID, local-max TID, peek TID and journal snapshot recorded when db's most
+** recent read transaction started.
+*/
+int sqlite3_hct_diag_read_state(sqlite3 *db, sqlite3_int64 *aOut, int nOut);
+
 
 /*
 ** Testing APIs
