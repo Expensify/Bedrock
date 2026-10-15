@@ -688,6 +688,9 @@ private:
 
     mutable int64_t _writeQueryCount = 0;
 
+    // Rows changed by this transaction's writes, logged at commit for Expensify/Expensify#691107.
+    uint64_t _transactionChanges = 0;
+
     // Number of queries found in cache in this transaction (for metrics only).
     mutable int64_t _cacheHits = 0;
 
