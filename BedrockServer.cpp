@@ -693,7 +693,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
             }
 
             // Diagnostics for Expensify/Expensify#691107: a follower about to read for a command that depends on a
-            // commit should be able to see that commit's journal entry from a new read.
+            // commit should get a read snapshot that includes that commit.
             if (commandCommitCount && getState() == SQLiteNodeState::FOLLOWING) {
                 string details;
                 if (!db.checkJournalVisibility(commandCommitCount, details)) {
