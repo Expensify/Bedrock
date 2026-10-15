@@ -287200,6 +287200,14 @@ struct HctDatabase {
   u64 iLocalMinTid;               /* All trans with <= tids are done */
   u64 iLocalMaxTid;               /* All trans with >= tids are ignorable */
 
+  /* Diagnostics for Expensify/Expensify#691107: the values chosen when the
+  ** most recent read transaction started, kept after it ends. */
+  u64 iDiagSnapshotId;
+  u64 iDiagLocalMinTid;
+  u64 iDiagLocalMaxTid;
+  u64 iDiagPeekTid;
+  u64 iDiagJrnlSnapshot;
+
   u64 iReqSnapshotId;             /* Required snapshot to replicate trans. */
 
   HctDbWriter pa;
@@ -287716,6 +287724,7 @@ SQLITE_PRIVATE int sqlite3HctDbStartRead(HctDatabase *pDb, HctJournal *pJrnl){
     }
 
     iSnapshot = sqlite3HctJrnlSnapshot(pJrnl);
+    pDb->iDiagJrnlSnapshot = iSnapshot;
     pDb->pTmap = sqlite3HctTMapBegin(pTMapClient, iSnapshot, iPeekTid);
 
     if( iSnapshot==0 ){
@@ -287733,6 +287742,11 @@ SQLITE_PRIVATE int sqlite3HctDbStartRead(HctDatabase *pDb, HctJournal *pJrnl){
 
     pDb->iLocalMaxTid = sqlite3HctFilePeekTransid(pDb->pFile)+1;
 
+    pDb->iDiagSnapshotId = pDb->iSnapshotId;
+    pDb->iDiagLocalMinTid = pDb->iLocalMinTid;
+    pDb->iDiagLocalMaxTid = pDb->iLocalMaxTid;
+    pDb->iDiagPeekTid = iPeekTid;
+
     HCT_EXTRA_WR_LOGGING(pDb, (
           "starting read with snapshot=%lld, localmintid=%lld"
           ", localmaxid=%lld",
@@ -287741,6 +287755,33 @@ SQLITE_PRIVATE int sqlite3HctDbStartRead(HctDatabase *pDb, HctJournal *pJrnl){
   }
 
   return rc;
+}
+
+/*
+** Diagnostics for Expensify/Expensify#691107. Fill up to nOut values of: the
+** read snapshot currently open on db (0 if none), then the snapshot, local-min
+** TID, local-max TID, peek TID and journal snapshot recorded when db's most
+** recent read transaction started.
+*/
+SQLITE_API int sqlite3_hct_diag_read_state(
+  sqlite3 *db,
+  sqlite3_int64 *aOut,
+  int nOut
+){
+  HctDatabase *pDb = sqlite3HctDbFind(db, 0);
+  sqlite3_int64 aVal[6];
+  int ii;
+  if( pDb==0 ) return SQLITE_ERROR;
+  aVal[0] = (sqlite3_int64)pDb->iSnapshotId;
+  aVal[1] = (sqlite3_int64)pDb->iDiagSnapshotId;
+  aVal[2] = (sqlite3_int64)pDb->iDiagLocalMinTid;
+  aVal[3] = (sqlite3_int64)pDb->iDiagLocalMaxTid;
+  aVal[4] = (sqlite3_int64)pDb->iDiagPeekTid;
+  aVal[5] = (sqlite3_int64)pDb->iDiagJrnlSnapshot;
+  for(ii=0; ii<nOut && ii<6; ii++){
+    aOut[ii] = aVal[ii];
+  }
+  return SQLITE_OK;
 }
 
 static u64 hctGetU64(const u8 *a){
