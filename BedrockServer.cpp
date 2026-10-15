@@ -692,6 +692,17 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                 return;
             }
 
+            // Diagnostics for Expensify/Expensify#691107: a follower about to read for a command that depends on a
+            // commit should be able to see that commit's journal entry from a new read.
+            if (commandCommitCount && getState() == SQLiteNodeState::FOLLOWING) {
+                string details;
+                if (!db.checkJournalVisibility(commandCommitCount, details)) {
+                    SWARN("691107-STALE-READ " << command->request.methodLine << " " << details);
+                } else if (!details.empty()) {
+                    SINFO("691107-RUN " << command->request.methodLine << " " << details);
+                }
+            }
+
             // If the command should run prePeek, do that now .
             if (!command->repeek && !command->httpsRequests.size() && command->shouldPrePeek()) {
                 core.prePeekCommand(command, isBlocking);
