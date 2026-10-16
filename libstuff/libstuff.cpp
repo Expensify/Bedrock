@@ -3199,6 +3199,32 @@ int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThresho
                 SWARN("691107-CORRUPT-STATE openSnapshot=" << readState[0] << " snapshot=" << readState[1]
                       << " localMinTid=" << readState[2] << " localMaxTid=" << readState[3] << " peekTid=" << readState[4]
                       << " jrnlSnapshot=" << readState[5] << " journalCommitNow=" << journalSnapshotNow);
+
+                // HC-Tree's own trace of this transaction, kept in memory when HCT_691107_EXTRA_LOGGING is set. Logged
+                // one line at a time, keeping only the last 5,000 lines if it's longer.
+                sqlite3_stmt* logStatement = nullptr;
+                if (sqlite3_prepare_v2(db, "PRAGMA hct_log;", -1, &logStatement, nullptr) == SQLITE_OK) {
+                    if (sqlite3_step(logStatement) == SQLITE_ROW && sqlite3_column_text(logStatement, 0)) {
+                        const string hctLog = reinterpret_cast<const char*>(sqlite3_column_text(logStatement, 0));
+                        vector<string> logLines;
+                        size_t start = 0;
+                        while (start < hctLog.size()) {
+                            size_t end = hctLog.find('\n', start);
+                            if (end == string::npos) {
+                                end = hctLog.size();
+                            }
+                            logLines.push_back(hctLog.substr(start, end - start));
+                            start = end + 1;
+                        }
+                        const size_t first = logLines.size() > 5000 ? logLines.size() - 5000 : 0;
+                        SWARN("691107-HCT-LOG-BEGIN lines=" << logLines.size() << " logging=" << (logLines.size() - first));
+                        for (size_t i = first; i < logLines.size(); i++) {
+                            SWARN("691107-HCT-LOG " << i << " " << logLines[i]);
+                        }
+                        SWARN("691107-HCT-LOG-END");
+                    }
+                    sqlite3_finalize(logStatement);
+                }
             }
             SERROR("Database corruption was detected, cannot continue, bedrock will exit immediately.");
         }
