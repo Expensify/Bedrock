@@ -298717,6 +298717,25 @@ static int hctJrnlWriteRecord(
 }
 
 /*
+** Diagnostics for Expensify/Expensify#691107: how many microseconds to pause
+** after a FOLLOWER commit's CID is published in aCommit[] and before its TID
+** is marked COMMITTED, read once from HCT_691107_FOLLOWER_DELAY_US. This
+** widens the window in which a new read transaction's snapshot covers a
+** commit whose keys still read as uncommitted. Unset or 0 does nothing.
+*/
+static int hctDiagFollowerDelayUs(void){
+  static int iDelay = -1;
+  int iRet = HctAtomicLoad(&iDelay);
+  if( iRet<0 ){
+    const char *zDelay = getenv("HCT_691107_FOLLOWER_DELAY_US");
+    iRet = zDelay ? atoi(zDelay) : 0;
+    if( iRet<0 ) iRet = 0;
+    HctAtomicStore(&iDelay, iRet);
+  }
+  return iRet;
+}
+
+/*
 ** This is called when committing a transaction to write the entry into
 ** the hct_journal table.
 */
@@ -298747,6 +298766,13 @@ SQLITE_PRIVATE int sqlite3HctJrnlLog(
         /* Set the entry in HctJrnlServer.aCommit[] to indicate that this
         ** transaction has been committed.  */
         HctAtomicStore(&pServer->aCommit[iCid % pServer->nCommit], iCid);
+
+        {
+          int nDiagDelay = hctDiagFollowerDelayUs();
+          if( nDiagDelay>0 ){
+            sqlite3OsSleep(sqlite3_vfs_find(0), nDiagDelay);
+          }
+        }
 
       }else{
         assert( pServer->eMode==SQLITE_HCT_LEADER );
