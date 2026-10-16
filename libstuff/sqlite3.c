@@ -294121,6 +294121,7 @@ SQLITE_PRIVATE int sqlite3HctDbEndWrite(HctDatabase *p, u64 iCid, int bRollback)
   int rc = SQLITE_OK;
   u64 iVal = iCid | HCT_TMAP_COMMITTED;;
   u64 *pEntry = hctDbFindTMapEntry(p->pTmap, p->iTid);
+  u64 iDiagMaxRead = 0;
 
   assert( p->eMode==HCT_MODE_NORMAL );
   assert( p->pa.writepg.nPg==0 );
@@ -294129,18 +294130,19 @@ SQLITE_PRIVATE int sqlite3HctDbEndWrite(HctDatabase *p, u64 iCid, int bRollback)
   }else{
     /* Diagnostics for Expensify/Expensify#691107. In FOLLOWER mode the
     ** journal snapshot includes this CID as soon as the journal entry is
-    ** written, before this TID is marked COMMITTED below. Report a reader
-    ** that started in between: its snapshot covers this transaction, yet
-    ** the transaction's keys turn visible only partway through its reads. */
-    u64 iMaxRead = HctAtomicLoad(&hctDiagMaxReadSnapshot);
-    if( iCid>0 && iMaxRead>=iCid ){
-      sqlite3_log(SQLITE_WARNING,
-          "691107-EARLY-SNAPSHOT tid=%lld cid=%lld maxReadSnapshot=%lld",
-          (i64)p->iTid, (i64)iCid, (i64)iMaxRead
-      );
-    }
+    ** written, before this TID is marked COMMITTED below. Note whether a
+    ** reader started in between: its snapshot covers this transaction, yet
+    ** the transaction's keys turn visible only partway through its reads.
+    ** This is logged after the store so it doesn't widen that window. */
+    iDiagMaxRead = HctAtomicLoad(&hctDiagMaxReadSnapshot);
   }
   HctAtomicStore(pEntry, iVal);
+  if( iCid>0 && iDiagMaxRead>=iCid ){
+    sqlite3_log(SQLITE_WARNING,
+        "691107-EARLY-SNAPSHOT tid=%lld cid=%lld maxReadSnapshot=%lld",
+        (i64)p->iTid, (i64)iCid, (i64)iDiagMaxRead
+    );
+  }
 
 #if 0
   HCT_EXTRA_WR_LOGGING(p, ("mapping %lld to %lld (%s) (snapshot was %lld)",
