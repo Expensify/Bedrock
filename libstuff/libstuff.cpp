@@ -32,6 +32,7 @@
 #include <libstuff/SFluentdLogger.h>
 #include <libstuff/qrf.h>
 #include <libstuff/sqlite3.h>
+#include <libstuff/sqlite3hct.h>
 
 // Additional headers
 #include <netdb.h>
@@ -3186,6 +3187,19 @@ int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThresho
             SRedactSensitiveValues(sqlToLog);
             SALERT("ENSURE_BUGBOT Database index corruption was detected.", {{"query", sqlToLog}});
         } else {
+            // Diagnostics for Expensify/Expensify#691107: the failing read transaction's HC-Tree snapshot, plus the
+            // follower's journal snapshot now, to tell whether that snapshot already covered a commit still in flight.
+            sqlite3_int64 readState[6] = {-1, -1, -1, -1, -1, -1};
+            sqlite3_int64 journalSnapshotNow = -1;
+            if (sqlite3_hct_diag_read_state(db, readState, 6) == SQLITE_OK) {
+                // Only FOLLOWER mode reads take a journal snapshot, and only then is the journal API safe to call here.
+                if (readState[5] > 0) {
+                    sqlite3_hct_journal_snapshot(db, &journalSnapshotNow);
+                }
+                SWARN("691107-CORRUPT-STATE openSnapshot=" << readState[0] << " snapshot=" << readState[1]
+                      << " localMinTid=" << readState[2] << " localMaxTid=" << readState[3] << " peekTid=" << readState[4]
+                      << " jrnlSnapshot=" << readState[5] << " journalCommitNow=" << journalSnapshotNow);
+            }
             SERROR("Database corruption was detected, cannot continue, bedrock will exit immediately.");
         }
     }
