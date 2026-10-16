@@ -287706,6 +287706,12 @@ SQLITE_PRIVATE void sqlite3HctDbRootPageInit(
 
 
 /*
+** Diagnostics for Expensify/Expensify#691107: the largest snapshot any
+** FOLLOWER mode read transaction in this process has started with.
+*/
+static u64 hctDiagMaxReadSnapshot = 0;
+
+/*
 ** Open a read transaction, if one is not already open.
 */
 SQLITE_PRIVATE int sqlite3HctDbStartRead(HctDatabase *pDb, HctJournal *pJrnl){
@@ -287746,6 +287752,15 @@ SQLITE_PRIVATE int sqlite3HctDbStartRead(HctDatabase *pDb, HctJournal *pJrnl){
     pDb->iDiagLocalMinTid = pDb->iLocalMinTid;
     pDb->iDiagLocalMaxTid = pDb->iLocalMaxTid;
     pDb->iDiagPeekTid = iPeekTid;
+
+    if( pDb->iDiagJrnlSnapshot ){
+      u64 iPrev = HctAtomicLoad(&hctDiagMaxReadSnapshot);
+      while( iPrev<pDb->iSnapshotId
+          && !HctCASBool(&hctDiagMaxReadSnapshot, iPrev, pDb->iSnapshotId)
+      ){
+        iPrev = HctAtomicLoad(&hctDiagMaxReadSnapshot);
+      }
+    }
 
     /* Diagnostics for Expensify/Expensify#691107. Readers don't follow
     ** old-range pointers for TIDs at or below iLocalMinTid, so every one of
@@ -294111,6 +294126,19 @@ SQLITE_PRIVATE int sqlite3HctDbEndWrite(HctDatabase *p, u64 iCid, int bRollback)
   assert( p->pa.writepg.nPg==0 );
   if( bRollback ){
     iVal = p->iSnapshotId | HCT_TMAP_ROLLBACK;
+  }else{
+    /* Diagnostics for Expensify/Expensify#691107. In FOLLOWER mode the
+    ** journal snapshot includes this CID as soon as the journal entry is
+    ** written, before this TID is marked COMMITTED below. Report a reader
+    ** that started in between: its snapshot covers this transaction, yet
+    ** the transaction's keys turn visible only partway through its reads. */
+    u64 iMaxRead = HctAtomicLoad(&hctDiagMaxReadSnapshot);
+    if( iCid>0 && iMaxRead>=iCid ){
+      sqlite3_log(SQLITE_WARNING,
+          "691107-EARLY-SNAPSHOT tid=%lld cid=%lld maxReadSnapshot=%lld",
+          (i64)p->iTid, (i64)iCid, (i64)iMaxRead
+      );
+    }
   }
   HctAtomicStore(pEntry, iVal);
 
