@@ -1,0 +1,151 @@
+name: Publish Expensidev Bedrock Role Images
+
+on:
+  push:
+    branches:
+      - expensify_prod
+      - expensify_prod_webrock
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: publish-expensidev-bedrock-role-images
+  cancel-in-progress: false
+
+env:
+  AUTHROCK_IMAGE: ghcr.io/expensify/expensidev-authrock
+  WEBROCK_IMAGE: ghcr.io/expensify/expensidev-webrock
+  CHECKOUT_TOKEN: ${{ secrets.MELVIN_GH_TOKEN || secrets.CODE_EXPENSIFY_TOKEN || github.token }}
+
+jobs:
+  build:
+    name: Build ${{ matrix.role }} ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        role: ${{ fromJSON(github.event_name == 'workflow_dispatch' && '["authrock", "webrock"]' || github.ref == 'refs/heads/expensify_prod' && '["authrock"]' || '["webrock"]') }}
+        arch: [amd64, arm64]
+        include:
+          - arch: amd64
+            runner: blacksmith-32vcpu-ubuntu-2404
+            platform: linux/amd64
+          - arch: arm64
+            runner: blacksmith-32vcpu-ubuntu-2404-arm
+            platform: linux/arm64
+    steps:
+      - name: Checkout Expensidev
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          repository: Expensify/Expensidev
+          ref: main
+          token: ${{ env.CHECKOUT_TOKEN }}
+          path: Expensidev
+
+      - name: Checkout Auth
+        if: matrix.role == 'authrock'
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          repository: Expensify/Auth
+          ref: production
+          token: ${{ env.CHECKOUT_TOKEN }}
+          path: Expensidev/Auth
+
+      - name: Checkout Bedrock
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          repository: ${{ github.repository }}
+          ref: ${{ github.event_name == 'push' && github.sha || matrix.role == 'authrock' && 'expensify_prod' || 'expensify_prod_webrock' }}
+          submodules: recursive
+          token: ${{ env.CHECKOUT_TOKEN }}
+          path: Expensidev/Bedrock
+
+      - name: Checkout FuzzyBot
+        if: matrix.role == 'webrock'
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          repository: Expensify/FuzzyBot
+          ref: production
+          token: ${{ env.CHECKOUT_TOKEN }}
+          path: Expensidev/FuzzyBot
+
+      - name: Checkout ExpensifyTableManager
+        if: matrix.role == 'webrock'
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          repository: Expensify/ExpensifyTableManager
+          ref: production
+          token: ${{ env.CHECKOUT_TOKEN }}
+          path: Expensidev/ExpensifyTableManager
+
+      - name: Checkout ExpensifyBackupManager
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          repository: Expensify/ExpensifyBackupManager
+          ref: ${{ matrix.role == 'authrock' && 'production' || 'production-webrock' }}
+          token: ${{ env.CHECKOUT_TOKEN }}
+          path: Expensidev/ExpensifyBackupManager
+
+      - name: Checkout WhitelistDB
+        if: matrix.role == 'webrock'
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          repository: Expensify/WhitelistDB
+          ref: production
+          token: ${{ env.CHECKOUT_TOKEN }}
+          path: Expensidev/WhitelistDB
+
+      - name: Setup Docker Builder
+        uses: useblacksmith/setup-docker-builder@33fed32c1ba8775f20366ec9e8d0cd9fe8fc1dd3 # v1.3.0
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ env.CHECKOUT_TOKEN }}
+
+      - name: Build and push image
+        uses: useblacksmith/build-push-action@30c71162f16ea2c27c3e21523255d209b8b538c1 # v2
+        with:
+          context: Expensidev
+          file: Expensidev/ci/docker/Dockerfile.${{ matrix.role }}
+          push: true
+          provenance: false
+          platforms: ${{ matrix.platform }}
+          tags: ghcr.io/expensify/expensidev-${{ matrix.role }}:latest-${{ matrix.arch }}
+
+  publish-manifest:
+    name: Publish multi-arch manifests
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    needs: [build]
+    steps:
+      - name: Setup Docker Builder
+        uses: useblacksmith/setup-docker-builder@33fed32c1ba8775f20366ec9e8d0cd9fe8fc1dd3 # v1.3.0
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ env.CHECKOUT_TOKEN }}
+
+      - name: Publish authrock latest manifest
+        if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/expensify_prod'
+        run: |
+          docker buildx imagetools create \
+            --tag "${{ env.AUTHROCK_IMAGE }}:latest" \
+            "${{ env.AUTHROCK_IMAGE }}:latest-amd64" \
+            "${{ env.AUTHROCK_IMAGE }}:latest-arm64"
+
+      - name: Publish webrock latest manifest
+        if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/expensify_prod_webrock'
+        run: |
+          docker buildx imagetools create \
+            --tag "${{ env.WEBROCK_IMAGE }}:latest" \
+            "${{ env.WEBROCK_IMAGE }}:latest-amd64" \
+            "${{ env.WEBROCK_IMAGE }}:latest-arm64"
