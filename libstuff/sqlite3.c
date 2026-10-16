@@ -287747,6 +287747,30 @@ SQLITE_PRIVATE int sqlite3HctDbStartRead(HctDatabase *pDb, HctJournal *pJrnl){
     pDb->iDiagLocalMaxTid = pDb->iLocalMaxTid;
     pDb->iDiagPeekTid = iPeekTid;
 
+    /* Diagnostics for Expensify/Expensify#691107. Readers don't follow
+    ** old-range pointers for TIDs at or below iLocalMinTid, so every one of
+    ** those must be visible at this snapshot. Report any recent TID that
+    ** isn't: rows it rewrote would vanish from this read transaction.  */
+    {
+      u64 iTid;
+      u64 iFirst = pDb->iLocalMinTid>64 ? pDb->iLocalMinTid-64 : 1;
+      if( iFirst<pDb->pTmap->iFirstTid ) iFirst = pDb->pTmap->iFirstTid;
+      for(iTid=pDb->iLocalMinTid; iTid>=iFirst && iTid>0; iTid--){
+        u64 eState = 0;
+        u64 iCid = hctDbTMapLookup(pDb, iTid, &eState);
+        if( eState==HCT_TMAP_COMMITTED && iCid>pDb->iSnapshotId ){
+          sqlite3_log(SQLITE_WARNING,
+              "691107-SAFE-TID tid=%lld cid=%lld snapshot=%lld localMinTid=%lld "
+              "peekTid=%lld jrnlSnapshot=%lld",
+              (i64)iTid, (i64)iCid, (i64)pDb->iSnapshotId,
+              (i64)pDb->iLocalMinTid, (i64)iPeekTid,
+              (i64)pDb->iDiagJrnlSnapshot
+          );
+          break;
+        }
+      }
+    }
+
     HCT_EXTRA_WR_LOGGING(pDb, (
           "starting read with snapshot=%lld, localmintid=%lld"
           ", localmaxid=%lld",
