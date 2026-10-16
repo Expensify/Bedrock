@@ -25,6 +25,13 @@ atomic<bool> SQLite::hctreeExperimentalMode(false);
 // Bedrock stores GUID:SHA1 followed by a colon and the query bytes in HC-Tree's opaque journal payload.
 static constexpr size_t HCTREE_JOURNAL_HASH_BYTES = 32 + 1 + 40;
 
+// Diagnostics for Expensify/Expensify#691107: whether HCT_691107_EXTRA_LOGGING asks HC-Tree to keep its extra logging.
+static bool hctExtraLoggingEnabled()
+{
+    static const bool enabled = getenv("HCT_691107_EXTRA_LOGGING") != nullptr;
+    return enabled;
+}
+
 sqlite3* SQLite::getDBHandle()
 {
     return _db;
@@ -382,6 +389,13 @@ void SQLite::commonConstructorInitialization(bool hctree)
 
     // Enable tracing for performance analysis.
     sqlite3_trace_v2(_db, SQLITE_TRACE_STMT, _sqliteTraceCallback, this);
+
+    // Diagnostics for Expensify/Expensify#691107: keep HC-Tree's extra read and write logging in memory (level 2) so
+    // SQuery can write out the failing transaction's trace if it hits corruption.
+    if (hctree && hctExtraLoggingEnabled()) {
+        SQuery(_db, "PRAGMA hct_extra_logging = 2;");
+        SQuery(_db, "PRAGMA hct_extra_write_logging = 2;");
+    }
 
     // Update the cache. -size means KB; +size means pages
     if (_cacheSize) {
@@ -776,6 +790,12 @@ bool SQLite::beginTransaction(SQLite::TRANSACTION_TYPE type, bool beginOnly)
         SINFO("Beginning transaction - open transaction count: " << (_sharedData.openTransactionCount));
     }
     uint64_t before = STimeNow();
+
+    // HC-Tree's in-memory log grows until it's read, so drop the previous transaction's before starting this one. This
+    // runs before BEGIN so it can't take this transaction's read snapshot early.
+    if (_hctree && hctExtraLoggingEnabled()) {
+        SQuery(_db, "PRAGMA hct_log;");
+    }
 
     string beginQuery = (beginOnly && _hctree) ? "BEGIN" : "BEGIN CONCURRENT";
     _insideTransaction = !SQuery(_db, beginQuery);
