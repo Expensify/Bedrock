@@ -15,6 +15,7 @@
  * database between tests, and so in all likelihood, an early failure will carry over into later failures in
  * subsequent tests. This is expected as we want to verify overall database integrity rather than unit test individual
  * bits of functionality.
+ * -useNewOutput shows the live test dashboard in a terminal (default). Pass false for console output.
  */
 
 static tpunit::NcursesOutputWriter* activeOutput = nullptr;
@@ -105,7 +106,10 @@ int main(int argc, char* argv[])
     int retval = 0;
     tpunit::ConsoleOutputWriter outputWriter(args.isSet("-v"));
     unique_ptr<tpunit::NcursesOutputWriter> newOutput;
-    if (args.isSet("-useNewOutput") && tpunit::NcursesOutputWriter::available()) {
+    const bool shouldUseNewOutput = !args.isSet("-useNewOutput") ||
+        args["-useNewOutput"].empty() ||
+        args.test("-useNewOutput");
+    if (shouldUseNewOutput && tpunit::NcursesOutputWriter::available()) {
         try {
             newOutput = make_unique<tpunit::NcursesOutputWriter>();
             activeOutput = newOutput.get();
