@@ -1146,15 +1146,17 @@ bool SQLite::trimJournalTable(size_t journalTableIndex, int64_t batchSize)
             return true;
         }
 
+        // Separate aggregates let SQLite seek both ends of the journal without scanning its history.
         SQResult bounds;
-        if (!read("SELECT MIN(cid), MAX(cid) FROM hct_journal", bounds) || bounds.empty() || bounds[0][0].empty()) {
+        if (!read("SELECT (SELECT MIN(cid) FROM hct_journal) AS oldest, (SELECT MAX(cid) FROM hct_journal) AS newest", bounds) ||
+            bounds.empty() || bounds[0]["oldest"].empty()) {
             // This returns false if we can't select `min()` and `max()` which should never happen.
             SWARN("Possibly corrupt HC-Tree jornal");
             return false;
         }
 
         // Or if there's nothing old enough to trim in the journal, we can also skip.
-        if (SToUInt64(bounds[0][0]) >= oldestCommitToKeep || bounds[0][0] == bounds[0][1]) {
+        if (SToUInt64(bounds[0]["oldest"]) >= oldestCommitToKeep || bounds[0]["oldest"] == bounds[0]["newest"]) {
             return true;
         }
 
