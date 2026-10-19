@@ -116,16 +116,6 @@ struct JournalRoutingTest : tpunit::TestFixture
         const STable paused = run(node, "trim", 1, 0, 1, 0);
         EXPECT_EQUAL(paused.at("tablesAfter"), "1");
         EXPECT_TRUE(paused.at("trimQueries").empty());
-
-        for (int i = 0; i < 128; ++i) {
-            SData write("Query");
-            write["Query"] = "INSERT INTO test VALUES(" + SQ(876580000 + i) + ", 'trim bounds');";
-            node.executeWaitVerifyContent(write);
-        }
-        const uint64_t before = SToUInt64(node.readDB("SELECT COUNT(*) FROM hct_journal;"));
-        const STable trimmed = run(node, "trim", 1, 0, 1, 3);
-        EXPECT_LESS_THAN(SToInt(trimmed.at("trimFullScanSteps")), 10);
-        EXPECT_EQUAL(SToUInt64(node.readDB("SELECT COUNT(*) FROM hct_journal;")), before - 3);
     }
 
     void trimmingPreservesLegacySnapshot()

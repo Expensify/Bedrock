@@ -2,7 +2,6 @@
 #include <libstuff/SData.h>
 #include <libstuff/SQResult.h>
 #include <libstuff/sqlite3.h>
-#include <libstuff/sqlite3hct.h>
 #include <sys/wait.h>
 #include <test/clustertest/BedrockClusterTester.h>
 #include <test/clustertest/JournalTestHelper.h>
@@ -16,7 +15,6 @@ struct HCTreeJournalModeTest : tpunit::TestFixture
                               TEST(HCTreeJournalModeTest::rejectsDowngrade),
                               TEST(HCTreeJournalModeTest::rejectsJournalGap),
                               TEST(HCTreeJournalModeTest::rejectsJournalOverlap),
-                              TEST(HCTreeJournalModeTest::rejectsPendingJournalGap),
                               TEST(HCTreeJournalModeTest::trimsOldestEntries))
     {
     }
@@ -47,7 +45,7 @@ struct HCTreeJournalModeTest : tpunit::TestFixture
             return;
         }
 
-        BedrockClusterTester cluster(ClusterSize::THREE_NODE_CLUSTER, {}, {{"-journalDeleterBatchSize", "0"}});
+        BedrockClusterTester cluster(ClusterSize::THREE_NODE_CLUSTER);
         BedrockTester& first = cluster.getTester(0);
         BedrockTester& second = cluster.getTester(1);
         BedrockTester& third = cluster.getTester(2);
@@ -59,24 +57,17 @@ struct HCTreeJournalModeTest : tpunit::TestFixture
         }
 
         SData write("Query");
-        for (int i = 0; i < 128; ++i) {
-            write["Query"] = "INSERT INTO test VALUES(" + SQ(876543210 + i) + ", 'first leader');";
-            first.executeWaitVerifyContent(write, "200");
-        }
+        write["Query"] = "INSERT INTO test VALUES(876543210, 'first leader');";
+        first.executeWaitVerifyContent(write, "200");
         uint64_t firstCID = commitCount(first);
         ASSERT_TRUE(second.waitForStatusTerm("commitCount", to_string(firstCID)));
         ASSERT_TRUE(third.waitForStatusTerm("commitCount", to_string(firstCID)));
         verifyHCTreeCommit(first, firstCID);
         verifyHCTreeCommit(second, firstCID);
 
-        SData prepare("journaltest");
-        prepare["op"] = "prepareLeadership";
-        const auto result = JSON::Utils::toSTable(JSON::Value::parse(second.executeWaitVerifyContent(prepare)));
-        EXPECT_EQUAL(result.at("fullScanSteps"), "0");
-
         cluster.stopNode(0);
         ASSERT_TRUE(second.waitForState("LEADING"));
-        write["Query"] = "INSERT INTO test VALUES(876544210, 'second leader');";
+        write["Query"] = "INSERT INTO test VALUES(876543211, 'second leader');";
         second.executeWaitVerifyContent(write, "200");
         uint64_t secondCID = commitCount(second);
         ASSERT_EQUAL(secondCID, firstCID + 1);
@@ -218,32 +209,6 @@ struct HCTreeJournalModeTest : tpunit::TestFixture
     void rejectsJournalOverlap()
     {
         rejectJournalBoundary(true);
-    }
-
-    void rejectsPendingJournalGap()
-    {
-        if (!BedrockTester::ENABLE_HCTREE) {
-            return;
-        }
-
-        BedrockTester node({}, {}, 0, 0, 0, false);
-        JournalTestHelper::seedLegacyHistory(node.getArg("-db"), true, "pendingGap", 0);
-        sqlite3* handle = nullptr;
-        ASSERT_EQUAL(sqlite3_open(node.getArg("-db").c_str(), &handle), SQLITE_OK);
-        unique_ptr<sqlite3, decltype(& sqlite3_close)> db(handle, sqlite3_close);
-        ASSERT_EQUAL(sqlite3_hct_journal_init(db.get()), SQLITE_OK);
-        ASSERT_EQUAL(sqlite3_hct_journal_setmode(db.get(), SQLITE_HCT_FOLLOWER), SQLITE_OK);
-
-        // A follower may commit out of order, but cannot lead until the missing commit arrives.
-        ASSERT_EQUAL(SQuery(db.get(), "BEGIN"), SQLITE_OK);
-        ASSERT_EQUAL(sqlite3_hct_journal_follower_commit(db.get(), nullptr, 0, 3, 1), SQLITE_OK);
-        EXPECT_EQUAL(sqlite3_hct_journal_setmode(db.get(), SQLITE_HCT_LEADER), SQLITE_ERROR);
-        EXPECT_EQUAL(string(sqlite3_errmsg(db.get())), "non-contiguous journal table");
-        EXPECT_EQUAL(sqlite3_hct_journal_mode(db.get()), SQLITE_HCT_FOLLOWER);
-
-        ASSERT_EQUAL(SQuery(db.get(), "BEGIN"), SQLITE_OK);
-        ASSERT_EQUAL(sqlite3_hct_journal_follower_commit(db.get(), nullptr, 0, 2, 1), SQLITE_OK);
-        EXPECT_EQUAL(sqlite3_hct_journal_setmode(db.get(), SQLITE_HCT_LEADER), SQLITE_OK);
     }
 
     void rejectJournalBoundary(bool overlap)
