@@ -12,7 +12,7 @@
 // Exposes the failure-stage description so it can be checked without a real network failure.
 class FailureStageHTTPSManager : public SStandaloneHTTPSManager
 {
-  public:
+public:
     static string describe(const Transaction& transaction, STCPManager::Socket::State state, bool requestSent)
     {
         return _describeFailureStage(transaction, state, requestSent);
