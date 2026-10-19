@@ -18,7 +18,7 @@
 ** separate file. This file contains only code for the core SQLite library.
 **
 ** The content in this amalgamation comes from Fossil check-in
-** 6b83743f2a5fe8125f937b55eb019e5ff079 with changes in files:
+** a1551bc4240f6a265ae1c3c4d4f7860e998d with changes in files:
 **
 **    
 */
@@ -476,10 +476,10 @@ extern "C" {
 */
 #define SQLITE_VERSION        "3.54.0"
 #define SQLITE_VERSION_NUMBER 3054000
-#define SQLITE_SOURCE_ID      "2026-10-07 17:00:11 6b83743f2a5fe8125f937b55eb019e5ff079490e6a68cda479475c39cc60c0b4"
+#define SQLITE_SOURCE_ID      "2026-10-17 16:16:09 a1551bc4240f6a265ae1c3c4d4f7860e998d8d05e91954a3d65f2f518658854c"
 #define SQLITE_SCM_BRANCH     "hctree-bedrock-lcd-ex"
 #define SQLITE_SCM_TAGS       ""
-#define SQLITE_SCM_DATETIME   "2026-10-07T17:00:11.345Z"
+#define SQLITE_SCM_DATETIME   "2026-10-17T16:16:09.567Z"
 
 /*
 ** CAPI3REF: Run-Time Library Version Numbers
@@ -275671,7 +275671,7 @@ static void fts5SourceIdFunc(
 ){
   assert( nArg==0 );
   UNUSED_PARAM2(nArg, apUnused);
-  sqlite3_result_text(pCtx, "fts5: 2026-10-07 17:00:11 6b83743f2a5fe8125f937b55eb019e5ff079490e6a68cda479475c39cc60c0b4", -1, SQLITE_TRANSIENT);
+  sqlite3_result_text(pCtx, "fts5: 2026-10-17 16:16:09 a1551bc4240f6a265ae1c3c4d4f7860e998d8d05e91954a3d65f2f518658854c", -1, SQLITE_TRANSIENT);
 }
 
 /*
@@ -298649,10 +298649,11 @@ SQLITE_PRIVATE int sqlite3HctJrnlLog(
             pJrnl->pJrnlData, pJrnl->nJrnlData, pJrnl->iJrnlSnapshot, nPtr, aPtr
         );
 
-        /* Set the entry in HctJrnlServer.aCommit[] to indicate that this
-        ** transaction has been committed.  */
-        HctAtomicStore(&pServer->aCommit[iCid % pServer->nCommit], iCid);
-
+        /* The entry in HctJrnlServer.aCommit[] is not set here. It is set
+        ** by sqlite3_hct_journal_follower_commit() once the transaction
+        ** has been completely committed. Otherwise, readers might start
+        ** with a snapshot that includes this transaction before it
+        ** is marked as committed in the transaction-map.  */
       }else{
         assert( pServer->eMode==SQLITE_HCT_LEADER );
         rc = hctJrnlWriteRecord(pJrnl, 0, 0, iCid,
@@ -299218,6 +299219,16 @@ SQLITE_API int sqlite3_hct_journal_follower_commit(
   pJrnl->eJrnlCommit = HCT_JOURNAL_COMMIT_FOLLOWER;
   rc = sqlite3_exec(db, "COMMIT", 0, 0, 0);
   pJrnl->eJrnlCommit = 0;
+
+  /* If the transaction was committed, set the entry in
+  ** HctJrnlServer.aCommit[] to indicate this. This must not be done until
+  ** after the transaction has been marked as committed in the
+  ** transaction-map. Otherwise, a concurrent reader might use a snapshot
+  ** that includes this transaction while it is still not visible.  */
+  if( rc==SQLITE_OK ){
+    HctJrnlServer *pServer = pJrnl->pServer;
+    HctAtomicStore(&pServer->aCommit[iCid % pServer->nCommit], (u64)iCid);
+  }
 
   pJrnl->pJrnlData = 0;
   pJrnl->nJrnlData = 0;

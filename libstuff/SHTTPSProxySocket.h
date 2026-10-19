@@ -19,6 +19,10 @@ public:
     virtual bool send(const string& buffer, size_t* bytesSentCount = nullptr) override;
     virtual bool recv() override;
 
+    // True once the proxy has accepted the CONNECT and the tunnel to the target host is open. Until then, nothing has
+    // been sent to the target host.
+    bool tunnelEstablished() const;
+
 private:
 
     // These should contain the address and port, i.e.:
