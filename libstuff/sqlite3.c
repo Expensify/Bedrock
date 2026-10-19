@@ -18,7 +18,7 @@
 ** separate file. This file contains only code for the core SQLite library.
 **
 ** The content in this amalgamation comes from Fossil check-in
-** 6b83743f2a5fe8125f937b55eb019e5ff079 with changes in files:
+** a1551bc4240f6a265ae1c3c4d4f7860e998d with changes in files:
 **
 **    
 */
@@ -476,10 +476,10 @@ extern "C" {
 */
 #define SQLITE_VERSION        "3.54.0"
 #define SQLITE_VERSION_NUMBER 3054000
-#define SQLITE_SOURCE_ID      "2026-10-07 17:00:11 6b83743f2a5fe8125f937b55eb019e5ff079490e6a68cda479475c39cc60c0b4"
+#define SQLITE_SOURCE_ID      "2026-10-17 16:16:09 a1551bc4240f6a265ae1c3c4d4f7860e998d8d05e91954a3d65f2f518658854c"
 #define SQLITE_SCM_BRANCH     "hctree-bedrock-lcd-ex"
 #define SQLITE_SCM_TAGS       ""
-#define SQLITE_SCM_DATETIME   "2026-10-07T17:00:11.345Z"
+#define SQLITE_SCM_DATETIME   "2026-10-17T16:16:09.567Z"
 
 /*
 ** CAPI3REF: Run-Time Library Version Numbers
@@ -275671,7 +275671,7 @@ static void fts5SourceIdFunc(
 ){
   assert( nArg==0 );
   UNUSED_PARAM2(nArg, apUnused);
-  sqlite3_result_text(pCtx, "fts5: 2026-10-07 17:00:11 6b83743f2a5fe8125f937b55eb019e5ff079490e6a68cda479475c39cc60c0b4", -1, SQLITE_TRANSIENT);
+  sqlite3_result_text(pCtx, "fts5: 2026-10-17 16:16:09 a1551bc4240f6a265ae1c3c4d4f7860e998d8d05e91954a3d65f2f518658854c", -1, SQLITE_TRANSIENT);
 }
 
 /*
@@ -287200,14 +287200,6 @@ struct HctDatabase {
   u64 iLocalMinTid;               /* All trans with <= tids are done */
   u64 iLocalMaxTid;               /* All trans with >= tids are ignorable */
 
-  /* Diagnostics for Expensify/Expensify#691107: the values chosen when the
-  ** most recent read transaction started, kept after it ends. */
-  u64 iDiagSnapshotId;
-  u64 iDiagLocalMinTid;
-  u64 iDiagLocalMaxTid;
-  u64 iDiagPeekTid;
-  u64 iDiagJrnlSnapshot;
-
   u64 iReqSnapshotId;             /* Required snapshot to replicate trans. */
 
   HctDbWriter pa;
@@ -287706,12 +287698,6 @@ SQLITE_PRIVATE void sqlite3HctDbRootPageInit(
 
 
 /*
-** Diagnostics for Expensify/Expensify#691107: the largest snapshot any
-** FOLLOWER mode read transaction in this process has started with.
-*/
-static u64 hctDiagMaxReadSnapshot = 0;
-
-/*
 ** Open a read transaction, if one is not already open.
 */
 SQLITE_PRIVATE int sqlite3HctDbStartRead(HctDatabase *pDb, HctJournal *pJrnl){
@@ -287730,7 +287716,6 @@ SQLITE_PRIVATE int sqlite3HctDbStartRead(HctDatabase *pDb, HctJournal *pJrnl){
     }
 
     iSnapshot = sqlite3HctJrnlSnapshot(pJrnl);
-    pDb->iDiagJrnlSnapshot = iSnapshot;
     pDb->pTmap = sqlite3HctTMapBegin(pTMapClient, iSnapshot, iPeekTid);
 
     if( iSnapshot==0 ){
@@ -287748,44 +287733,6 @@ SQLITE_PRIVATE int sqlite3HctDbStartRead(HctDatabase *pDb, HctJournal *pJrnl){
 
     pDb->iLocalMaxTid = sqlite3HctFilePeekTransid(pDb->pFile)+1;
 
-    pDb->iDiagSnapshotId = pDb->iSnapshotId;
-    pDb->iDiagLocalMinTid = pDb->iLocalMinTid;
-    pDb->iDiagLocalMaxTid = pDb->iLocalMaxTid;
-    pDb->iDiagPeekTid = iPeekTid;
-
-    if( pDb->iDiagJrnlSnapshot ){
-      u64 iPrev = HctAtomicLoad(&hctDiagMaxReadSnapshot);
-      while( iPrev<pDb->iSnapshotId
-          && !HctCASBool(&hctDiagMaxReadSnapshot, iPrev, pDb->iSnapshotId)
-      ){
-        iPrev = HctAtomicLoad(&hctDiagMaxReadSnapshot);
-      }
-    }
-
-    /* Diagnostics for Expensify/Expensify#691107. Readers don't follow
-    ** old-range pointers for TIDs at or below iLocalMinTid, so every one of
-    ** those must be visible at this snapshot. Report any recent TID that
-    ** isn't: rows it rewrote would vanish from this read transaction.  */
-    {
-      u64 iTid;
-      u64 iFirst = pDb->iLocalMinTid>64 ? pDb->iLocalMinTid-64 : 1;
-      if( iFirst<pDb->pTmap->iFirstTid ) iFirst = pDb->pTmap->iFirstTid;
-      for(iTid=pDb->iLocalMinTid; iTid>=iFirst && iTid>0; iTid--){
-        u64 eState = 0;
-        u64 iCid = hctDbTMapLookup(pDb, iTid, &eState);
-        if( eState==HCT_TMAP_COMMITTED && iCid>pDb->iSnapshotId ){
-          sqlite3_log(SQLITE_WARNING,
-              "691107-SAFE-TID tid=%lld cid=%lld snapshot=%lld localMinTid=%lld "
-              "peekTid=%lld jrnlSnapshot=%lld",
-              (i64)iTid, (i64)iCid, (i64)pDb->iSnapshotId,
-              (i64)pDb->iLocalMinTid, (i64)iPeekTid,
-              (i64)pDb->iDiagJrnlSnapshot
-          );
-          break;
-        }
-      }
-    }
-
     HCT_EXTRA_WR_LOGGING(pDb, (
           "starting read with snapshot=%lld, localmintid=%lld"
           ", localmaxid=%lld",
@@ -287794,33 +287741,6 @@ SQLITE_PRIVATE int sqlite3HctDbStartRead(HctDatabase *pDb, HctJournal *pJrnl){
   }
 
   return rc;
-}
-
-/*
-** Diagnostics for Expensify/Expensify#691107. Fill up to nOut values of: the
-** read snapshot currently open on db (0 if none), then the snapshot, local-min
-** TID, local-max TID, peek TID and journal snapshot recorded when db's most
-** recent read transaction started.
-*/
-SQLITE_API int sqlite3_hct_diag_read_state(
-  sqlite3 *db,
-  sqlite3_int64 *aOut,
-  int nOut
-){
-  HctDatabase *pDb = sqlite3HctDbFind(db, 0);
-  sqlite3_int64 aVal[6];
-  int ii;
-  if( pDb==0 ) return SQLITE_ERROR;
-  aVal[0] = (sqlite3_int64)pDb->iSnapshotId;
-  aVal[1] = (sqlite3_int64)pDb->iDiagSnapshotId;
-  aVal[2] = (sqlite3_int64)pDb->iDiagLocalMinTid;
-  aVal[3] = (sqlite3_int64)pDb->iDiagLocalMaxTid;
-  aVal[4] = (sqlite3_int64)pDb->iDiagPeekTid;
-  aVal[5] = (sqlite3_int64)pDb->iDiagJrnlSnapshot;
-  for(ii=0; ii<nOut && ii<6; ii++){
-    aOut[ii] = aVal[ii];
-  }
-  return SQLITE_OK;
 }
 
 static u64 hctGetU64(const u8 *a){
@@ -294121,28 +294041,13 @@ SQLITE_PRIVATE int sqlite3HctDbEndWrite(HctDatabase *p, u64 iCid, int bRollback)
   int rc = SQLITE_OK;
   u64 iVal = iCid | HCT_TMAP_COMMITTED;;
   u64 *pEntry = hctDbFindTMapEntry(p->pTmap, p->iTid);
-  u64 iDiagMaxRead = 0;
 
   assert( p->eMode==HCT_MODE_NORMAL );
   assert( p->pa.writepg.nPg==0 );
   if( bRollback ){
     iVal = p->iSnapshotId | HCT_TMAP_ROLLBACK;
-  }else{
-    /* Diagnostics for Expensify/Expensify#691107. In FOLLOWER mode the
-    ** journal snapshot includes this CID as soon as the journal entry is
-    ** written, before this TID is marked COMMITTED below. Note whether a
-    ** reader started in between: its snapshot covers this transaction, yet
-    ** the transaction's keys turn visible only partway through its reads.
-    ** This is logged after the store so it doesn't widen that window. */
-    iDiagMaxRead = HctAtomicLoad(&hctDiagMaxReadSnapshot);
   }
   HctAtomicStore(pEntry, iVal);
-  if( iCid>0 && iDiagMaxRead>=iCid ){
-    sqlite3_log(SQLITE_WARNING,
-        "691107-EARLY-SNAPSHOT tid=%lld cid=%lld maxReadSnapshot=%lld",
-        (i64)p->iTid, (i64)iCid, (i64)iDiagMaxRead
-    );
-  }
 
 #if 0
   HCT_EXTRA_WR_LOGGING(p, ("mapping %lld to %lld (%s) (snapshot was %lld)",
@@ -298717,25 +298622,6 @@ static int hctJrnlWriteRecord(
 }
 
 /*
-** Diagnostics for Expensify/Expensify#691107: how many microseconds to pause
-** after a FOLLOWER commit's CID is published in aCommit[] and before its TID
-** is marked COMMITTED, read once from HCT_691107_FOLLOWER_DELAY_US. This
-** widens the window in which a new read transaction's snapshot covers a
-** commit whose keys still read as uncommitted. Unset or 0 does nothing.
-*/
-static int hctDiagFollowerDelayUs(void){
-  static int iDelay = -1;
-  int iRet = HctAtomicLoad(&iDelay);
-  if( iRet<0 ){
-    const char *zDelay = getenv("HCT_691107_FOLLOWER_DELAY_US");
-    iRet = zDelay ? atoi(zDelay) : 0;
-    if( iRet<0 ) iRet = 0;
-    HctAtomicStore(&iDelay, iRet);
-  }
-  return iRet;
-}
-
-/*
 ** This is called when committing a transaction to write the entry into
 ** the hct_journal table.
 */
@@ -298763,17 +298649,11 @@ SQLITE_PRIVATE int sqlite3HctJrnlLog(
             pJrnl->pJrnlData, pJrnl->nJrnlData, pJrnl->iJrnlSnapshot, nPtr, aPtr
         );
 
-        /* Set the entry in HctJrnlServer.aCommit[] to indicate that this
-        ** transaction has been committed.  */
-        HctAtomicStore(&pServer->aCommit[iCid % pServer->nCommit], iCid);
-
-        {
-          int nDiagDelay = hctDiagFollowerDelayUs();
-          if( nDiagDelay>0 ){
-            sqlite3OsSleep(sqlite3_vfs_find(0), nDiagDelay);
-          }
-        }
-
+        /* The entry in HctJrnlServer.aCommit[] is not set here. It is set
+        ** by sqlite3_hct_journal_follower_commit() once the transaction
+        ** has been completely committed. Otherwise, readers might start
+        ** with a snapshot that includes this transaction before it
+        ** is marked as committed in the transaction-map.  */
       }else{
         assert( pServer->eMode==SQLITE_HCT_LEADER );
         rc = hctJrnlWriteRecord(pJrnl, 0, 0, iCid,
@@ -299339,6 +299219,16 @@ SQLITE_API int sqlite3_hct_journal_follower_commit(
   pJrnl->eJrnlCommit = HCT_JOURNAL_COMMIT_FOLLOWER;
   rc = sqlite3_exec(db, "COMMIT", 0, 0, 0);
   pJrnl->eJrnlCommit = 0;
+
+  /* If the transaction was committed, set the entry in
+  ** HctJrnlServer.aCommit[] to indicate this. This must not be done until
+  ** after the transaction has been marked as committed in the
+  ** transaction-map. Otherwise, a concurrent reader might use a snapshot
+  ** that includes this transaction while it is still not visible.  */
+  if( rc==SQLITE_OK ){
+    HctJrnlServer *pServer = pJrnl->pServer;
+    HctAtomicStore(&pServer->aCommit[iCid % pServer->nCommit], (u64)iCid);
+  }
 
   pJrnl->pJrnlData = 0;
   pJrnl->nJrnlData = 0;
