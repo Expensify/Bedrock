@@ -705,18 +705,16 @@ void SQLite::prepareHCTreeLeadership()
         return;
     }
     SASSERT(_sharedData.hctreeFollowerMode);
+
+    // HC-Tree checks its outstanding commit window for gaps when setHCTreeFollowerMode(false) switches to leader mode.
+    // Bedrock also requires the legacy journal to end immediately before the HC-Tree journal begins.
     SQResult result;
-    SASSERT(!SQuery(_db, "SELECT MIN(cid), MAX(cid), COUNT(*) FROM hct_journal", result));
-    SASSERT(result.size() == 1 && !result[0][0].empty());
-    const uint64_t oldest = SToUInt64(result[0][0]);
-    const uint64_t newest = SToUInt64(result[0][1]);
-    const uint64_t count = SToUInt64(result[0][2]);
+    SASSERT(!SQuery(_db, "SELECT MIN(cid) AS oldest FROM hct_journal", result));
+    SASSERT(result.size() == 1 && !result[0]["oldest"].empty());
+    const uint64_t oldest = SToUInt64(result[0]["oldest"]);
     const uint64_t legacyCommitID = getLegacyCommitCount();
     if (legacyCommitID && legacyCommitID != oldest - 1) {
         SERROR("Unsupported journal configuration: newest legacy commit " << legacyCommitID << ", oldest HC-Tree commit " << oldest);
-    }
-    if (newest - oldest + 1 != count) {
-        SERROR("Cannot lead with a non-contiguous HC-Tree journal");
     }
 }
 
