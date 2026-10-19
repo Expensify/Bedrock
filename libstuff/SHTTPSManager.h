@@ -24,6 +24,10 @@ public:
         SStandaloneHTTPSManager& manager;
         const string requestID;
 
+        // Where the request is going (host:port), and the proxy it goes through, if any. Used to describe failures in logs.
+        string targetHost;
+        string proxyHost;
+
         // Allow a transaction to be scheduled to start in the future.
         // If it is scheduled to start in the future, we will call `startFunc` at the timestamp scheduled.
         uint64_t scheduledStart = 0;
@@ -60,6 +64,10 @@ protected:   // Child API
     unique_ptr<Transaction> _httpsSend(const string& url, const SData& request, shared_ptr<const MTLSConnection> connection, bool allowProxy = false);
 
     unique_ptr<Transaction> _createErrorTransaction();
+
+    // Names the step a failed transaction got to (resolving, connecting, opening the proxy tunnel, sending, or waiting
+    // for a response), so a failure log shows whether the request ever reached the target host.
+    static string _describeFailureStage(const Transaction& transaction, Socket::State state, bool requestSent);
     virtual bool _onRecv(Transaction& transaction);
 
     static string initProxyAddressHTTPS();

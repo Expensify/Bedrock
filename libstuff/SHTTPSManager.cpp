@@ -162,8 +162,16 @@ void SStandaloneHTTPSManager::postPoll(fd_map& fdm, SStandaloneHTTPSManager::Tra
                 transaction.s = nullptr;
             } else {
                 // No response data at all - this is a genuine failure
-                SHMMM("Connection " << ((transaction.s->state.load() > Socket::CONNECTED) ? "died prematurely" : "timed out"));
-                transaction.response = transaction.s->sendBufferEmpty() ? 501 : 500;
+                const Socket::State state = transaction.s->state.load();
+                const bool requestSent = transaction.s->sendBufferEmpty();
+                transaction.response = requestSent ? 501 : 500;
+                const string outcome = (state > Socket::CONNECTED) ? "died prematurely" : "timed out";
+                const string stage = _describeFailureStage(transaction, state, requestSent);
+                const string target = transaction.targetHost.empty() ? "an unknown host" : transaction.targetHost;
+                const string via = transaction.proxyHost.empty() ? "" : " via proxy " + transaction.proxyHost;
+                const string sent = requestSent ? "sent" : "not sent";
+                SHMMM("Connection " << outcome << " " << stage << " to " << target << via
+                      << "; request " << sent << ", responding " << transaction.response);
             }
         } else {
             // No timeout yet, set nextActivity short enough that it'll catch the next timeout.
@@ -234,6 +242,7 @@ unique_ptr<SStandaloneHTTPSManager::Transaction> SStandaloneHTTPSManager::_https
     }
 
     unique_ptr<Transaction> transaction = make_unique<Transaction>(*this);
+    transaction->targetHost = host;
 
     // Open a socket, optionally using a client certificate.
     Socket* s = nullptr;
@@ -244,6 +253,7 @@ unique_ptr<SStandaloneHTTPSManager::Transaction> SStandaloneHTTPSManager::_https
             string proxyHost, path;
             SParseURI(proxyAddressHTTPS, proxyHost, path);
             SINFO("Proxying " << url << " through " << proxyHost);
+            transaction->proxyHost = proxyHost;
             s = connection
                 ? new SHTTPSProxySocket(proxyHost, move(connection), transaction->requestID)
                 : new SHTTPSProxySocket(proxyHost, host, transaction->requestID);
@@ -272,6 +282,22 @@ unique_ptr<SStandaloneHTTPSManager::Transaction> SStandaloneHTTPSManager::_https
 
     // Keep track of the transaction.
     return transaction;
+}
+
+string SStandaloneHTTPSManager::_describeFailureStage(const Transaction& transaction, Socket::State state, bool requestSent)
+{
+    const bool viaProxy = !transaction.proxyHost.empty();
+    if (state == Socket::RESOLVING) {
+        return viaProxy ? "resolving the proxy" : "resolving DNS";
+    }
+    if (transaction.s->connectFailure || state == Socket::CONNECTING) {
+        return viaProxy ? "connecting to the proxy" : "connecting";
+    }
+    const SHTTPSProxySocket* proxySocket = dynamic_cast<const SHTTPSProxySocket*>(transaction.s);
+    if (proxySocket && !proxySocket->tunnelEstablished()) {
+        return "opening the proxy tunnel";
+    }
+    return requestSent ? "waiting for a response" : "sending the request";
 }
 
 bool SStandaloneHTTPSManager::_onRecv(Transaction& transaction)

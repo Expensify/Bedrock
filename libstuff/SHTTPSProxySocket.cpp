@@ -39,6 +39,11 @@ SHTTPSProxySocket::~SHTTPSProxySocket()
 {
 }
 
+bool SHTTPSProxySocket::tunnelEstablished() const
+{
+    return proxyNegotiationComplete;
+}
+
 bool SHTTPSProxySocket::send(size_t* bytesSentCount)
 {
     lock_guard<decltype(sendRecvMutex)> lock(sendRecvMutex);

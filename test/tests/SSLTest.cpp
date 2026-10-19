@@ -9,6 +9,16 @@
 #include <test/lib/BedrockTester.h>
 #include <libstuff/SHTTPSProxySocket.h>
 
+// Exposes the failure-stage description so it can be checked without a real network failure.
+class FailureStageHTTPSManager : public SStandaloneHTTPSManager
+{
+  public:
+    static string describe(const Transaction& transaction, STCPManager::Socket::State state, bool requestSent)
+    {
+        return _describeFailureStage(transaction, state, requestSent);
+    }
+};
+
 struct SSLTest : tpunit::TestFixture
 {
     SSLTest()
@@ -16,6 +26,7 @@ struct SSLTest : tpunit::TestFixture
                               BEFORE_CLASS(SSLTest::setup),
                               TEST(SSLTest::test),
                               TEST(SSLTest::proxyTest),
+                              TEST(SSLTest::failureStageTest),
                               AFTER_CLASS(SSLTest::teardown))
     {
     }
@@ -93,5 +104,35 @@ struct SSLTest : tpunit::TestFixture
         // Make sure that the response has a body. This differentiates it from the response to a CONNECT message
         // So that we can test we're looking at the actual proxied response and not just the response from the proxy itself.
         EXPECT_TRUE(transaction->fullResponse.content.size());
+    }
+
+    void failureStageTest()
+    {
+        FailureStageHTTPSManager manager;
+        using State = STCPManager::Socket::State;
+
+        // Direct connection: each stage before a response is described, and the request is only "sent" once its
+        // send buffer has drained.
+        SStandaloneHTTPSManager::Transaction direct(manager);
+        direct.targetHost = "example.com:443";
+        direct.s = new STCPManager::Socket(-1, State::CONNECTING);
+        EXPECT_EQUAL(FailureStageHTTPSManager::describe(direct, State::RESOLVING, false), "resolving DNS");
+        EXPECT_EQUAL(FailureStageHTTPSManager::describe(direct, State::CONNECTING, false), "connecting");
+        direct.s->connectFailure = true;
+        EXPECT_EQUAL(FailureStageHTTPSManager::describe(direct, State::CLOSED, false), "connecting");
+        direct.s->connectFailure = false;
+        EXPECT_EQUAL(FailureStageHTTPSManager::describe(direct, State::CONNECTED, false), "sending the request");
+        EXPECT_EQUAL(FailureStageHTTPSManager::describe(direct, State::CONNECTED, true), "waiting for a response");
+
+        // Through a proxy: failures before the CONNECT tunnel is open are described as proxy steps, since nothing
+        // has reached the target host yet.
+        SStandaloneHTTPSManager::Transaction proxied(manager);
+        proxied.targetHost = "example.com:443";
+        proxied.proxyHost = "127.0.0.1:9";
+        proxied.s = new SHTTPSProxySocket("127.0.0.1:9", "example.com:443", "");
+        EXPECT_EQUAL(FailureStageHTTPSManager::describe(proxied, State::RESOLVING, false), "resolving the proxy");
+        EXPECT_EQUAL(FailureStageHTTPSManager::describe(proxied, State::CONNECTING, false), "connecting to the proxy");
+        proxied.s->connectFailure = false;
+        EXPECT_EQUAL(FailureStageHTTPSManager::describe(proxied, State::CLOSED, false), "opening the proxy tunnel");
     }
 } __SSLTest;
