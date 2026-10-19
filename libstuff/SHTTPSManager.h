@@ -68,6 +68,9 @@ protected:   // Child API
     // Names the step a failed transaction got to (resolving, connecting, opening the proxy tunnel, sending, or waiting
     // for a response), so a failure log shows whether the request ever reached the target host.
     static string _describeFailureStage(const Transaction& transaction, Socket::State state, bool requestSent);
+
+    // Says whether a failed transaction's request reached the target host: "sent", "not fully sent", or "not sent".
+    static string _describeRequestProgress(const Transaction& transaction);
     virtual bool _onRecv(Transaction& transaction);
 
     static string initProxyAddressHTTPS();

@@ -17,6 +17,11 @@ public:
     {
         return _describeFailureStage(transaction, state, requestSent);
     }
+
+    static string progress(const Transaction& transaction)
+    {
+        return _describeRequestProgress(transaction);
+    }
 };
 
 struct SSLTest : tpunit::TestFixture
@@ -118,7 +123,10 @@ struct SSLTest : tpunit::TestFixture
         direct.s = new STCPManager::Socket(-1, State::CONNECTING);
         EXPECT_EQUAL(FailureStageHTTPSManager::describe(direct, State::RESOLVING, false), "resolving DNS");
         EXPECT_EQUAL(FailureStageHTTPSManager::describe(direct, State::CONNECTING, false), "connecting");
+        // A failed lookup never fills in the address; a failed connect has one.
         direct.s->connectFailure = true;
+        EXPECT_EQUAL(FailureStageHTTPSManager::describe(direct, State::CLOSED, false), "resolving DNS");
+        direct.s->addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
         EXPECT_EQUAL(FailureStageHTTPSManager::describe(direct, State::CLOSED, false), "connecting");
         direct.s->connectFailure = false;
         EXPECT_EQUAL(FailureStageHTTPSManager::describe(direct, State::CONNECTED, false), "sending the request");
@@ -134,5 +142,14 @@ struct SSLTest : tpunit::TestFixture
         EXPECT_EQUAL(FailureStageHTTPSManager::describe(proxied, State::CONNECTING, false), "connecting to the proxy");
         proxied.s->connectFailure = false;
         EXPECT_EQUAL(FailureStageHTTPSManager::describe(proxied, State::CLOSED, false), "opening the proxy tunnel");
+
+        // An empty send buffer alone isn't "sent": the request only counts once bytes have actually gone out, or for a
+        // proxy, once the tunnel is open.
+        EXPECT_EQUAL(FailureStageHTTPSManager::progress(direct), "not sent");
+        direct.s->lastSendTime = direct.s->openTime + 1;
+        EXPECT_EQUAL(FailureStageHTTPSManager::progress(direct), "sent");
+        direct.s->setSendBuffer("rest of the request");
+        EXPECT_EQUAL(FailureStageHTTPSManager::progress(direct), "not fully sent");
+        EXPECT_EQUAL(FailureStageHTTPSManager::progress(proxied), "not sent");
     }
 } __SSLTest;

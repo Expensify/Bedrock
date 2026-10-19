@@ -163,15 +163,14 @@ void SStandaloneHTTPSManager::postPoll(fd_map& fdm, SStandaloneHTTPSManager::Tra
             } else {
                 // No response data at all - this is a genuine failure
                 const Socket::State state = transaction.s->state.load();
-                const bool requestSent = transaction.s->sendBufferEmpty();
-                transaction.response = requestSent ? 501 : 500;
+                transaction.response = transaction.s->sendBufferEmpty() ? 501 : 500;
+                const string progress = _describeRequestProgress(transaction);
                 const string outcome = (state > Socket::CONNECTED) ? "died prematurely" : "timed out";
-                const string stage = _describeFailureStage(transaction, state, requestSent);
+                const string stage = _describeFailureStage(transaction, state, progress == "sent");
                 const string target = transaction.targetHost.empty() ? "an unknown host" : transaction.targetHost;
                 const string via = transaction.proxyHost.empty() ? "" : " via proxy " + transaction.proxyHost;
-                const string sent = requestSent ? "sent" : "not sent";
                 SHMMM("Connection " << outcome << " " << stage << " to " << target << via
-                      << "; request " << sent << ", responding " << transaction.response);
+                      << "; request " << progress << ", responding " << transaction.response);
             }
         } else {
             // No timeout yet, set nextActivity short enough that it'll catch the next timeout.
@@ -287,7 +286,10 @@ unique_ptr<SStandaloneHTTPSManager::Transaction> SStandaloneHTTPSManager::_https
 string SStandaloneHTTPSManager::_describeFailureStage(const Transaction& transaction, Socket::State state, bool requestSent)
 {
     const bool viaProxy = !transaction.proxyHost.empty();
-    if (state == Socket::RESOLVING) {
+
+    // A failed lookup closes the socket without ever filling in its address.
+    const bool lookupFailed = transaction.s->connectFailure && transaction.s->addr.sin_addr.s_addr == 0;
+    if (state == Socket::RESOLVING || lookupFailed) {
         return viaProxy ? "resolving the proxy" : "resolving DNS";
     }
     if (transaction.s->connectFailure || state == Socket::CONNECTING) {
@@ -298,6 +300,19 @@ string SStandaloneHTTPSManager::_describeFailureStage(const Transaction& transac
         return "opening the proxy tunnel";
     }
     return requestSent ? "waiting for a response" : "sending the request";
+}
+
+string SStandaloneHTTPSManager::_describeRequestProgress(const Transaction& transaction)
+{
+    // An empty send buffer doesn't prove the request went out: a socket that closed before the request was queued
+    // never had it in its buffer. Bytes only count as reaching the target once a direct socket has sent something, or
+    // once a proxy socket's tunnel is open (the bytes before that are the CONNECT to the proxy).
+    const SHTTPSProxySocket* proxySocket = dynamic_cast<const SHTTPSProxySocket*>(transaction.s);
+    const bool reachedTarget = proxySocket ? proxySocket->tunnelEstablished() : transaction.s->lastSendTime > transaction.s->openTime;
+    if (!reachedTarget) {
+        return "not sent";
+    }
+    return transaction.s->sendBufferEmpty() ? "sent" : "not fully sent";
 }
 
 bool SStandaloneHTTPSManager::_onRecv(Transaction& transaction)
