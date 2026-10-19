@@ -1146,7 +1146,6 @@ bool SQLite::trimJournalTable(size_t journalTableIndex, int64_t batchSize)
             return true;
         }
 
-        // Separate aggregates let SQLite seek both ends of the journal without scanning its history.
         SQResult bounds;
         if (!read("SELECT (SELECT MIN(cid) FROM hct_journal) AS oldest, (SELECT MAX(cid) FROM hct_journal) AS newest", bounds) ||
             bounds.empty() || bounds[0]["oldest"].empty()) {
