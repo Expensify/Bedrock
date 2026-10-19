@@ -1,6 +1,9 @@
 #include "libstuff/SHTTPSManager.h"
 #include "libstuff/STCPManager.h"
 #include "test/lib/tpunit++.hpp"
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
 #include <unistd.h>
 
 #include <libstuff/libstuff.h>
@@ -32,6 +35,7 @@ struct SSLTest : tpunit::TestFixture
                               TEST(SSLTest::test),
                               TEST(SSLTest::proxyTest),
                               TEST(SSLTest::failureStageTest),
+                              TEST(SSLTest::failureFinishesTransactionTest),
                               AFTER_CLASS(SSLTest::teardown))
     {
     }
@@ -151,5 +155,38 @@ struct SSLTest : tpunit::TestFixture
         direct.s->setSendBuffer("rest of the request");
         EXPECT_EQUAL(FailureStageHTTPSManager::progress(direct), "not fully sent");
         EXPECT_EQUAL(FailureStageHTTPSManager::progress(proxied), "not sent");
+    }
+
+    void failureFinishesTransactionTest()
+    {
+        // Find a localhost port with nothing listening on it, so the connection is refused.
+        const int fd = socket(AF_INET, SOCK_STREAM, 0);
+        sockaddr_in addr{};
+        addr.sin_family = AF_INET;
+        addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        socklen_t length = sizeof(addr);
+        ::bind(fd, (sockaddr*) &addr, sizeof(addr));
+        getsockname(fd, (sockaddr*) &addr, &length);
+        close(fd);
+        const string host = "127.0.0.1:" + to_string(ntohs(addr.sin_port));
+
+        SStandaloneHTTPSManager manager;
+        SStandaloneHTTPSManager::Transaction transaction(manager);
+        transaction.targetHost = host;
+        transaction.timeoutAt = STimeNow() + 5'000'000;
+        transaction.s = new STCPManager::Socket(host, false);
+        transaction.s->send(SData("GET / HTTP/1.1").serialize());
+
+        while (!transaction.response) {
+            fd_map fdm;
+            uint64_t nextActivity = STimeNow();
+            manager.prePoll(fdm, transaction);
+            S_poll(fdm, 100'000);
+            manager.postPoll(fdm, transaction, nextActivity);
+        }
+
+        // A failed transaction is finished, so polling it again doesn't report the failure again.
+        EXPECT_EQUAL(transaction.response, 500);
+        EXPECT_TRUE(transaction.finished);
     }
 } __SSLTest;
