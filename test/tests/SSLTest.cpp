@@ -185,8 +185,10 @@ struct SSLTest : tpunit::TestFixture
             manager.postPoll(fdm, transaction, nextActivity);
         }
 
-        // A failed transaction is finished, so polling it again doesn't report the failure again.
+        // A failed transaction is finished and its socket is freed, so polling it again doesn't report the failure
+        // again.
         EXPECT_EQUAL(transaction.response, 500);
         EXPECT_TRUE(transaction.finished);
+        EXPECT_FALSE(transaction.s);
     }
 } __SSLTest;

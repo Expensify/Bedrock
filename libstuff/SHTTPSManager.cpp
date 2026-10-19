@@ -173,8 +173,10 @@ void SStandaloneHTTPSManager::postPoll(fd_map& fdm, SStandaloneHTTPSManager::Tra
                       << "; request " << progress << ", responding " << transaction.response);
 
                 // Callers can keep polling a transaction after it has a response, so mark it finished to report the
-                // failure only once.
+                // failure only once, and free the socket as the other finished cases do.
                 transaction.finished = now;
+                delete transaction.s;
+                transaction.s = nullptr;
             }
         } else {
             // No timeout yet, set nextActivity short enough that it'll catch the next timeout.
