@@ -588,13 +588,23 @@ static string journalRowsForTest(SQLite& db, uint64_t from, uint64_t to)
 void TestPluginCommand::journalTest(SQLite& db)
 {
     // A dedicated handle confines tracing and any held read snapshot to this command.
-    vector<string> statements;
+    struct JournalTrace
+    {
+        vector<string> statements;
+        int fullScanSteps = 0;
+    } traceData;
     SQLite reader(db);
-    const auto trace = [](unsigned int, void* context, void* statement, void*) {
-        static_cast<vector<string>*>(context)->emplace_back(sqlite3_sql(static_cast<sqlite3_stmt*>(statement)));
+    const auto trace = [](unsigned int event, void* context, void* statement, void*) {
+        auto& data = *static_cast<JournalTrace*>(context);
+        auto* sql = static_cast<sqlite3_stmt*>(statement);
+        if (event == SQLITE_TRACE_STMT) {
+            data.statements.emplace_back(sqlite3_sql(sql));
+        } else if (event == SQLITE_TRACE_PROFILE) {
+            data.fullScanSteps += sqlite3_stmt_status(sql, SQLITE_STMTSTATUS_FULLSCAN_STEP, 0);
+        }
         return 0;
     };
-    sqlite3_trace_v2(reader.getDBHandle(), SQLITE_TRACE_STMT, trace, &statements);
+    sqlite3_trace_v2(reader.getDBHandle(), SQLITE_TRACE_STMT | SQLITE_TRACE_PROFILE, trace, &traceData);
     const uint64_t from = request.calcU64("from");
     const uint64_t to = request.calcU64("to");
     STable output;
@@ -611,16 +621,26 @@ void TestPluginCommand::journalTest(SQLite& db)
         reader.getLastNonBlankCommit(to, cid, hash);
         output["id"] = to_string(cid);
         output["hash"] = hash;
+    } else if (request["op"] == "prepareLeadership") {
+        SASSERT(plugin().server.getState() == SQLiteNodeState::FOLLOWING);
+        reader.exclusiveLockDB();
+        try {
+            reader.prepareHCTreeLeadership();
+        } catch (...) {
+            reader.exclusiveUnlockDB();
+            throw;
+        }
+        reader.exclusiveUnlockDB();
     } else if (request["op"] == "trim" || request["op"] == "snapshot") {
         const bool snapshot = request["op"] == "snapshot";
         if (snapshot) {
             SASSERT(reader.beginTransaction());
             output["before"] = journalRowsForTest(reader, from, to);
         }
-        vector<string> trims;
+        JournalTrace trims;
         {
             SQLite trimmer(db);
-            sqlite3_trace_v2(trimmer.getDBHandle(), SQLITE_TRACE_STMT, trace, &trims);
+            sqlite3_trace_v2(trimmer.getDBHandle(), SQLITE_TRACE_STMT | SQLITE_TRACE_PROFILE, trace, &trims);
             output["tablesBefore"] = to_string(trimmer.getJournalTableCount());
             if (request.isSet("table")) {
                 SASSERT(trimmer.trimJournalTable(request.calcU64("table"), request.calc64("batchSize")));
@@ -634,7 +654,8 @@ void TestPluginCommand::journalTest(SQLite& db)
             }
             output["tablesAfter"] = to_string(trimmer.getJournalTableCount());
         }
-        output["trimQueries"] = SComposeList(trims, "\n");
+        output["trimQueries"] = SComposeList(trims.statements, "\n");
+        output["trimFullScanSteps"] = to_string(trims.fullScanSteps);
         if (snapshot) {
             output["rows"] = journalRowsForTest(reader, from, to);
             string query, hash;
@@ -650,7 +671,8 @@ void TestPluginCommand::journalTest(SQLite& db)
     } else {
         STHROW("400 Unknown journal test operation");
     }
-    output["queries"] = SComposeList(statements, "\n");
+    output["queries"] = SComposeList(traceData.statements, "\n");
+    output["fullScanSteps"] = to_string(traceData.fullScanSteps);
     response.content = SComposeJSONObject(output);
     response.methodLine = "200 OK";
 }
