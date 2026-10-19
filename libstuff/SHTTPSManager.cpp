@@ -162,8 +162,15 @@ void SStandaloneHTTPSManager::postPoll(fd_map& fdm, SStandaloneHTTPSManager::Tra
                 transaction.s = nullptr;
             } else {
                 // No response data at all - this is a genuine failure
-                SHMMM("Connection " << ((transaction.s->state.load() > Socket::CONNECTED) ? "died prematurely" : "timed out"));
+                const Socket::State state = transaction.s->state.load();
                 transaction.response = transaction.s->sendBufferEmpty() ? 501 : 500;
+                const string progress = _describeRequestProgress(transaction);
+                const string outcome = (state > Socket::CONNECTED) ? "died prematurely" : "timed out";
+                const string stage = _describeFailureStage(transaction, state, progress == "sent");
+                const string target = transaction.targetHost.empty() ? "an unknown host" : transaction.targetHost;
+                const string via = transaction.proxyHost.empty() ? "" : " via proxy " + transaction.proxyHost;
+                SHMMM("Connection " << outcome << " " << stage << " to " << target << via
+                      << "; request " << progress << ", responding " << transaction.response);
             }
         } else {
             // No timeout yet, set nextActivity short enough that it'll catch the next timeout.
@@ -234,6 +241,7 @@ unique_ptr<SStandaloneHTTPSManager::Transaction> SStandaloneHTTPSManager::_https
     }
 
     unique_ptr<Transaction> transaction = make_unique<Transaction>(*this);
+    transaction->targetHost = host;
 
     // Open a socket, optionally using a client certificate.
     Socket* s = nullptr;
@@ -244,6 +252,7 @@ unique_ptr<SStandaloneHTTPSManager::Transaction> SStandaloneHTTPSManager::_https
             string proxyHost, path;
             SParseURI(proxyAddressHTTPS, proxyHost, path);
             SINFO("Proxying " << url << " through " << proxyHost);
+            transaction->proxyHost = proxyHost;
             s = connection
                 ? new SHTTPSProxySocket(proxyHost, move(connection), transaction->requestID)
                 : new SHTTPSProxySocket(proxyHost, host, transaction->requestID);
@@ -272,6 +281,38 @@ unique_ptr<SStandaloneHTTPSManager::Transaction> SStandaloneHTTPSManager::_https
 
     // Keep track of the transaction.
     return transaction;
+}
+
+string SStandaloneHTTPSManager::_describeFailureStage(const Transaction& transaction, Socket::State state, bool requestSent)
+{
+    const bool viaProxy = !transaction.proxyHost.empty();
+
+    // A failed lookup closes the socket without ever filling in its address.
+    const bool lookupFailed = transaction.s->connectFailure && transaction.s->addr.sin_addr.s_addr == 0;
+    if (state == Socket::RESOLVING || lookupFailed) {
+        return viaProxy ? "resolving the proxy" : "resolving DNS";
+    }
+    if (transaction.s->connectFailure || state == Socket::CONNECTING) {
+        return viaProxy ? "connecting to the proxy" : "connecting";
+    }
+    const SHTTPSProxySocket* proxySocket = dynamic_cast<const SHTTPSProxySocket*>(transaction.s);
+    if (proxySocket && !proxySocket->tunnelEstablished()) {
+        return "opening the proxy tunnel";
+    }
+    return requestSent ? "waiting for a response" : "sending the request";
+}
+
+string SStandaloneHTTPSManager::_describeRequestProgress(const Transaction& transaction)
+{
+    // An empty send buffer doesn't prove the request went out: a socket that closed before the request was queued
+    // never had it in its buffer. Bytes only count as reaching the target once a direct socket has sent something, or
+    // once a proxy socket's tunnel is open (the bytes before that are the CONNECT to the proxy).
+    const SHTTPSProxySocket* proxySocket = dynamic_cast<const SHTTPSProxySocket*>(transaction.s);
+    const bool reachedTarget = proxySocket ? proxySocket->tunnelEstablished() : transaction.s->lastSendTime > transaction.s->openTime;
+    if (!reachedTarget) {
+        return "not sent";
+    }
+    return transaction.s->sendBufferEmpty() ? "sent" : "not fully sent";
 }
 
 bool SStandaloneHTTPSManager::_onRecv(Transaction& transaction)
