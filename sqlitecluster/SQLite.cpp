@@ -705,18 +705,16 @@ void SQLite::prepareHCTreeLeadership()
         return;
     }
     SASSERT(_sharedData.hctreeFollowerMode);
+
+    // HC-Tree checks its outstanding commit window for gaps when setHCTreeFollowerMode(false) switches to leader mode.
+    // Bedrock also requires the legacy journal to end immediately before the HC-Tree journal begins.
     SQResult result;
-    SASSERT(!SQuery(_db, "SELECT MIN(cid), MAX(cid), COUNT(*) FROM hct_journal", result));
-    SASSERT(result.size() == 1 && !result[0][0].empty());
-    const uint64_t oldest = SToUInt64(result[0][0]);
-    const uint64_t newest = SToUInt64(result[0][1]);
-    const uint64_t count = SToUInt64(result[0][2]);
+    SASSERT(!SQuery(_db, "SELECT MIN(cid) AS oldest FROM hct_journal", result));
+    SASSERT(result.size() == 1 && !result[0]["oldest"].empty());
+    const uint64_t oldest = SToUInt64(result[0]["oldest"]);
     const uint64_t legacyCommitID = getLegacyCommitCount();
     if (legacyCommitID && legacyCommitID != oldest - 1) {
         SERROR("Unsupported journal configuration: newest legacy commit " << legacyCommitID << ", oldest HC-Tree commit " << oldest);
-    }
-    if (newest - oldest + 1 != count) {
-        SERROR("Cannot lead with a non-contiguous HC-Tree journal");
     }
 }
 
@@ -1149,14 +1147,15 @@ bool SQLite::trimJournalTable(size_t journalTableIndex, int64_t batchSize)
         }
 
         SQResult bounds;
-        if (!read("SELECT MIN(cid), MAX(cid) FROM hct_journal", bounds) || bounds.empty() || bounds[0][0].empty()) {
+        if (!read("SELECT (SELECT MIN(cid) FROM hct_journal) AS oldest, (SELECT MAX(cid) FROM hct_journal) AS newest", bounds) ||
+            bounds.empty() || bounds[0]["oldest"].empty()) {
             // This returns false if we can't select `min()` and `max()` which should never happen.
             SWARN("Possibly corrupt HC-Tree jornal");
             return false;
         }
 
         // Or if there's nothing old enough to trim in the journal, we can also skip.
-        if (SToUInt64(bounds[0][0]) >= oldestCommitToKeep || bounds[0][0] == bounds[0][1]) {
+        if (SToUInt64(bounds[0]["oldest"]) >= oldestCommitToKeep || bounds[0]["oldest"] == bounds[0]["newest"]) {
             return true;
         }
 
