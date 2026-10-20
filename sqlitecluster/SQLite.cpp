@@ -733,11 +733,6 @@ void SQLite::resetCommitLockWait()
     _commitLockWait = 0;
 }
 
-bool SQLite::didCommitLockTimeOut() const
-{
-    return _didCommitLockTimeOut;
-}
-
 bool SQLite::beginTransaction(SQLite::TRANSACTION_TYPE type, bool beginOnly)
 {
     if (_insideTransaction) {
@@ -1284,7 +1279,6 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash, chrono::m
 {
     SASSERT(_insideTransaction);
     SASSERT(!_prepared);
-    _didCommitLockTimeOut = false;
 
     const string guid = replicationGUID.has_value() ? replicationGUID.value() :
         SToHex(SRandom::rand64(), 16) + SToHex(SRandom::rand64(), 16);
@@ -1356,7 +1350,6 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash, chrono::m
         } else if (!lockAcquired) {
             SINFO("Timed out after " << chrono::duration_cast<chrono::microseconds>(commitLockTimeout).count()
                   << "us waiting for commit lock.");
-            _didCommitLockTimeOut = true;
             return false;
         }
 

@@ -780,7 +780,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                         // every other thread that's committing. We can still conflict with a transaction that another
                         // thread committed between our call to `processCommand` and our call to `commit`. This is
                         // scoped to the minimum time required.
-                        bool commitSuccess = false;
+                        SQLiteCore::COMMIT_RESULT commitResult = SQLiteCore::COMMIT_RESULT::CONFLICT;
                         uint64_t transactionID = 0;
                         string transactionHash;
 
@@ -798,7 +798,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                             } catch (const SException& e) {
                                 SINFO("Command '" << command->getMethodName() << "' timed out before commit.");
                             }
-                            commitSuccess = core.commit(*_syncNode, transactionID, transactionHash, command->getMethodName(), enableOnPrepareNotifications, onPrepareHandler, timeToCommit, &command->shouldAbort);
+                            commitResult = core.commit(*_syncNode, transactionID, transactionHash, command->getMethodName(), enableOnPrepareNotifications, onPrepareHandler, timeToCommit, &command->shouldAbort);
 
                             if (getState() != SQLiteNodeState::LEADING) {
                                 SINFO("Stopped leading while trying to commit, will retry.");
@@ -810,7 +810,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                                 continue;
                             }
                         }
-                        if (commitSuccess) {
+                        if (commitResult == SQLiteCore::COMMIT_RESULT::OK) {
                             // Tell the sync node that there's been a commit so that it can jump out of it's "poll"
                             // loop and send it to followers. NOTE: we don't check for null here, that should be
                             // impossible inside a worker thread.
@@ -822,7 +822,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                             // mark it as complete. We add the currentCommit count here as well.
                             command->response["commitCount"] = to_string(db.getCommitCount());
                             command->complete = true;
-                        } else if (db.didCommitLockTimeOut() && command->httpsRequests.empty()) {
+                        } else if (commitResult == SQLiteCore::COMMIT_RESULT::TIMEOUT && command->httpsRequests.empty()) {
                             // A long wait for the commit lock means the leader is overloaded. Retrying would run the command
                             // again and queue it behind the same writers, and eventually end up in the blockingCommit thread, so we fail it.
                             // Commands with HTTPS requests keep retrying, because failing them would lose the result of a call

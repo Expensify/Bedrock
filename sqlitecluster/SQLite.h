@@ -208,9 +208,6 @@ private:
     // Replication callers must compare the prepared hash with the received hash before committing.
     bool prepare(uint64_t* transactionID = nullptr, string* transactionHash = nullptr, chrono::microseconds commitLockTimeout = chrono::hours(24), atomic<bool>* abortPtr = nullptr, const optional<string>& replicationGUID = nullopt);
 
-    // Returns true if the last call to `prepare` failed because it ran out of time waiting for the commit lock.
-    bool didCommitLockTimeOut() const;
-
     // This enables or disables automatic re-writing. This feature is to support mocked requests and load testing. This
     // overloads set_authorizer to allow a plugin to deny certain queries from running (currently based only on the
     // action being taken and the table being operated on) and instead, run a different query in their place. For
@@ -592,9 +589,6 @@ private:
     // we call `rollback`. Note that this indicates whether this object has locked the mutex, not whether the mutex is
     // locked (i.e., this is `false` if some other DB object has locked the mutex).
     bool _mutexLocked = false;
-
-    // Set by `prepare` when it gives up waiting for the commit lock, so callers can tell a lock timeout from a conflict.
-    bool _didCommitLockTimeOut = false;
 
     atomic<int64_t> _lastConflictPage = 0;
     atomic<string> _lastConflictLocation;

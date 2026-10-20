@@ -518,7 +518,7 @@ struct SQLiteNodeTest : tpunit::TestFixture
                 uint64_t commitID;
                 string hash;
                 if (attempt == 2) {
-                    ASSERT_TRUE(core.commit(node, commitID, hash, "testGenerateGUID", false));
+                    ASSERT_TRUE(core.commit(node, commitID, hash, "testGenerateGUID", false) == SQLiteCore::COMMIT_RESULT::OK);
                 } else {
                     ASSERT_TRUE(db.prepare(&commitID, &hash));
                 }
