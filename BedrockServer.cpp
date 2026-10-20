@@ -824,7 +824,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                             command->complete = true;
                         } else if (db.didCommitLockTimeOut() && command->httpsRequests.empty()) {
                             // A long wait for the commit lock means the leader is overloaded. Retrying would run the command
-                            // again and queue it behind the same writers, keeping a snapshot open the whole time, so we fail it.
+                            // again and queue it behind the same writers, and eventually end up in the blockingCommit thread, so we fail it.
                             // Commands with HTTPS requests keep retrying, because failing them would lose the result of a call
                             // to an outside service that already happened.
                             SINFO("Timed out waiting for commit lock, failing " << command->request.methodLine);
