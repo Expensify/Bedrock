@@ -15,6 +15,7 @@ struct SynchronousCommandsTest : tpunit::TestFixture
                               TEST(SynchronousCommandsTest::onLeader),
                               TEST(SynchronousCommandsTest::escalatedFromFollower),
                               TEST(SynchronousCommandsTest::unlistedCommandIsUnaffected),
+                              TEST(SynchronousCommandsTest::commitLockTimeoutFailsCommand),
                               AFTER_CLASS(SynchronousCommandsTest::teardown))
     {
     }
@@ -62,5 +63,31 @@ struct SynchronousCommandsTest : tpunit::TestFixture
         vector<SData> results = tester->getTester(0).executeWaitMultipleData({request});
         ASSERT_EQUAL(results[0].methodLine, "200 OK");
         ASSERT_EQUAL(results[0]["blockingCommitThread"], "false");
+    }
+
+    void commitLockTimeoutFailsCommand()
+    {
+        // The blocking commit thread holds the commit lock for its whole transaction, so a synchronous command that
+        // sleeps in `process` keeps every other write waiting for the lock.
+        SData holder("reportcommitthread");
+        holder["value"] = "holder";
+        holder["ProcessSleep"] = "3000";
+        vector<SData> holderResults;
+        thread holderThread([&]() {
+            holderResults = tester->getTester(0).executeWaitMultipleData({holder});
+        });
+
+        // Give the holder time to take the lock, then send a write that can only wait 1 s for it.
+        usleep(500'000);
+        SData waiter("reportcommitthreadunlisted");
+        waiter["value"] = "waiter";
+        waiter["processTimeout"] = "1000";
+        vector<SData> waiterResults = tester->getTester(0).executeWaitMultipleData({waiter});
+        holderThread.join();
+
+        // The waiter fails instead of retrying until the holder lets go, and the holder still commits.
+        ASSERT_EQUAL(waiterResults[0].methodLine, "555 Timeout waiting for commit lock");
+        ASSERT_EQUAL(holderResults[0].methodLine, "200 OK");
+        ASSERT_EQUAL(tester->getTester(0).readDB("SELECT COUNT(*) FROM test WHERE value = 'waiter';"), "0");
     }
 } __SynchronousCommandsTest;

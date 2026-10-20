@@ -1279,6 +1279,7 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash, chrono::m
 {
     SASSERT(_insideTransaction);
     SASSERT(!_prepared);
+    _commitLockTimedOut = false;
 
     const string guid = replicationGUID.has_value() ? replicationGUID.value() :
         SToHex(SRandom::rand64(), 16) + SToHex(SRandom::rand64(), 16);
@@ -1350,6 +1351,7 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash, chrono::m
         } else if (!lockAcquired) {
             SINFO("Timed out after " << chrono::duration_cast<chrono::microseconds>(commitLockTimeout).count()
                   << "us waiting for commit lock.");
+            _commitLockTimedOut = true;
             return false;
         }
 
