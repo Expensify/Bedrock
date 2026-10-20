@@ -9,7 +9,7 @@ SQLiteCore::SQLiteCore(SQLite& db) : _db(db)
 {
 }
 
-bool SQLiteCore::commit(const SQLiteNode& node, uint64_t& commitID, string& transactionHash, const string& commandName, bool needsPluginNotification, void (*notificationHandler)(SQLite& _db, int64_t tableID), chrono::microseconds commitLockTimeout, atomic<bool>* abortPtr) noexcept
+SQLiteCore::COMMIT_RESULT SQLiteCore::commit(const SQLiteNode& node, uint64_t& commitID, string& transactionHash, const string& commandName, bool needsPluginNotification, void (*notificationHandler)(SQLite& _db, int64_t tableID), chrono::microseconds commitLockTimeout, atomic<bool>* abortPtr) noexcept
 {
     // This handler only needs to exist in prepare so we scope it here to automatically unset
     // the handler function once we are done with prepare.
@@ -17,10 +17,10 @@ bool SQLiteCore::commit(const SQLiteNode& node, uint64_t& commitID, string& tran
         AutoScopeOnPrepare onPrepare(needsPluginNotification, _db, notificationHandler);
 
         // This will fail only if we can't acquire the commit lock respecting the command timeout, or the command is aborted while waiting for it.
-        // In this case, we want to roll back and return false, which will make the caller return the appropriate exception.
+        // `prepare` gives up on an abort before it reports a timeout, so an unset abort flag means the lock wait ran out.
         if (!_db.prepare(&commitID, &transactionHash, commitLockTimeout, abortPtr)) {
             _db.rollback(commandName);
-            return false;
+            return abortPtr && abortPtr->load() ? COMMIT_RESULT::CONFLICT : COMMIT_RESULT::TIMEOUT;
         }
     }
 
@@ -28,7 +28,7 @@ bool SQLiteCore::commit(const SQLiteNode& node, uint64_t& commitID, string& tran
     if (node.getState() != SQLiteNodeState::LEADING) {
         SINFO("No longer leading, rolling back.");
         _db.rollback(commandName);
-        return false;
+        return COMMIT_RESULT::CONFLICT;
     }
 
     // Perform the actual commit, rollback if it fails.
@@ -47,13 +47,13 @@ bool SQLiteCore::commit(const SQLiteNode& node, uint64_t& commitID, string& tran
             // an empty journal entry, which the followers must receive.
             node.notifyCommit();
         }
-        return false;
+        return COMMIT_RESULT::CONFLICT;
     }
 
     if (!commitID) {
         transactionHash.clear();
     }
-    return true;
+    return COMMIT_RESULT::OK;
 }
 
 void SQLiteCore::rollback(const string& commandName)
