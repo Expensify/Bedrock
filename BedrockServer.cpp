@@ -791,12 +791,10 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                             void (* onPrepareHandler)(SQLite& db, int64_t tableID) = nullptr;
                             bool enableOnPrepareNotifications = command->shouldEnableOnPrepareNotification(db, &onPrepareHandler);
 
-                            // We want to calculate the remaining time for this command before we try to commit. It's possible that it will throw.
-                            // If that's the case, we will still allow the commit flow to happen passing a 0 timeout, making it behave as a try_lock
-                            // and still commit it if there's no wait time for the mutex.
+                            // We want to calculate the remaining time for this command before we try to commit. We cap the wait at the process timeout. It's possible that it will throw.
+                            // If that's the case, we will still allow the commit flow to happen passing a 0 timeout, making it behave as a try_lock and still commit it if there's no wait time for the mutex.
                             try {
-                                // We can use false for isProcessing here since we want to use the total command timeout.
-                                timeToCommit = core.getRemainingTime(command, false);
+                                timeToCommit = core.getRemainingTime(command, true);
                             } catch (const SException& e) {
                                 SINFO("Command '" << command->getMethodName() << "' timed out before commit.");
                             }
