@@ -3,6 +3,8 @@
 
 #include <unistd.h>
 #include <format>
+#include <charconv>
+#include <limits>
 
 #include <libstuff/libstuff.h>
 #include <libstuff/SRandom.h>
@@ -75,6 +77,8 @@ atomic<bool> SQLiteNode::NODE_KILLED{false};
 const uint64_t SQLiteNode::RECV_TIMEOUT{STIME_US_PER_S* 30};
 
 const size_t SQLiteNode::MIN_APPROVE_FREQUENCY{10};
+const size_t SQLiteNode::PARALLEL_REPLICATION_THREADS{16};
+const uint64_t SQLiteNode::MAX_REPLICATION_AHEAD{8192};
 
 const vector<SQLitePeer*> SQLiteNode::_initPeers(const string& peerListString)
 {
@@ -153,6 +157,7 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, const shared_ptr<SQLitePool>& dbPoo
 
 SQLiteNode::~SQLiteNode()
 {
+    _stopReplication();
     // Clean up all the sockets and peers
     for (Socket* socket : _unauthenticatedIncomingSockets) {
         delete socket;
@@ -168,88 +173,229 @@ SQLiteNode::~SQLiteNode()
     }
 }
 
-void SQLiteNode::_replicate()
+SQLite::ReplicationInfo SQLiteNode::_getReplicationInfo(const SData& message)
 {
-    SInitialize("replication");
-    // Allow the DB handle to be returned regardless of how this function exits.
-    SQLiteScopedHandle dbScope(*_dbPool, _dbPool->getIndex(false));
-    SQLite& db = dbScope.db();
+    auto number = [&](const string& field) {
+        const string& value = message[field];
+        uint64_t result = 0;
+        const auto parsed = from_chars(value.data(), value.data() + value.size(), result);
+        if (parsed.ec != errc() || parsed.ptr != value.data() + value.size() ||
+            result > static_cast<uint64_t>(numeric_limits<int64_t>::max())) {
+            STHROW("invalid " + field);
+        }
+        return result;
+    };
+    const uint64_t id = number("NewCount");
+    if (!id || number("ID") != id) {
+        STHROW("invalid transaction ID");
+    }
+    const uint64_t snapshot = message.isSet("Snapshot") ? number("Snapshot") : id - 1;
+    if (snapshot >= id) {
+        STHROW("invalid Snapshot");
+    }
+    return {id, snapshot};
+}
 
-    SQLitePeer* peer = nullptr;
-    SData command;
+void SQLiteNode::_enqueueReplication(SQLitePeer* peer, SData message)
+{
+    const auto info = _getReplicationInfo(message);
+    if (!message.isSet("NewHash")) {
+        STHROW("missing NewHash");
+    }
+    if (message["NewHash"].empty() && !message.content.empty()) {
+        STHROW("blank journal entry has a nonblank query");
+    }
+    message["Snapshot"] = to_string(info.snapshot);
+    {
+        lock_guard<mutex> lock(_replicateMutex);
+        if (_replicateThreadShouldExitTime || _replicateAbort) {
+            STHROW("replication is stopping");
+        }
+        optional<string> existingHash;
+        if (info.commitID <= _db.getCommitCount()) {
+            string hash;
+            if (!_db.getCommit(info.commitID, nullptr, &hash)) {
+                STHROW("duplicate transaction is no longer in the journal");
+            }
+            existingHash = move(hash);
+        } else {
+            existingHash = _db.getOutOfOrderCommitHash(info.commitID);
+        }
+        const auto queued = _replicateQueue.find(info.commitID);
+        const auto active = _replicating.find(info.commitID);
+        if (queued != _replicateQueue.end()) {
+            existingHash = queued->second.second["NewHash"];
+        } else if (active != _replicating.end()) {
+            existingHash = active->second;
+        }
+        if (existingHash.has_value()) {
+            if (existingHash.value() != message["NewHash"]) {
+                STHROW("duplicate transaction hash mismatch");
+            }
+            return;
+        }
+        _replicateQueue.emplace(info.commitID, make_pair(peer, move(message)));
+    }
+    _startReplication();
+    _replicateCV.notify_all();
+}
+
+SQLiteNode::ReplicationQueue::iterator SQLiteNode::_nextReplication()
+{
+    if (_replicateAbort || (_replicateThreadShouldExitTime && _replicateThreadShouldExitTime < STimeNow())) {
+        return _replicateQueue.end();
+    }
+    const uint64_t contiguous = _db.getCommitCount();
+    if (!_db.isExperimentalHCTree()) {
+        const auto first = _replicateQueue.begin();
+        return _replicating.empty() && first != _replicateQueue.end() && first->first == contiguous + 1 ?
+            first : _replicateQueue.end();
+    }
+    return find_if(_replicateQueue.begin(), _replicateQueue.end(), [&](const auto& entry) {
+        return entry.first - contiguous <= MAX_REPLICATION_AHEAD && entry.second.second.calcU64("Snapshot") <= contiguous;
+    });
+}
+
+void SQLiteNode::_startReplication()
+{
+    if (!_replicateThreads.empty()) {
+        return;
+    }
+    try {
+        const size_t count = _db.isExperimentalHCTree() ? PARALLEL_REPLICATION_THREADS : 1;
+        for (size_t i = 0; i < count; ++i) {
+            _replicateThreads.emplace_back(&SQLiteNode::_replicate, this, i);
+        }
+    } catch (...) {
+        _stopReplication();
+        throw;
+    }
+}
+
+void SQLiteNode::_stopReplication()
+{
+    {
+        lock_guard<mutex> lock(_replicateMutex);
+        _replicateThreadShouldExitTime = STimeNow() + 10'000'000;
+    }
+    _replicateCV.notify_all();
+    for (auto& worker : _replicateThreads) {
+        worker.join();
+    }
+    _replicateThreads.clear();
+    lock_guard<mutex> lock(_replicateMutex);
+    if (!_replicateQueue.empty()) {
+        SWARN("Discarding " << _replicateQueue.size() << " queued commits at replication shutdown");
+        _replicateQueue.clear();
+    }
+    SASSERT(_replicating.empty());
+    _replicateThreadShouldExitTime = 0;
+    _replicateAbort = false;
+    _replicationError.clear();
+}
+
+void SQLiteNode::_replicate(size_t threadID)
+{
+    SInitialize("replication" + to_string(threadID));
     while (true) {
-        uint64_t shouldExit = 0;
-        bool isQueueEmpty = false;
-        uint64_t dequeueTime = 0;
+        SQLitePeer* peer = nullptr;
+        SData command;
+        uint64_t commitID = 0;
         {
             unique_lock<mutex> lock(_replicateMutex);
-            while (!_replicateThreadShouldExitTime && _replicateQueue.empty()) {
-                _replicateCV.wait(lock);
-            }
-
-            shouldExit = _replicateThreadShouldExitTime;
-            isQueueEmpty = _replicateQueue.empty();
-            if (!isQueueEmpty) {
-                peer = _replicateQueue.front().first;
-                command = move(_replicateQueue.front().second);
-                _replicateQueue.pop();
-                dequeueTime = STimeNow();
-            }
-        }
-
-        // If there was no work, we either wait again, or we can exit.
-        if (isQueueEmpty || (shouldExit && shouldExit < STimeNow())) {
-            // There are no commands to process.
-            if (shouldExit) {
-                // Done with replication. Each iteration below either commits or rolls back, so there's never a
-                // transaction open on this handle between two of them, and this is only reachable between two of them.
-                return;
-            } else {
-                // The queue is empty but we're not exiting so go back to the top and wait.
-                continue;
+            while (true) {
+                const auto next = _nextReplication();
+                if (next != _replicateQueue.end()) {
+                    commitID = next->first;
+                    peer = next->second.first;
+                    command = move(next->second.second);
+                    _replicateQueue.erase(next);
+                    _replicating.emplace(commitID, command["NewHash"]);
+                    break;
+                }
+                if (_replicateAbort || (_replicateThreadShouldExitTime &&
+                    (_replicating.empty() || _replicateThreadShouldExitTime < STimeNow()))) {
+                    return;
+                }
+                if (_replicateThreadShouldExitTime) {
+                    _replicateCV.wait_for(lock, chrono::milliseconds(10));
+                } else {
+                    _replicateCV.wait(lock);
+                }
             }
         }
-
-        // At this point, we're guaranteed to have a message. Process it and then run again.
+        const uint64_t dequeueTime = STimeNow();
         try {
-            if (SIEquals(command.methodLine, "TRANSACTION")) {
-                // A whole transaction in one message: apply it, then commit it, with no window in between where we're
-                // holding a prepared transaction waiting to hear what to do with it.
-                auto start = chrono::steady_clock::now();
-                _handleBeginTransaction(db, peer, command);
-                if (!_handlePrepareTransaction(db, peer, command, dequeueTime)) {
-                    // We can't commit what we couldn't apply, and a follower that can't apply leader's transaction is
-                    // broken. `_handlePrepareTransaction` has already rolled back and alerted.
-                    STHROW("prepare failed");
+            // Reserve handles only while applying work, so an idle replication pool cannot starve command workers.
+            SQLiteScopedHandle dbScope(*_dbPool, _dbPool->getIndex(false));
+            SQLite& db = dbScope.db();
+            db.setAbortRef(_replicateAbort);
+            try {
+                const uint64_t retryDeadline = STimeNow() + RECV_TIMEOUT;
+                while (true) {
+                    if (_replicateAbort) {
+                        STHROW("replication aborted");
+                    }
+                    _handleBeginTransaction(db, peer, command);
+                    if (!_handlePrepareTransaction(db, peer, command, dequeueTime)) {
+                        STHROW("prepare failed");
+                    }
+                    const int result = _handleCommitTransaction(db, peer, commitID, command["NewHash"]);
+                    if (result == SQLITE_OK) {
+                        break;
+                    }
+                    db.rollback();
+                    if (result != SQLITE_BUSY_SNAPSHOT || !db.isExperimentalHCTree() || STimeNow() >= retryDeadline ||
+                        (_replicateThreadShouldExitTime && _replicateThreadShouldExitTime < STimeNow())) {
+                        STHROW("commit failed: " + to_string(result));
+                    }
+                    this_thread::sleep_for(chrono::milliseconds(1));
                 }
-                int result = _handleCommitTransaction(db, peer, command.calcU64("NewCount"), command["NewHash"]);
-                if (result != SQLITE_OK) {
-                    STHROW("commit failed");
-                }
-                auto duration = chrono::steady_clock::now() - start;
-                SINFO("[performance] Replicated transaction in " << chrono::duration_cast<chrono::microseconds>(duration).count() << "us.");
-            } else {
-                SWARN("Invalid command passed to _replicate: " << command.methodLine);
+            } catch (const exception& e) {
+                _onReplicationError(db, peer, command, e.what());
+            } catch (...) {
+                _onReplicationError(db, peer, command, "unknown exception");
             }
-        } catch (const SException& e) {
-            _onReplicationError(db, peer, command, e.what());
+            db.clearAbortRef();
         } catch (const exception& e) {
-            _onReplicationError(db, peer, command, string("unexpected exception: ") + e.what());
+            _failReplication(peer, command, e.what());
         } catch (...) {
-            _onReplicationError(db, peer, command, "unknown exception");
+            _failReplication(peer, command, "unknown exception acquiring replication handle");
         }
+        {
+            lock_guard<mutex> lock(_replicateMutex);
+            _replicating.erase(commitID);
+        }
+        _replicateCV.notify_all();
+        notifyCommit();
     }
 }
 
 void SQLiteNode::_onReplicationError(SQLite& db, SQLitePeer* peer, const SData& command, const string& reason)
 {
+    db.rollback();
+    _failReplication(peer, command, reason);
+}
+
+void SQLiteNode::_failReplication(SQLitePeer* peer, const SData& command, const string& reason)
+{
+    {
+        lock_guard<mutex> lock(_replicateMutex);
+        if (_replicateAbort) {
+            return;
+        }
+        _replicationError = reason;
+        _replicateAbort = true;
+        _replicateQueue.clear();
+    }
+    _replicateCV.notify_all();
+    notifyCommit();
     SWARN("Error replicating, rolling back and reconnecting", {
         {"peer", peer ? peer->name : "unknown"},
         {"message", !command.empty() ? command.methodLine : ""},
         {"reason", reason}
     });
 
-    db.rollback();
     if (peer) {
         SData reconnect("RECONNECT");
         reconnect["Reason"] = reason;
@@ -1423,22 +1569,7 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message)
                 return;
             }
 
-            bool isReplicationRunning = false;
-            {
-                lock_guard<mutex> lock(_replicateMutex);
-                if (!_replicateThreadShouldExitTime) {
-                    _replicateQueue.push(make_pair(peer, message));
-                    isReplicationRunning = true;
-                }
-            }
-            if (isReplicationRunning) {
-                if (!_replicateThread) {
-                    _replicateThread = new thread(&SQLiteNode::_replicate, this);
-                }
-                _replicateCV.notify_one();
-            } else {
-                SINFO("Discarding replication message, stopping FOLLOWING");
-            }
+            _enqueueReplication(peer, message);
         } else if (SIEquals(message.methodLine, "FOLLOWER_STATUS")) {
             // This tells the leader how much data a follower has, and nothing else that we act on. The work is already
             // done: every message carries CommitCount and Hash, and the code above recorded them with
@@ -1642,28 +1773,12 @@ void SQLiteNode::_changeState(SQLiteNodeState newState)
         // First, we notify all plugins about the state change
         _server.notifyStateChangeToPlugins(*pluginDB, newState);
 
-        // If we were following, and now we're not, we give up an any replications.
+        // No application thread may survive a role change or continue a failed synchronization session.
+        if (_state == SQLiteNodeState::FOLLOWING || _state == SQLiteNodeState::SYNCHRONIZING ||
+            (_state == SQLiteNodeState::SUBSCRIBING && newState != SQLiteNodeState::FOLLOWING)) {
+            _stopReplication();
+        }
         if (_state == SQLiteNodeState::FOLLOWING) {
-            {
-                lock_guard<mutex> lock(_replicateMutex);
-                // Exit in 10 seconds.
-                _replicateThreadShouldExitTime = STimeNow() + 10'000'000;
-            }
-            if (_replicateThread) {
-                _replicateCV.notify_one();
-                _replicateThread->join();
-                delete _replicateThread;
-                _replicateThread = nullptr;
-            }
-            {
-                lock_guard<mutex> lock(_replicateMutex);
-                if (_replicateQueue.size()) {
-                    SWARN("Replicate queue contains " << _replicateQueue.size() << " messages at thread shutdown,  clearing.");
-                    _replicateQueue = queue<pair<SQLitePeer*, SData>>();
-                }
-                _replicateThreadShouldExitTime = 0;
-            }
-
             // We have no leader anymore.
             _leadPeer = nullptr;
         }
@@ -1882,15 +1997,18 @@ void SQLiteNode::_recvSynchronize(SQLitePeer* peer, const SData& message)
         STHROW("missing NumCommits");
     }
 
-    // Walk across the content and commit in order
+    // Validate the whole ordered batch before giving any of its commits to application workers.
     int commitsRemaining = message.calc("NumCommits");
+    if (commitsRemaining < 0) {
+        STHROW("invalid NumCommits");
+    }
+    vector<SData> transactions;
+    uint64_t expectedID = _db.getCommitCount() + 1;
     SData commit;
     const char* content = message.content.c_str();
     int messageSize = 0;
     int remaining = (int) message.content.size();
     while ((messageSize = commit.deserialize(content, remaining))) {
-        // Consume this message and process
-        // **FIXME: This could be optimized to commit in one huge transaction
         content += messageSize;
         remaining -= messageSize;
         if (!SIEquals(commit.methodLine, "COMMIT")) {
@@ -1908,40 +2026,41 @@ void SQLiteNode::_recvSynchronize(SQLitePeer* peer, const SData& message)
         if (commit["Hash"].empty() && !commit.content.empty()) {
             STHROW("blank journal entry has a nonblank query");
         }
-        if (commit.calcU64("CommitIndex") != _db.getCommitCount() + 1) {
+        SData transaction("TRANSACTION");
+        transaction["ID"] = commit["CommitIndex"];
+        transaction["NewCount"] = commit["CommitIndex"];
+        transaction["NewHash"] = commit["Hash"];
+        if (commit.isSet("Snapshot")) {
+            transaction["Snapshot"] = commit["Snapshot"];
+        }
+        transaction.content = move(commit.content);
+        if (_getReplicationInfo(transaction).commitID != expectedID++) {
             STHROW("commit index mismatch");
         }
-        // Local unreplicated writes must not invalidate the snapshot while we replay this commit.
-        if (!_db.beginTransaction(SQLite::TRANSACTION_TYPE::EXCLUSIVE)) {
-            STHROW("failed to begin transaction");
-        }
-        if (!commit["Hash"].empty() && !_db.writeUnmodified(BedrockPlugin_Compression::decompress(commit.content))) {
-            STHROW("failed to write transaction");
-        }
-        string newHash;
-        if (!_db.prepare(nullptr, &newHash, chrono::hours(24), nullptr, _getTransactionGUID(commit["Hash"]))) {
-            STHROW("failed to prepare transaction");
-        }
-        if (newHash != commit["Hash"]) {
-            STHROW("potential hash mismatch");
-        }
-
-        // Transaction succeeded, commit and go to the next
-        SDEBUG("Committing current transaction because _recvSynchronize: " << _db.getUncommittedQuery());
-        int result = _db.commit(stateName(_state));
-        if (result != SQLITE_OK) {
-            STHROW("failed to commit synchronized transaction: " + to_string(result));
-        }
-
-        // Clear the list of committed transactions. We're synchronizing, so we don't need to send these.
-        _db.popCommittedTransactions();
-
+        transactions.push_back(move(transaction));
         --commitsRemaining;
     }
 
     // Did we get all our commits?
-    if (commitsRemaining) {
+    if (commitsRemaining || remaining) {
         STHROW("commits remaining at end");
+    }
+    for (auto& transaction : transactions) {
+        _enqueueReplication(peer, move(transaction));
+    }
+    unique_lock<mutex> lock(_replicateMutex);
+    if (!_replicateCV.wait_for(lock, chrono::microseconds(RECV_TIMEOUT), [&]() {
+        return !_replicationError.empty() || (_replicateQueue.empty() && _replicating.empty());
+    })) {
+        _replicateAbort = true;
+        _replicateCV.notify_all();
+        STHROW("timed out applying synchronization batch");
+    }
+    if (!_replicationError.empty()) {
+        STHROW(_replicationError);
+    }
+    if (_db.getCommitCount() != expectedID - 1) {
+        STHROW("synchronization batch did not complete contiguously");
     }
 }
 
@@ -2081,8 +2200,8 @@ void SQLiteNode::_handleBeginTransaction(SQLite& db, SQLitePeer* peer, const SDa
     // any reason, it is broken somehow -- disconnect from the leader.
     // **FIXME**: What happens if LEADER steps down before sending BEGIN?
     // **FIXME**: What happens if LEADER steps down or disconnects after BEGIN?
-    if (_state != SQLiteNodeState::FOLLOWING) {
-        STHROW("not following");
+    if (_state != SQLiteNodeState::FOLLOWING && _state != SQLiteNodeState::SYNCHRONIZING && _state != SQLiteNodeState::SUBSCRIBING) {
+        STHROW("not receiving replication");
     }
     if (db.insideTransaction()) {
         STHROW("already in a transaction");
@@ -2094,8 +2213,8 @@ void SQLiteNode::_handleBeginTransaction(SQLite& db, SQLitePeer* peer, const SDa
         STHROW("blank journal entry has a nonblank query");
     }
 
-    // TODO: Parallel replication will require disabling beginOnly, after which we can remove the parameter entirely.
-    if (!db.beginTransaction(SQLite::TRANSACTION_TYPE::EXCLUSIVE, true)) {
+    const bool parallel = db.isExperimentalHCTree();
+    if (!db.beginTransaction(parallel ? SQLite::TRANSACTION_TYPE::SHARED : SQLite::TRANSACTION_TYPE::EXCLUSIVE, !parallel)) {
         STHROW("failed to begin transaction");
     }
 
@@ -2122,12 +2241,12 @@ bool SQLiteNode::_handlePrepareTransaction(SQLite& db, SQLitePeer* peer, const S
     if (!message.isSet("NewHash")) {
         STHROW("missing NewHash");
     }
-    if (_state != SQLiteNodeState::FOLLOWING) {
-        STHROW("not following");
+    if (_state != SQLiteNodeState::FOLLOWING && _state != SQLiteNodeState::SYNCHRONIZING && _state != SQLiteNodeState::SUBSCRIBING) {
+        STHROW("not receiving replication");
     }
 
     bool success = true;
-    if (!db.prepare(nullptr, nullptr, chrono::hours(24), nullptr, _getTransactionGUID(message["NewHash"]))) {
+    if (!db.prepare(nullptr, nullptr, chrono::hours(24), nullptr, _getTransactionGUID(message["NewHash"]), _getReplicationInfo(message))) {
         SALERT("failed to prepare transaction");
         success = false;
         db.rollback();
@@ -2137,7 +2256,7 @@ bool SQLiteNode::_handlePrepareTransaction(SQLite& db, SQLitePeer* peer, const S
     // rough idea of how far along we are, which every message we send carries in its CommitCount header. Every tenth
     // commit is enough to keep leader current, and it's a floor rather than a schedule: sending one more often than
     // that is harmless. Permafollowers never respond at all.
-    if (_priority) {
+    if (_state == SQLiteNodeState::FOLLOWING && _priority) {
         uint64_t currentCommitCount = db.getCommitCount();
         if (currentCommitCount % MIN_APPROVE_FREQUENCY == 0) {
             SData response("FOLLOWER_STATUS");
@@ -2145,11 +2264,11 @@ bool SQLiteNode::_handlePrepareTransaction(SQLite& db, SQLitePeer* peer, const S
                 _sendToPeer(_leadPeer, response);
             }
         }
-    } else {
+    } else if (_state == SQLiteNodeState::FOLLOWING) {
         PINFO("Would report status at transaction #" << db.getCommitCount() + 1 << " (" << db.getUncommittedHash()
               << "), but a permafollower -- keeping quiet.");
     }
-    uint64_t leaderSentTimestamp = message.calcU64("leaderSendTime");
+    uint64_t leaderSentTimestamp = message.isSet("leaderSendTime") ? message.calcU64("leaderSendTime") : dequeueTime;
     uint64_t transitTimeUS = dequeueTime - leaderSentTimestamp;
     uint64_t applyTimeUS = STimeNow() - prepareStartTime;
     float transitTimeMS = (float) transitTimeUS / 1000.0;
@@ -2162,13 +2281,13 @@ bool SQLiteNode::_handlePrepareTransaction(SQLite& db, SQLitePeer* peer, const S
 int SQLiteNode::_handleCommitTransaction(SQLite& db, SQLitePeer* peer, const uint64_t commandCommitCount, const string& commandCommitHash)
 {
     // Commits the transaction that `_handlePrepareTransaction` just prepared, which completes replicating it.
-    if (_state != SQLiteNodeState::FOLLOWING) {
-        STHROW("not following");
+    if (_state != SQLiteNodeState::FOLLOWING && _state != SQLiteNodeState::SYNCHRONIZING && _state != SQLiteNodeState::SUBSCRIBING) {
+        STHROW("not receiving replication");
     }
     if (!db.isPrepared()) {
         STHROW("no outstanding transaction");
     }
-    if (commandCommitCount != db.getCommitCount() + 1) {
+    if (!db.isExperimentalHCTree() && commandCommitCount != db.getCommitCount() + 1) {
         STHROW("commit count mismatch. Expected: " + to_string(commandCommitCount) + ", but would actually be: "
                + to_string(db.getCommitCount() + 1));
     }

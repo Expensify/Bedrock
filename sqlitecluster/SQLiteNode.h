@@ -7,7 +7,6 @@
 
 #include <mutex>
 #include <condition_variable>
-#include <queue>
 #include <thread>
 
 // This file is long and complex. For each nested sub-structure (I.e., classes inside classes) we have attempted to
@@ -34,8 +33,8 @@
  * Any private methods must not lock _stateMutex (for recursion reasons).
  * Any public methods must not call other public methods.
  *
- * `_replicate` is a special exception because it runs in multiple threads internally. It needs to handle locking if it
- * changes any internal state (and it calls `changeState`, which does).
+ * Replication workers protect their queue with _replicateMutex and never acquire _stateMutex. State transitions join
+ * them before changing database roles, including while a synchronization batch is being applied.
  * `sendMessageToPeer` is another exception: sync-thread callbacks call it with _stateMutex already held.
  *
  */
@@ -180,9 +179,15 @@ public:
     int setPriority(int newPriority);
 
 private:
+    using ReplicationQueue = map<uint64_t, pair<SQLitePeer*, SData>>;
+
     // The minimum frequency of FOLLOWER_STATUS messages we'll send when following, back to leader, to indicate our own current synchronization state.
     // This is expressed as "every Nth message", where e.g., if MIN_APPROVE_FREQUENCY is 10, we will respond to at least every 10th TRANSACTION message.
     static const size_t MIN_APPROVE_FREQUENCY;
+    static const size_t PARALLEL_REPLICATION_THREADS;
+
+    // HC-Tree's completed-CID window contains HCT_MAX_LEADING_WRITE (8192) entries.
+    static const uint64_t MAX_REPLICATION_AHEAD;
 
     static const vector<SQLitePeer*> _initPeers(const string& peerList);
 
@@ -206,6 +211,13 @@ private:
     // Extracts the GUID from a message's transaction hash, or returns empty for a blank journal entry.
     // Throws if a nonblank hash does not have the GUID:SHA1 lengths and separator position.
     static string _getTransactionGUID(const string& hash);
+    static SQLite::ReplicationInfo _getReplicationInfo(const SData& message);
+
+    void _enqueueReplication(SQLitePeer* peer, SData message);
+    void _failReplication(SQLitePeer* peer, const SData& command, const string& reason);
+
+    // Called with _replicateMutex held. Only dependency-ready work may occupy an application thread.
+    ReplicationQueue::iterator _nextReplication();
 
     // Handlers for transaction messages.
     void _handleBeginTransaction(SQLite& db, SQLitePeer* peer, const SData& message);
@@ -227,15 +239,10 @@ private:
     void _reconnectPeer(SQLitePeer* peer);
     void _recvSynchronize(SQLitePeer* peer, const SData& message);
 
-    // This is the main replication loop, run in a single replication thread which consumes messages that the sync
-    // thread queues onto `_replicateQueue`. Handling them in one thread in the order leader sent them is what keeps our
-    // commit order matching leader's.
-    //
-    // TRANSACTION, the only message this handles, applies and commits a transaction in one step. See the message list
-    // at the top of SQLiteNode.cpp.
-    //
-    // This thread exits when `_replicateThreadShouldExitTime` passes, which is set when a node stops FOLLOWING.
-    void _replicate();
+    // One worker serially drains contiguous IDs on ordinary followers; experimental HC-Tree uses 16 workers.
+    void _replicate(size_t threadID);
+    void _startReplication();
+    void _stopReplication();
 
     void _onReplicationError(SQLite& db, SQLitePeer* peer, const SData& command, const string& reason);
 
@@ -364,9 +371,12 @@ private:
     // the sync node is when they run queries in stateChanged.
     SQLite* pluginDB;
 
-    thread* _replicateThread = nullptr;
+    vector<thread> _replicateThreads;
     mutex _replicateMutex;
     condition_variable _replicateCV;
-    queue<pair<SQLitePeer*, SData>> _replicateQueue;
+    ReplicationQueue _replicateQueue;
+    map<uint64_t, string> _replicating;
+    string _replicationError;
+    atomic<bool> _replicateAbort{false};
     atomic<uint64_t> _replicateThreadShouldExitTime;
 };
