@@ -22,6 +22,11 @@ atomic<bool> SQLite::enableTrace(false);
 atomic<int64_t> SQLite::journalZstdDictionaryID(0);
 atomic<bool> SQLite::hctreeExperimentalMode(false);
 
+bool SQLite::isExperimentalHCTree() const
+{
+    return _hctree && hctreeExperimentalMode;
+}
+
 // Bedrock stores GUID:SHA1 followed by a colon and the query bytes in HC-Tree's opaque journal payload.
 static constexpr size_t HCTREE_JOURNAL_HASH_BYTES = 32 + 1 + 40;
 
@@ -1275,7 +1280,7 @@ bool SQLite::_writeIdempotent(const string& query, const map<string, Parameter>&
     return true;
 }
 
-bool SQLite::prepare(uint64_t* transactionID, string* transactionhash, chrono::microseconds commitLockTimeout, atomic<bool>* abortPtr, const optional<string>& replicationGUID)
+bool SQLite::prepare(uint64_t* transactionID, string* transactionhash, chrono::microseconds commitLockTimeout, atomic<bool>* abortPtr, const optional<string>& replicationGUID, const optional<ReplicationInfo>& replication)
 {
     SASSERT(_insideTransaction);
     SASSERT(!_prepared);
@@ -1291,14 +1296,21 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash, chrono::m
         return false;
     }
 
+    _replication = replication;
+    const bool parallelFollower = _replication.has_value() && isExperimentalHCTree() && _sharedData.hctreeFollowerMode;
+    if (_replication.has_value() && (!_replication.value().commitID ||
+                                    _replication.value().snapshot >= _replication.value().commitID)) {
+        STHROW("Invalid replication ID or snapshot");
+    }
+
     // Pick a journal for this transaction.
     const int64_t journalID = _sharedData.nextJournalCount++;
     _journalName = _hctree && hctreeExperimentalMode ? "hct_journal" : _journalNames[journalID % _journalNames.size()];
 
     // Even a blank transaction writes a journal entry. Register before acquiring commitLock.
     beginWriteTransaction();
-    // We lock this here, so that we can guarantee the order in which commits show up in the database.
-    if (!_mutexLocked) {
+    // Only experimental HC-Tree follower commits can preserve their IDs without serializing through commitLock.
+    if (!_mutexLocked && !parallelFollower) {
         auto start = chrono::steady_clock::now();
         auto finalLockTimeout = start + commitLockTimeout;
         auto nextLockTimeout = start + min(commitLockTimeout, 1'000'000us);
@@ -1372,6 +1384,10 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash, chrono::m
     // Now that we've locked anybody else from committing, look up the state of the database. We don't need to lock the
     // SharedData object to get these values as we know it can't currently change.
     const uint64_t commitCount = _sharedData.commitCount;
+    const uint64_t commitID = _replication.has_value() ? _replication.value().commitID : commitCount + 1;
+    if (!parallelFollower && commitID != commitCount + 1) {
+        STHROW("Replication commit ID is not contiguous");
+    }
 
     // Queue up the journal entry
     if (!guid.empty()) {
@@ -1381,7 +1397,7 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash, chrono::m
 
     // Update the passed-in reference values
     if (transactionID) {
-        *transactionID = commitCount + 1;
+        *transactionID = commitID;
     }
     if (transactionhash) {
         *transactionhash = _uncommittedHash;
@@ -1394,13 +1410,15 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash, chrono::m
     }
 
     // Stash the (now possibly compressed) query so SQLiteNode can ship it to peers without re-compressing.
-    _sharedData.prepareTransactionInfo(commitCount + 1, _uncommittedQuery, _uncommittedHash);
+    if (!_replication.has_value()) {
+        _sharedData.prepareTransactionInfo(commitID, _uncommittedQuery, _uncommittedHash);
+    }
 
     int result = SQLITE_OK;
     if (!_hctree || !hctreeExperimentalMode) {
         string query = "INSERT INTO " + _journalName + " VALUES (:commitID, :query, :hash)";
         map<string, SQLite::Parameter> params = {
-            {":commitID", SQLite::Parameter::i((int64_t) (commitCount + 1))},
+            {":commitID", SQLite::Parameter::i(static_cast<int64_t>(commitID))},
             {":query", SQLite::Parameter::blob(_uncommittedQuery)},
             {":hash", SQLite::Parameter::text(_uncommittedHash)},
         };
@@ -1461,11 +1479,13 @@ int SQLite::commit(uint64_t& journalCommitID, const string& description, const s
     if (_hctree && hctreeExperimentalMode) {
         const string journalData = _uncommittedHash + ":" + _uncommittedQuery;
         if (_sharedData.hctreeFollowerMode) {
+            const uint64_t cid = _replication.has_value() ? _replication.value().commitID : _sharedData.commitCount + 1;
+            const uint64_t snapshot = _replication.has_value() ? _replication.value().snapshot : _sharedData.commitCount.load();
             result = sqlite3_hct_journal_follower_commit(_db,
                 reinterpret_cast<const unsigned char*>(journalData.data()), journalData.size(),
-                _sharedData.commitCount + 1, _sharedData.commitCount);
+                cid, snapshot);
             if (result == SQLITE_OK) {
-                journalCommitID = _sharedData.commitCount + 1;
+                journalCommitID = cid;
             }
         } else {
             sqlite3_int64 cid = 0;
@@ -1524,7 +1544,7 @@ int SQLite::commit(uint64_t& journalCommitID, const string& description, const s
     _lastConflictLocation = _conflictLocation;
 
     // If there were conflicting commits, will return SQLITE_BUSY_SNAPSHOT
-    SASSERT(result == SQLITE_OK || result == SQLITE_BUSY_SNAPSHOT);
+    SASSERT(_replication.has_value() || result == SQLITE_OK || result == SQLITE_BUSY_SNAPSHOT);
     if (result == SQLITE_OK) {
         char time[16];
         snprintf(time, 16, "%.2fms", (double) (STimeNow() - beforeCommit) / 1000.0);
@@ -1543,16 +1563,23 @@ int SQLite::commit(uint64_t& journalCommitID, const string& description, const s
         }
 
         _commitElapsed += STimeNow() - before;
-        _commitLockElapsed += _sharedData._commitLockTimer.stop();
+        if (_mutexLocked) {
+            _commitLockElapsed += _sharedData._commitLockTimer.stop();
+        }
         _totalTransactionElapsed = _transactionTimer.stop();
         if (journalCommitID) {
-            _sharedData.incrementCommit(_uncommittedHash);
+            if (_replication.has_value()) {
+                _sharedData.recordReplicationCommit(journalCommitID, _uncommittedHash);
+            } else {
+                _sharedData.incrementCommit(_uncommittedHash);
+            }
         } else {
             // A read-only HC-Tree leader transaction can succeed without allocating a CID.
             _sharedData.discardPreparedTransactionInfo(_sharedData.commitCount + 1);
         }
         _insideTransaction = false;
         _prepared = false;
+        _replication.reset();
         _uncommittedHash.clear();
         _uncommittedQuery.clear();
 
@@ -1567,8 +1594,10 @@ int SQLite::commit(uint64_t& journalCommitID, const string& description, const s
             }
         }
 
-        _sharedData.commitLock.unlock();
-        _mutexLocked = false;
+        if (_mutexLocked) {
+            _sharedData.commitLock.unlock();
+            _mutexLocked = false;
+        }
         finishWriteTransaction();
         _queryCache.clear();
         _sharedData.openTransactionCount--;
@@ -1679,6 +1708,7 @@ void SQLite::rollback(const string& commandName)
         // Finally done with this.
         _insideTransaction = false;
         _prepared = false;
+        _replication.reset();
         _uncommittedHash.clear();
         _uncommittedQuery.clear();
 
@@ -1805,6 +1835,11 @@ int64_t SQLite::getLastInsertRowID()
 uint64_t SQLite::getCommitCount() const
 {
     return _sharedData.commitCount;
+}
+
+optional<string> SQLite::getOutOfOrderCommitHash(uint64_t commitID) const
+{
+    return _sharedData.getOutOfOrderCommitHash(commitID);
 }
 
 uint64_t SQLite::getOutstandingFramesToCheckpoint() const
@@ -2124,6 +2159,29 @@ void SQLite::SharedData::incrementCommit(const string& commitHash)
         hashCommitID = commitCount;
         lastCommittedHash = commitHash;
     }
+}
+
+void SQLite::SharedData::recordReplicationCommit(uint64_t commitID, const string& commitHash)
+{
+    lock_guard<decltype(_internalStateMutex)> lock(_internalStateMutex);
+    SASSERT(commitID > commitCount);
+    SASSERT(_outOfOrderCommits.emplace(commitID, commitHash).second);
+    while (!_outOfOrderCommits.empty() && _outOfOrderCommits.begin()->first == commitCount + 1) {
+        const auto& entry = *_outOfOrderCommits.begin();
+        if (!entry.second.empty()) {
+            hashCommitID = entry.first;
+            lastCommittedHash = entry.second;
+        }
+        _outOfOrderCommits.erase(_outOfOrderCommits.begin());
+        commitCount++;
+    }
+}
+
+optional<string> SQLite::SharedData::getOutOfOrderCommitHash(uint64_t commitID) const
+{
+    lock_guard<decltype(_internalStateMutex)> lock(_internalStateMutex);
+    const auto entry = _outOfOrderCommits.find(commitID);
+    return entry == _outOfOrderCommits.end() ? nullopt : optional<string>(entry->second);
 }
 
 SQLite::CommitState SQLite::SharedData::getCommitState() const

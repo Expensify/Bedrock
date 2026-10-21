@@ -1,4 +1,5 @@
 #include <libstuff/libstuff.h>
+#include <libstuff/sqlite3hct.h>
 #include <plugins/Compression.h>
 #include <sqlitecluster/SQLiteCommand.h>
 #include <sqlitecluster/SQLiteCore.h>
@@ -78,6 +79,7 @@ struct SQLiteNodeTest : tpunit::TestFixture
                                            TEST(SQLiteNodeTest::testBlankCommitFailure),
                                            TEST(SQLiteNodeTest::testGUIDHashFailures),
                                            TEST(SQLiteNodeTest::testReplicationRequiresLeader),
+                                           TEST(SQLiteNodeTest::testExplicitReplicationIDs),
                                            TEST(SQLiteNodeTest::testSynchronizeCommitFailure),
                                            TEST(SQLiteNodeTest::testSynchronizeWriteFailure),
                                            TEST(SQLiteNodeTest::testSynchronizeConstraintFailure),
@@ -706,6 +708,65 @@ struct SQLiteNodeTest : tpunit::TestFixture
         EXPECT_EQUAL(db.getCommitCount(), commitCount);
         EXPECT_EQUAL(db.getCommittedHash(), committedHash);
         EXPECT_EQUAL(db.read("SELECT COUNT(*) FROM sqlite_master WHERE name = 'nonLeaderTransaction';"), "0");
+    }
+
+    void testExplicitReplicationIDs()
+    {
+        SQLite& db = dbPool->getBase();
+        if (!db.isExperimentalHCTree()) {
+            return;
+        }
+        ASSERT_TRUE(db.beginTransaction());
+        ASSERT_TRUE(db.writeUnmodified("CREATE TABLE explicitReplication (id INTEGER PRIMARY KEY);"));
+        ASSERT_TRUE(db.prepare());
+        ASSERT_EQUAL(db.commit(), SQLITE_OK);
+        const auto before = db.getCommitState();
+        SQLite replica(db);
+        const string guid = "00000000000000000000000000000001";
+        const string query = "INSERT INTO explicitReplication VALUES (2);";
+        const string hash = guid + ":" + SToHex(SHashSHA1(guid + query));
+
+        // Another thread holds commitLock, but an explicit experimental follower commit must not need it.
+        ASSERT_TRUE(db.beginTransaction(SQLite::TRANSACTION_TYPE::EXCLUSIVE));
+        string error;
+        thread writer([&]() {
+            SInitialize("explicitReplication");
+            try {
+                if (!replica.beginTransaction() || !replica.writeUnmodified(query) ||
+                    !replica.prepare(nullptr, nullptr, chrono::milliseconds(250), nullptr, guid,
+                                     SQLite::ReplicationInfo{before.commitCount + 2, before.commitCount}) ||
+                    replica.commit() != SQLITE_OK) {
+                    error = "failed out-of-order commit";
+                }
+            } catch (const exception& e) {
+                error = e.what();
+            }
+            replica.rollback();
+        });
+        writer.join();
+        db.rollback();
+        ASSERT_TRUE(error.empty());
+        EXPECT_EQUAL(db.getCommitCount(), before.commitCount);
+        EXPECT_EQUAL(db.getCommittedHash(), before.hash);
+        EXPECT_EQUAL(db.read("SELECT COUNT(*) FROM explicitReplication;"), "0");
+        EXPECT_EQUAL(db.getOutOfOrderCommitHash(before.commitCount + 2).value_or("missing"), hash);
+        string storedHash;
+        ASSERT_TRUE(db.getCommit(before.commitCount + 2, nullptr, &storedHash));
+        EXPECT_EQUAL(storedHash, hash);
+
+        // Filling the gap with a blank entry publishes both commits without replacing the newer nonblank hash.
+        ASSERT_TRUE(replica.beginTransaction());
+        ASSERT_TRUE(replica.prepare(nullptr, nullptr, chrono::hours(24), nullptr, "",
+                                   SQLite::ReplicationInfo{before.commitCount + 1, before.commitCount}));
+        ASSERT_EQUAL(replica.commit(), SQLITE_OK);
+        EXPECT_EQUAL(db.getCommitCount(), before.commitCount + 2);
+        EXPECT_EQUAL(db.getCommitState().hashCommitID, before.commitCount + 2);
+        EXPECT_EQUAL(db.getCommittedHash(), hash);
+        EXPECT_FALSE(db.getOutOfOrderCommitHash(before.commitCount + 2).has_value());
+        EXPECT_EQUAL(db.read("SELECT id FROM explicitReplication;"), "2");
+        sqlite3_int64 snapshot = 0;
+        EXPECT_EQUAL(sqlite3_hct_journal_snapshot(db.getDBHandle(), &snapshot), SQLITE_OK);
+        EXPECT_EQUAL(static_cast<uint64_t>(snapshot), db.getCommitCount());
     }
 
     void testReplicationFailure(const string& failure)

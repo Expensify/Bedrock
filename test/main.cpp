@@ -9,6 +9,7 @@
 #include <test/lib/ConsoleOutputWriter.h>
 #include <test/lib/NcursesOutputWriter.h>
 #include <libstuff/SSSLState.h>
+#include <sqlitecluster/SQLite.h>
 
 /*
  * Command line args to support:
@@ -102,6 +103,7 @@ int main(int argc, char* argv[])
     }
 
     // Enable HCTree for the tests
+    SQLite::hctreeExperimentalMode = args.isSet("-hctreeExperimentalMode");
     if (args.isSet("-enableHctree")) {
         BedrockTester::ENABLE_HCTREE = true;
         cout << "HCTree enabled" << endl;
