@@ -17,6 +17,7 @@
  * -except          : comma separated list of tests to skip.
  * -dontStartServer : Doesn't start the server, just prints the command that would have been run.
  * -wait            : Waits before running tests, in case you want to connect with the debugger.
+ * -hctreeExperimentalMode : Enable native HC-Tree journals for in-process SQLite fixtures (with -enableHctree).
  * -useNewOutput    : Show the live test dashboard for a single run with stdin/stdout/stderr on terminals (default).
  *                   Repeated runs or redirected streams use console output. Pass false for console output.
  */
