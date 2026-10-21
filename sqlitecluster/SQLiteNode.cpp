@@ -51,6 +51,7 @@
 // NewHash:          Hash, but for "ID" instead of "CommitCount".
 //                   Proposal: rename to "currentTransactionHash".
 // NewCount:         Same as "ID".
+// Snapshot:         Minimum contiguous commit ID required before replaying this transaction. Defaults to ID - 1.
 // State:            The state of the peer sending the message (i.e., SEARCHING, LEADING).
 // Version:          The version string of the node sending the message.
 // Permafollower:    Boolean value (string "true" or "false") indicating if the node sending the message is a
@@ -397,6 +398,7 @@ void SQLiteNode::_sendOutstandingTransactions()
         SData transaction("TRANSACTION");
         transaction["NewCount"] = to_string(id);
         transaction["NewHash"] = hash;
+        transaction["Snapshot"] = to_string(id - 1);
         transaction["leaderSendTime"] = sendTime;
         transaction["ID"] = to_string(id);
         transaction.content = query;
@@ -1852,6 +1854,7 @@ void SQLiteNode::_queueSynchronize(const SQLiteNode* const node, SQLitePeer* pee
             SASSERT(result[c].size() == 2);
             SData commit("COMMIT");
             commit["CommitIndex"] = SToStr(peerCommitCount + c + 1);
+            commit["Snapshot"] = SToStr(peerCommitCount + c);
             commit["Hash"] = result[c][0];
             commit.content = result[c][1];
             response.content += commit.serialize();

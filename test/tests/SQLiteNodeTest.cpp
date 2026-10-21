@@ -354,6 +354,7 @@ struct SQLiteNodeTest : tpunit::TestFixture
                 ASSERT_TRUE(size > 0);
                 content.erase(0, size);
                 EXPECT_EQUAL(commit.calcU64("CommitIndex"), anchor.commitCount + i);
+                EXPECT_EQUAL(commit.calcU64("Snapshot"), anchor.commitCount + i - 1);
                 EXPECT_TRUE(commit.isSet("Hash"));
                 EXPECT_TRUE(commit["Hash"].empty());
                 EXPECT_TRUE(commit.content.empty());
