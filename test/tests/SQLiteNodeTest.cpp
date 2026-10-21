@@ -899,7 +899,9 @@ struct SQLiteNodeTest : tpunit::TestFixture
                 unique_lock<mutex> lock(gate.sync);
                 ++gate.arrivals;
                 gate.cv.notify_all();
-                gate.cv.wait_for(lock, chrono::seconds(5), [&]() { return gate.released; });
+                gate.cv.wait_for(lock, chrono::seconds(5), [&]() {
+                    return gate.released;
+                                                                                         });
                 return 0;
             }
         };
@@ -955,7 +957,9 @@ struct SQLiteNodeTest : tpunit::TestFixture
             bool allParallel;
             {
                 unique_lock<mutex> lock(gate.sync);
-                allParallel = gate.cv.wait_for(lock, chrono::seconds(5), [&]() { return gate.arrivals == 16; });
+                allParallel = gate.cv.wait_for(lock, chrono::seconds(5), [&]() {
+                    return gate.arrivals == 16;
+                                                                                                             });
                 gate.released = true;
             }
             gate.cv.notify_all();
@@ -1132,7 +1136,12 @@ struct SQLiteNodeTest : tpunit::TestFixture
         node._changeState(SQLiteNodeState::SEARCHING);
         EXPECT_EQUAL(db.getCommitCount(), before + 2);
         EXPECT_EQUAL(db.getCommittedHash(), later["NewHash"]);
-        EXPECT_EQUAL(db.read("SELECT COUNT(*) FROM recoveryReplication;"), "1");
+        sqlite3_int64 snapshot = 0;
+        EXPECT_EQUAL(sqlite3_hct_journal_snapshot(db.getDBHandle(), &snapshot), SQLITE_OK);
+        EXPECT_EQUAL(static_cast<uint64_t>(snapshot), before + 2);
+        // Application reads use a pooled handle, separate from the synchronization connection.
+        SQLiteScopedHandle reader(*dbPool, dbPool->getIndex());
+        EXPECT_EQUAL(reader.db().read("SELECT COUNT(*) FROM recoveryReplication;"), "1");
     }
 
     void testReplicationFailure(const string& failure)
@@ -1244,7 +1253,7 @@ struct SQLiteNodeTest : tpunit::TestFixture
 
             if (live && failure != "blank-query") {
                 EXPECT_TRUE(db.getLastTransactionType() == (db.isExperimentalHCTree() ?
-                            SQLite::TRANSACTION_TYPE::SHARED : SQLite::TRANSACTION_TYPE::EXCLUSIVE));
+                    SQLite::TRANSACTION_TYPE::SHARED : SQLite::TRANSACTION_TYPE::EXCLUSIVE));
             }
             EXPECT_TRUE(node.getState() == (live ? SQLiteNodeState::FOLLOWING : SQLiteNodeState::SEARCHING));
             if (live && (failure == "hash" || failure == "guid-value" || failure == "guid-digest" || failure == "guid-query")) {

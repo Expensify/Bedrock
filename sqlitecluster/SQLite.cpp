@@ -137,9 +137,6 @@ SQLite::SharedData& SQLite::initializeSharedData()
         sharedDataLookupMap.m.emplace(_filename, sharedData);
         return *sharedData;
     } else {
-        if (isExperimentalHCTree()) {
-            sharedDataIterator->second->reconcileOutOfOrderCommits(_db);
-        }
         return *(sharedDataIterator->second);
     }
 }
@@ -446,6 +443,7 @@ SQLite::SQLite(const string& filename, int cacheSize, int maxJournalSize,
         // All bootstrap/schema writes are finished, and no other handles exist yet.
         SASSERT(sqlite3_hct_journal_setmode(_db, SQLITE_HCT_FOLLOWER) == SQLITE_OK);
         _sharedData.hctreeFollowerMode = true;
+        _sharedData.reconcileOutOfOrderCommits(_db);
     }
 }
 
@@ -1301,7 +1299,7 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash, chrono::m
     _replication = replication;
     const bool parallelFollower = _replication.has_value() && isExperimentalHCTree() && _sharedData.hctreeFollowerMode;
     if (_replication.has_value() && (!_replication.value().commitID ||
-                                    _replication.value().snapshot >= _replication.value().commitID)) {
+                                     _replication.value().snapshot >= _replication.value().commitID)) {
         STHROW("Invalid replication ID or snapshot");
     }
 
@@ -2197,7 +2195,13 @@ void SQLite::SharedData::reconcileOutOfOrderCommits(sqlite3* db)
     for (const auto& row : rows) {
         retained.insert(SToUInt64(row["cid"]));
     }
-    erase_if(_outOfOrderCommits, [&](const auto& entry) { return !retained.contains(entry.first); });
+    for (auto entry = _outOfOrderCommits.begin(); entry != _outOfOrderCommits.end();) {
+        if (retained.contains(entry->first)) {
+            ++entry;
+        } else {
+            entry = _outOfOrderCommits.erase(entry);
+        }
+    }
 }
 
 SQLite::CommitState SQLite::SharedData::getCommitState() const
