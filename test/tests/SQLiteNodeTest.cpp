@@ -11,6 +11,7 @@
 
 #include <unistd.h>
 #include <cstring>
+#include <filesystem>
 #include <thread>
 
 class SQLiteNodeTester {
@@ -110,9 +111,21 @@ struct SQLiteNodeTest : tpunit::TestFixture
     void teardown()
     {
         dbPool.reset();
-        unlink(filename);
-        unlink((string(filename) + "-pagemap").c_str());
-        unlink((string(filename) + "-log-0").c_str());
+        for (const auto& suffix : databaseSuffixes()) {
+            unlink((string(filename) + suffix).c_str());
+        }
+    }
+
+    vector<string> databaseSuffixes()
+    {
+        vector<string> suffixes{"", "-pagemap", "-wal", "-wal2", "-shm"};
+        for (const auto& entry : filesystem::directory_iterator(".")) {
+            const string name = entry.path().filename().string();
+            if (SStartsWith(name, string(filename) + "-log-")) {
+                suffixes.push_back(name.substr(strlen(filename)));
+            }
+        }
+        return suffixes;
     }
 
     void rollback()
@@ -131,7 +144,7 @@ struct SQLiteNodeTest : tpunit::TestFixture
         ASSERT_TRUE(fd >= 0);
         close(fd);
         dbPool.reset();
-        for (const string suffix : {"", "-pagemap", "-log-0"}) {
+        for (const auto& suffix : databaseSuffixes()) {
             if (suffix.empty() || access((string(filename) + suffix).c_str(), F_OK) == 0) {
                 const int result = rename((string(filename) + suffix).c_str(), (string(restartedFilename) + suffix).c_str());
                 EXPECT_EQUAL(result, 0);
