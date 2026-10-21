@@ -1998,8 +1998,11 @@ void SQLiteNode::_recvSynchronize(SQLitePeer* peer, const SData& message)
     }
 
     // Validate the whole ordered batch before giving any of its commits to application workers.
-    int commitsRemaining = message.calc("NumCommits");
-    if (commitsRemaining < 0) {
+    const string& count = message["NumCommits"];
+    int commitsRemaining = 0;
+    const auto parsed = from_chars(count.data(), count.data() + count.size(), commitsRemaining);
+    if (parsed.ec != errc() || parsed.ptr != count.data() + count.size() || commitsRemaining < 0 ||
+        message.content.size() > static_cast<size_t>(numeric_limits<int>::max())) {
         STHROW("invalid NumCommits");
     }
     vector<SData> transactions;
@@ -2007,7 +2010,7 @@ void SQLiteNode::_recvSynchronize(SQLitePeer* peer, const SData& message)
     SData commit;
     const char* content = message.content.c_str();
     int messageSize = 0;
-    int remaining = (int) message.content.size();
+    int remaining = static_cast<int>(message.content.size());
     while ((messageSize = commit.deserialize(content, remaining))) {
         content += messageSize;
         remaining -= messageSize;
@@ -2059,7 +2062,7 @@ void SQLiteNode::_recvSynchronize(SQLitePeer* peer, const SData& message)
     if (!_replicationError.empty()) {
         STHROW(_replicationError);
     }
-    if (_db.getCommitCount() != expectedID - 1) {
+    if (_db.getCommitCount() < expectedID - 1) {
         STHROW("synchronization batch did not complete contiguously");
     }
 }

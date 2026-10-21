@@ -481,8 +481,7 @@ public:
         // list.
         void commitTransactionInfo(uint64_t commitID);
 
-        // The current commit count, loaded at initialization from the highest commit ID in the DB, and then accessed
-        // though this atomic integer. getCommitCount() returns the value of this variable.
+        // Highest contiguous committed ID, loaded from the recovered journal at initialization.
         atomic<uint64_t> commitCount;
 
         // Mutex to serialize commits to this DB. This should be locked anytime a thread needs to commit to the DB, or
