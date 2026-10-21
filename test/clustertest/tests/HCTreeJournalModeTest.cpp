@@ -3,6 +3,7 @@
 #include <libstuff/SQResult.h>
 #include <libstuff/sqlite3.h>
 #include <sys/wait.h>
+#include <fstream>
 #include <test/clustertest/BedrockClusterTester.h>
 #include <test/clustertest/JournalTestHelper.h>
 
@@ -154,7 +155,14 @@ struct HCTreeJournalModeTest : tpunit::TestFixture
         for (size_t i = 1; i < 5; ++i) {
             ASSERT_TRUE(cluster.getTester(i).waitForState("FOLLOWING"));
         }
-        EXPECT_EQUAL(cluster.getTester(1).readDB("PRAGMA journal_mode;"), "wal2");
+        auto fileHeader = [&](size_t index) {
+            ifstream file(cluster.getTester(index).getArg("-db"), ios::binary);
+            string header(32, '\0');
+            file.read(header.data(), header.size());
+            return header;
+        };
+        EXPECT_TRUE(SStartsWith(fileHeader(1), "SQLite format 3"));
+        EXPECT_TRUE(SStartsWith(fileHeader(2), "Hctree database version"));
         EXPECT_EQUAL(cluster.getTester(2).readDB("SELECT COUNT(*) FROM sqlite_schema WHERE name = 'hct_journal';"), "0");
         EXPECT_EQUAL(cluster.getTester(3).readDB("SELECT COUNT(*) FROM sqlite_schema WHERE name = 'hct_journal';"), "1");
         SData write("Query");

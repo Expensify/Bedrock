@@ -186,7 +186,8 @@ private:
     static const size_t MIN_APPROVE_FREQUENCY;
     static const size_t PARALLEL_REPLICATION_THREADS;
 
-    // HC-Tree's completed-CID window contains HCT_MAX_LEADING_WRITE (8192) entries.
+    // HC-Tree's completed-CID window contains 8192 entries, and its cached snapshot can lag by 15 commits.
+    // Leave 16 entries of headroom so a far-ahead commit cannot overwrite an unconsumed completion slot.
     static const uint64_t MAX_REPLICATION_AHEAD;
 
     static const vector<SQLitePeer*> _initPeers(const string& peerList);
