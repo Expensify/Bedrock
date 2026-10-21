@@ -375,6 +375,8 @@ private:
     mutex _replicateMutex;
     condition_variable _replicateCV;
     ReplicationQueue _replicateQueue;
+    // Snapshot/ID pairs let workers find ready work without scanning a backlog of dependency-blocked commits.
+    set<pair<uint64_t, uint64_t>> _replicationDependencies;
     map<uint64_t, string> _replicating;
     string _replicationError;
     atomic<bool> _replicateAbort{false};

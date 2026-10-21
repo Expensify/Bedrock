@@ -41,7 +41,7 @@
 //
 // *** DOCUMENTATION OF MESSAGE FIELDS ***
 // Note: Yes, two of these fields start with lowercase chars.
-// CommitCount:      The highest committed transaction ID in the DB currently. This can be higher than any transaction
+// CommitCount:      The highest contiguous committed transaction ID in the DB. This can be higher than any transaction
 //                   currently being handled. This exists to answer the question "how much data does this peer have?"
 //                   and not to communicate any information about a specific transaction in progress.
 // HashCommitID:     The highest nonblank committed transaction ID (0 if none). Defaults to CommitCount when absent.
@@ -235,9 +235,12 @@ void SQLiteNode::_enqueueReplication(SQLitePeer* peer, SData message)
             return;
         }
         _replicateQueue.emplace(info.commitID, make_pair(peer, move(message)));
+        if (_db.isExperimentalHCTree()) {
+            _replicationDependencies.emplace(info.snapshot, info.commitID);
+        }
     }
     _startReplication();
-    _replicateCV.notify_all();
+    _replicateCV.notify_one();
 }
 
 SQLiteNode::ReplicationQueue::iterator SQLiteNode::_nextReplication()
@@ -251,9 +254,15 @@ SQLiteNode::ReplicationQueue::iterator SQLiteNode::_nextReplication()
         return _replicating.empty() && first != _replicateQueue.end() && first->first == contiguous + 1 ?
             first : _replicateQueue.end();
     }
-    return find_if(_replicateQueue.begin(), _replicateQueue.end(), [&](const auto& entry) {
-        return entry.first - contiguous <= MAX_REPLICATION_AHEAD && entry.second.second.calcU64("Snapshot") <= contiguous;
-    });
+    for (const auto& [snapshot, id] : _replicationDependencies) {
+        if (snapshot > contiguous) {
+            break;
+        }
+        if (id - contiguous <= MAX_REPLICATION_AHEAD) {
+            return _replicateQueue.find(id);
+        }
+    }
+    return _replicateQueue.end();
 }
 
 void SQLiteNode::_startReplication()
@@ -288,6 +297,7 @@ void SQLiteNode::_stopReplication()
         SWARN("Discarding " << _replicateQueue.size() << " queued commits at replication shutdown");
         _replicateQueue.clear();
     }
+    _replicationDependencies.clear();
     SASSERT(_replicating.empty());
     _replicateThreadShouldExitTime = 0;
     _replicateAbort = false;
@@ -310,6 +320,7 @@ void SQLiteNode::_replicate(size_t threadID)
                     peer = next->second.first;
                     command = move(next->second.second);
                     _replicateQueue.erase(next);
+                    _replicationDependencies.erase({command.calcU64("Snapshot"), commitID});
                     _replicating.emplace(commitID, command["NewHash"]);
                     break;
                 }
@@ -387,6 +398,7 @@ void SQLiteNode::_failReplication(SQLitePeer* peer, const SData& command, const 
         _replicationError = reason;
         _replicateAbort = true;
         _replicateQueue.clear();
+        _replicationDependencies.clear();
     }
     _replicateCV.notify_all();
     notifyCommit();
@@ -2199,10 +2211,7 @@ bool SQLiteNode::_majoritySubscribed() const
 
 void SQLiteNode::_handleBeginTransaction(SQLite& db, SQLitePeer* peer, const SData& message)
 {
-    // Begins a local transaction with the query the leader broadcast. If the follower cannot start the transaction for
-    // any reason, it is broken somehow -- disconnect from the leader.
-    // **FIXME**: What happens if LEADER steps down before sending BEGIN?
-    // **FIXME**: What happens if LEADER steps down or disconnects after BEGIN?
+    // Each worker owns its handle until the received transaction has committed or rolled back.
     if (_state != SQLiteNodeState::FOLLOWING && _state != SQLiteNodeState::SYNCHRONIZING && _state != SQLiteNodeState::SUBSCRIBING) {
         STHROW("not receiving replication");
     }
@@ -2231,10 +2240,6 @@ void SQLiteNode::_handleBeginTransaction(SQLite& db, SQLitePeer* peer, const SDa
 bool SQLiteNode::_handlePrepareTransaction(SQLite& db, SQLitePeer* peer, const SData& message, uint64_t dequeueTime)
 {
     uint64_t prepareStartTime = STimeNow();
-    // If the follower cannot apply leader's transaction for any reason, it is broken somehow -- disconnect from the
-    // leader.
-    // **FIXME**: What happens if LEADER steps down before sending BEGIN?
-    // **FIXME**: What happens if LEADER steps down or disconnects after BEGIN?
     if (!message.isSet("ID")) {
         STHROW("missing ID");
     }
