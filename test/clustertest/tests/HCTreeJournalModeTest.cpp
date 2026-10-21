@@ -134,7 +134,7 @@ struct HCTreeJournalModeTest : tpunit::TestFixture
             return;
         }
         class MixedModeTester : public BedrockTester {
-        public:
+public:
             using BedrockTester::BedrockTester;
 
             string startServer(bool wait = true)

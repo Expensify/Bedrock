@@ -252,7 +252,7 @@ SQLiteNode::ReplicationQueue::iterator SQLiteNode::_nextReplication()
     if (!_db.isExperimentalHCTree()) {
         const auto first = _replicateQueue.begin();
         return _replicating.empty() && first != _replicateQueue.end() && first->first == contiguous + 1 ?
-            first : _replicateQueue.end();
+               first : _replicateQueue.end();
     }
     for (const auto& [snapshot, id] : _replicationDependencies) {
         if (snapshot > contiguous) {
@@ -325,7 +325,7 @@ void SQLiteNode::_replicate(size_t threadID)
                     break;
                 }
                 if (_replicateAbort || (_replicateThreadShouldExitTime &&
-                    (_replicating.empty() || _replicateThreadShouldExitTime < STimeNow()))) {
+                                        (_replicating.empty() || _replicateThreadShouldExitTime < STimeNow()))) {
                     return;
                 }
                 if (_replicateThreadShouldExitTime) {
