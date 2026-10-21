@@ -197,6 +197,12 @@ private:
 
     const set<string>& getTablesUsed() const;
 
+    struct ReplicationInfo
+    {
+        uint64_t commitID;
+        uint64_t snapshot;
+    };
+
     // Prepare to commit or rollback the transaction. This also inserts the current uncommitted query into the
     // journal; no additional writes are allowed until the next transaction has begun.
     // The transactionID and transactionHash, if passed, will be updated with the values prepared for this transaction.
@@ -206,12 +212,6 @@ private:
     // Local transactions generate a new GUID. Replication supplies the received GUID (32 hex characters), or an
     // explicit empty string for a blank journal entry (which must also have an empty query).
     // Replication callers must compare the prepared hash with the received hash before committing.
-    struct ReplicationInfo
-    {
-        uint64_t commitID;
-        uint64_t snapshot;
-    };
-
     // Explicit replication IDs permit concurrent commits only on experimental HC-Tree followers.
     bool prepare(uint64_t* transactionID = nullptr, string* transactionHash = nullptr, chrono::microseconds commitLockTimeout = chrono::hours(24), atomic<bool>* abortPtr = nullptr, const optional<string>& replicationGUID = nullopt, const optional<ReplicationInfo>& replication = nullopt);
 
@@ -456,6 +456,9 @@ public:
         void recordReplicationCommit(uint64_t commitID, const string& commitHash);
         optional<string> getOutOfOrderCommitHash(uint64_t commitID) const;
 
+        // A reopened HC-Tree database may have rolled back the incomplete journal tail during recovery.
+        void reconcileOutOfOrderCommits(sqlite3* db);
+
         CommitState getCommitState() const;
 
         // This removes and returns all committed transactions.
@@ -484,9 +487,8 @@ public:
         // Highest contiguous committed ID, loaded from the recovered journal at initialization.
         atomic<uint64_t> commitCount;
 
-        // Mutex to serialize commits to this DB. This should be locked anytime a thread needs to commit to the DB, or
-        // needs to prevent other threads from committing to the DB (such as to guarantee there are no commit conflicts
-        // during a transaction).
+        // Serializes commits except explicit experimental HC-Tree follower replication. writeLock and the open writer
+        // count must be used to drain all writers, including those follower commits, when changing database roles.
         recursive_timed_mutex commitLock;
 
         // If set to false, this prevents any thread from being able to commit to the DB.

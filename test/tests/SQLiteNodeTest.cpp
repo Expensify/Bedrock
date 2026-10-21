@@ -86,6 +86,7 @@ struct SQLiteNodeTest : tpunit::TestFixture
                                            TEST(SQLiteNodeTest::testParallelReplication),
                                            TEST(SQLiteNodeTest::testReplicationReconnect),
                                            TEST(SQLiteNodeTest::testReplicationValidation),
+                                           TEST(SQLiteNodeTest::testReplicationRecovery),
                                            TEST(SQLiteNodeTest::testSynchronizeCommitFailure),
                                            TEST(SQLiteNodeTest::testSynchronizeWriteFailure),
                                            TEST(SQLiteNodeTest::testSynchronizeConstraintFailure),
@@ -1082,6 +1083,56 @@ struct SQLiteNodeTest : tpunit::TestFixture
         node._changeState(SQLiteNodeState::SEARCHING);
         EXPECT_TRUE(node._replicateThreads.empty());
         EXPECT_EQUAL(db.getCommitCount(), before.commitCount);
+    }
+
+    void testReplicationRecovery()
+    {
+        if (!dbPool->getBase().isExperimentalHCTree()) {
+            return;
+        }
+        uint64_t before = 0;
+        SData later;
+        {
+            SQLite& db = dbPool->getBase();
+            ASSERT_TRUE(db.beginTransaction());
+            ASSERT_TRUE(db.writeUnmodified("CREATE TABLE recoveryReplication (id INTEGER PRIMARY KEY);"));
+            ASSERT_TRUE(db.prepare());
+            ASSERT_EQUAL(db.commit(), SQLITE_OK);
+            before = db.getCommitCount();
+            SQLiteNode node(server, dbPool, "test", "", peerList, configuredPriority, maxOutstandingWALFrames, 1000000000, "1.0");
+            node._changeState(SQLiteNodeState::FOLLOWING);
+            SQLitePeer* peer = node.getPeerByName("peer1");
+            node._leadPeer = peer;
+            peer->loggedIn = true;
+            later = transaction(before + 2, "INSERT INTO recoveryReplication VALUES (1);", before);
+            node._onMESSAGE(peer, later);
+            bool applied;
+            {
+                unique_lock<mutex> lock(node._replicateMutex);
+                applied = node._replicateCV.wait_for(lock, chrono::seconds(5), [&]() {
+                    return db.getOutOfOrderCommitHash(before + 2).has_value();
+                });
+            }
+            EXPECT_TRUE(applied);
+        }
+        // Reopen the same filename, as detach/attach does. SharedData survives, but HC-Tree rolls back the gapped tail.
+        dbPool.reset();
+        dbPool = make_shared<SQLitePool>(32, filename, 1000000, 5000, 0, 0, true);
+        SQLite& db = dbPool->getBase();
+        EXPECT_EQUAL(db.getCommitCount(), before);
+        EXPECT_FALSE(db.getOutOfOrderCommitHash(before + 2).has_value());
+        EXPECT_FALSE(db.getCommit(before + 2));
+        SQLiteNode node(server, dbPool, "test", "", peerList, configuredPriority, maxOutstandingWALFrames, 1000000000, "1.0");
+        node._changeState(SQLiteNodeState::FOLLOWING);
+        SQLitePeer* peer = node.getPeerByName("peer1");
+        node._leadPeer = peer;
+        peer->loggedIn = true;
+        node._onMESSAGE(peer, transaction(before + 1, "", before));
+        node._onMESSAGE(peer, later);
+        node._changeState(SQLiteNodeState::SEARCHING);
+        EXPECT_EQUAL(db.getCommitCount(), before + 2);
+        EXPECT_EQUAL(db.getCommittedHash(), later["NewHash"]);
+        EXPECT_EQUAL(db.read("SELECT COUNT(*) FROM recoveryReplication;"), "1");
     }
 
     void testReplicationFailure(const string& failure)

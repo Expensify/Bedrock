@@ -137,7 +137,9 @@ SQLite::SharedData& SQLite::initializeSharedData()
         sharedDataLookupMap.m.emplace(_filename, sharedData);
         return *sharedData;
     } else {
-        // Otherwise, use the existing one.
+        if (isExperimentalHCTree()) {
+            sharedDataIterator->second->reconcileOutOfOrderCommits(_db);
+        }
         return *(sharedDataIterator->second);
     }
 }
@@ -1381,8 +1383,7 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash, chrono::m
         (*_onPrepareHandler)(*this, journalID);
     }
 
-    // Now that we've locked anybody else from committing, look up the state of the database. We don't need to lock the
-    // SharedData object to get these values as we know it can't currently change.
+    // Serialized commits allocate the next ID. Parallel follower commits retain the received ID instead.
     const uint64_t commitCount = _sharedData.commitCount;
     const uint64_t commitID = _replication.has_value() ? _replication.value().commitID : commitCount + 1;
     if (!parallelFollower && commitID != commitCount + 1) {
@@ -2182,6 +2183,21 @@ optional<string> SQLite::SharedData::getOutOfOrderCommitHash(uint64_t commitID) 
     lock_guard<decltype(_internalStateMutex)> lock(_internalStateMutex);
     const auto entry = _outOfOrderCommits.find(commitID);
     return entry == _outOfOrderCommits.end() ? nullopt : optional<string>(entry->second);
+}
+
+void SQLite::SharedData::reconcileOutOfOrderCommits(sqlite3* db)
+{
+    lock_guard<decltype(_internalStateMutex)> lock(_internalStateMutex);
+    if (_outOfOrderCommits.empty()) {
+        return;
+    }
+    SQResult rows;
+    SASSERT(!SQuery(db, "SELECT cid FROM hct_journal WHERE cid >= " + SQ(_outOfOrderCommits.begin()->first), rows));
+    set<uint64_t> retained;
+    for (const auto& row : rows) {
+        retained.insert(SToUInt64(row["cid"]));
+    }
+    erase_if(_outOfOrderCommits, [&](const auto& entry) { return !retained.contains(entry.first); });
 }
 
 SQLite::CommitState SQLite::SharedData::getCommitState() const
