@@ -13,7 +13,8 @@
 #include <string.h>
 #include <unistd.h>
 
-typedef struct Connection {
+typedef struct Connection
+{
     sqlite3* db;
     const char* name;
 } Connection;
@@ -138,7 +139,7 @@ static void commitTransaction(Connection* connection, sqlite3_int64 cid, sqlite3
     /* Keep the opaque payload non-NULL even for a blank journal entry. */
     const char* payload = sql[0] ? sql : ":";
     int rc = sqlite3_hct_journal_follower_commit(connection->db,
-             (const unsigned char*) payload, (int) strlen(payload), cid, dependency);
+                                                 (const unsigned char*) payload, (int) strlen(payload), cid, dependency);
     checkAPI(connection, rc, "follower commit");
     if (bedrockProbes) {
         (void) scalar(connection, "PRAGMA page_count;");
@@ -157,7 +158,7 @@ static sqlite3_int64 journalEntries(Connection* connection, sqlite3_int64 cid)
 static void dumpJournal(Connection* connection, sqlite3_int64 prefix)
 {
     char* sql = sqlite3_mprintf("SELECT cid, snapshot, hex(query) FROM hct_journal WHERE cid >= %lld ORDER BY cid",
-                               (long long) prefix);
+                                (long long) prefix);
     sqlite3_stmt* statement = NULL;
     checkAPI(connection, sqlite3_prepare_v2(connection->db, sql, -1, &statement, NULL), sql);
     int rc;
@@ -249,6 +250,10 @@ static void runCase(const char* directory, const char* caseName, sqlite3_int64 p
     Connection freshReader = openConnection(path, "reader-after-replay", 0);
     observe(&freshReader, "after-replay", prefix + 2, 1);
     dumpJournal(&base, prefix);
+    /* Keep the database open on the other connections, replacing only the first connection. */
+    closeConnection(&base);
+    base = openConnection(path, "replaced-base", 0);
+    observe(&base, "after-replacing-base", prefix + 2, 1);
     closeConnection(&freshReader);
     closeConnection(&earlyReader);
     closeConnection(&writer);
@@ -302,6 +307,9 @@ int main(int argc, char** argv)
     }
     printf("SQLite version: %s\nSQLite source ID: %s\nCompiler: %s\nArtifacts: %s\n",
            sqlite3_libversion(), sqlite3_sourceid(), __VERSION__, directory);
+#ifdef SQLITE_SCM_BRANCH
+    printf("SQLite branch: %s\n", SQLITE_SCM_BRANCH);
+#endif
     for (int i = 0; sqlite3_compileoption_get(i); ++i) {
         printf("COMPILE_OPTION %s\n", sqlite3_compileoption_get(i));
     }
