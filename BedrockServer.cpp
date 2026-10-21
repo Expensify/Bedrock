@@ -780,7 +780,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                         // every other thread that's committing. We can still conflict with a transaction that another
                         // thread committed between our call to `processCommand` and our call to `commit`. This is
                         // scoped to the minimum time required.
-                        bool commitSuccess = false;
+                        SQLiteCore::COMMIT_RESULT commitResult = SQLiteCore::COMMIT_RESULT::CONFLICT;
                         uint64_t transactionID = 0;
                         string transactionHash;
 
@@ -791,16 +791,14 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                             void (* onPrepareHandler)(SQLite& db, int64_t tableID) = nullptr;
                             bool enableOnPrepareNotifications = command->shouldEnableOnPrepareNotification(db, &onPrepareHandler);
 
-                            // We want to calculate the remaining time for this command before we try to commit. It's possible that it will throw.
-                            // If that's the case, we will still allow the commit flow to happen passing a 0 timeout, making it behave as a try_lock
-                            // and still commit it if there's no wait time for the mutex.
+                            // We want to calculate the remaining time for this command before we try to commit. We cap the wait at the process timeout. It's possible that it will throw.
+                            // If that's the case, we will still allow the commit flow to happen passing a 0 timeout, making it behave as a try_lock and still commit it if there's no wait time for the mutex.
                             try {
-                                // We can use false for isProcessing here since we want to use the total command timeout.
-                                timeToCommit = core.getRemainingTime(command, false);
+                                timeToCommit = core.getRemainingTime(command, true);
                             } catch (const SException& e) {
                                 SINFO("Command '" << command->getMethodName() << "' timed out before commit.");
                             }
-                            commitSuccess = core.commit(*_syncNode, transactionID, transactionHash, command->getMethodName(), enableOnPrepareNotifications, onPrepareHandler, timeToCommit, &command->shouldAbort);
+                            commitResult = core.commit(*_syncNode, transactionID, transactionHash, command->getMethodName(), enableOnPrepareNotifications, onPrepareHandler, timeToCommit, &command->shouldAbort);
 
                             if (getState() != SQLiteNodeState::LEADING) {
                                 SINFO("Stopped leading while trying to commit, will retry.");
@@ -812,7 +810,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                                 continue;
                             }
                         }
-                        if (commitSuccess) {
+                        if (commitResult == SQLiteCore::COMMIT_RESULT::OK) {
                             // Tell the sync node that there's been a commit so that it can jump out of it's "poll"
                             // loop and send it to followers. NOTE: we don't check for null here, that should be
                             // impossible inside a worker thread.
@@ -822,6 +820,15 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                             _conflictManager.recordTables(command->request.methodLine, db.getTablesUsed());
                             // So we must still be leading, and at this point our commit has succeeded, let's
                             // mark it as complete. We add the currentCommit count here as well.
+                            command->response["commitCount"] = to_string(db.getCommitCount());
+                            command->complete = true;
+                        } else if (commitResult == SQLiteCore::COMMIT_RESULT::TIMEOUT && command->httpsRequests.empty()) {
+                            // A long wait for the commit lock means the leader is overloaded. Retrying would run the command
+                            // again and queue it behind the same writers, and eventually end up in the blockingCommit thread, so we fail it.
+                            // Commands with HTTPS requests keep retrying, because failing them would lose the result of a call
+                            // to an outside service that already happened.
+                            SINFO("Timed out waiting for commit lock, failing " << command->request.methodLine);
+                            command->response.methodLine = "555 Timeout waiting for commit lock";
                             command->response["commitCount"] = to_string(db.getCommitCount());
                             command->complete = true;
                         } else if (!core.isTimedOut(command, &db, this)) {
