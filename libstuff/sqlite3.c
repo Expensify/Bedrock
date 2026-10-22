@@ -18,7 +18,7 @@
 ** separate file. This file contains only code for the core SQLite library.
 **
 ** The content in this amalgamation comes from Fossil check-in
-** a1551bc4240f6a265ae1c3c4d4f7860e998d with changes in files:
+** 11f43371b5d66a46008920071c4e707d116b with changes in files:
 **
 **    
 */
@@ -476,10 +476,10 @@ extern "C" {
 */
 #define SQLITE_VERSION        "3.54.0"
 #define SQLITE_VERSION_NUMBER 3054000
-#define SQLITE_SOURCE_ID      "2026-10-17 16:16:09 a1551bc4240f6a265ae1c3c4d4f7860e998d8d05e91954a3d65f2f518658854c"
+#define SQLITE_SOURCE_ID      "2026-10-22 15:03:14 11f43371b5d66a46008920071c4e707d116b7d4957b42c900b2cbae7aa0115a1"
 #define SQLITE_SCM_BRANCH     "hctree-bedrock-lcd-ex"
 #define SQLITE_SCM_TAGS       ""
-#define SQLITE_SCM_DATETIME   "2026-10-17T16:16:09.567Z"
+#define SQLITE_SCM_DATETIME   "2026-10-22T15:03:14.934Z"
 
 /*
 ** CAPI3REF: Run-Time Library Version Numbers
@@ -92591,6 +92591,7 @@ static int hctRecoverOneLog(HBtree *p, HctLogReader *pRdr){
     if( rc==SQLITE_OK ){
       rc = btreeFlushData(p, 0);
     }
+    sqlite3HctTreeClear(p->pHctTree);
     sqlite3HctDbRollbackMode(p->pHctDb, 0);
     if( rc==SQLITE_OK && p->pHctJrnl ){
       i64 iCid = hctMapFindCid(p, pRdr->iTid);
@@ -136705,6 +136706,13 @@ static void attachFunc(
     sqlite3BtreeSetPagerFlags(pNew->pBt,
                       PAGER_SYNCHRONOUS_FULL | (db->flags & PAGER_FLAGS_MASK));
 #endif
+    /* An hct database is created on disk the first time a read transaction
+    ** is opened on it - which happens when sqlite3Init() is called below.
+    ** So if a page-size has been requested, apply it now. This is a no-op
+    ** if the database already exists or db->nextPagesize is not valid. */
+    if( sqlite3IsHct(pNew->pBt) ){
+      sqlite3BtreeSetPageSize(pNew->pBt, db->nextPagesize, -1, 0);
+    }
     sqlite3BtreeLeave(pNew->pBt);
   }
   pNew->safety_level = SQLITE_DEFAULT_SYNCHRONOUS+1;
@@ -152987,6 +152995,7 @@ static int xferOptimization(
   SrcItem *pItem;                  /* An element of pSelect->pSrc */
   int i;                           /* Loop counter */
   int iDbSrc;                      /* The database of pSrc */
+  int bNoRowCell = 0;              /* True to avoid OP_RowCell */
   int iSrc, iDest;                 /* Cursors from source and destination */
   int addr1, addr2;                /* Loop addresses */
   int emptyDestTest = 0;           /* Address of test for empty pDest */
@@ -153222,6 +153231,12 @@ static int xferOptimization(
   sqlite3_xferopt_count++;
 #endif
   iDbSrc = sqlite3SchemaToIndex(db, pSrc->pSchema);
+  /* The stock b-tree implementation of sqlite3BtreeTransferRow() can only
+  ** read from a stock b-tree source cursor. So if the destination is a
+  ** stock b-tree and the source is an hct b-tree, use OP_RowData instead
+  ** of OP_RowCell. The hct implementation can read from either. */
+  bNoRowCell = sqlite3IsHct(db->aDb[iDbSrc].pBt)
+            && !sqlite3IsHct(db->aDb[iDbDest].pBt);
   v = sqlite3GetVdbe(pParse);
   sqlite3CodeVerifySchema(pParse, iDbSrc);
   iSrc = pParse->nTab++;
@@ -153285,12 +153300,14 @@ static int xferOptimization(
     }else{
       insFlags = OPFLAG_NCHANGE|OPFLAG_LASTROWID|OPFLAG_APPEND|OPFLAG_PREFORMAT;
     }
+    if( bNoRowCell
 #ifdef SQLITE_ENABLE_PREUPDATE_HOOK
-    if( (db->mDbFlags & DBFLAG_Vacuum)==0 ){
+     || (db->mDbFlags & DBFLAG_Vacuum)==0
+#endif
+    ){
       sqlite3VdbeAddOp3(v, OP_RowData, iSrc, regData, 1);
       insFlags &= ~OPFLAG_PREFORMAT;
     }else
-#endif
     {
       sqlite3VdbeAddOp3(v, OP_RowCell, iDest, iSrc, regRowid);
     }
@@ -153340,7 +153357,7 @@ static int xferOptimization(
         const char *zColl = pSrcIdx->azColl[i];
         if( sqlite3_stricmp(sqlite3StrBINARY, zColl) ) break;
       }
-      if( i==pSrcIdx->nColumn ){
+      if( i==pSrcIdx->nColumn && !bNoRowCell ){
         idxInsFlags = OPFLAG_USESEEKRESULT|OPFLAG_PREFORMAT;
         sqlite3VdbeAddOp1(v, OP_SeekEnd, iDest);
         sqlite3VdbeAddOp2(v, OP_RowCell, iDest, iSrc);
@@ -172867,6 +172884,7 @@ SQLITE_PRIVATE SQLITE_NOINLINE int sqlite3RunVacuum(
   i64 saved_nChange;      /* Saved value of db->nChange */
   i64 saved_nTotalChange; /* Saved value of db->nTotalChange */
   u32 saved_openFlags;    /* Saved value of db->openFlags */
+  int saved_nextPagesize; /* Saved value of db->nextPagesize */
   u8 saved_mTrace;        /* Saved trace settings */
   Db *pDb = 0;            /* Database to detach at end of vacuum */
   int isMemDb;            /* True if vacuuming a :memory: database */
@@ -172887,13 +172905,9 @@ SQLITE_PRIVATE SQLITE_NOINLINE int sqlite3RunVacuum(
     sqlite3SetString(pzErrMsg, db,"cannot VACUUM - SQL statements in progress");
     return SQLITE_ERROR; /* IMP: R-15610-35227 */
   }
-  if( sqlite3IsHct(db->aDb[iDb].pBt) ){
-    if( pOut==0 ){
-      /* Silent noop */
-      return SQLITE_OK;
-    }
-    sqlite3SetString(pzErrMsg, db, "cannot VACUUM - hctree database");
-    return SQLITE_ERROR;
+  if( pOut==0 && sqlite3IsHct(db->aDb[iDb].pBt) ){
+    /* Silent noop */
+    return SQLITE_OK;
   }
 
   saved_openFlags = db->openFlags;
@@ -172945,7 +172959,16 @@ SQLITE_PRIVATE SQLITE_NOINLINE int sqlite3RunVacuum(
   sqlite3_randomness(sizeof(iRandom),&iRandom);
   sqlite3_snprintf(sizeof(zDbVacuum), zDbVacuum, "vacuum_%016llx", iRandom);
   nDb = db->nDb;
+  /* If the target is an hct database, its page-size is set to
+  ** db->nextPagesize by the ATTACH (see attachFunc()). So if no page-size
+  ** has been requested, temporarily set db->nextPagesize to that of the
+  ** source database, so that it is copied to the target. */
+  saved_nextPagesize = db->nextPagesize;
+  if( db->nextPagesize==0 ){
+    db->nextPagesize = sqlite3BtreeGetPageSize(pMain);
+  }
   rc = execSqlF(db, pzErrMsg, "ATTACH %Q AS %s", zOut, zDbVacuum);
+  db->nextPagesize = saved_nextPagesize;
   db->openFlags = saved_openFlags;
   if( rc!=SQLITE_OK ) goto end_of_vacuum;
   assert( (db->nDb-1)==nDb );
@@ -172954,13 +172977,25 @@ SQLITE_PRIVATE SQLITE_NOINLINE int sqlite3RunVacuum(
   pTemp = pDb->pBt;
   nRes = sqlite3BtreeGetRequestedReserve(pMain);
   if( pOut ){
-    sqlite3_file *id = sqlite3PagerFile(sqlite3BtreePager(pTemp));
     i64 sz = 0;
     const char *zFilename;
-    if( id->pMethods!=0 && (sqlite3OsFileSize(id, &sz)!=SQLITE_OK || sz>0) ){
-      rc = SQLITE_ERROR;
-      sqlite3SetString(pzErrMsg, db, "output file already exists");
-      goto end_of_vacuum;
+    if( sqlite3IsHct(pTemp) ){
+      /* An hct database has no pager. Instead of checking the size of the
+      ** file, consider the target to be non-empty if its schema cookie
+      ** is non-zero - i.e. if anything has ever been written to it. The
+      ** schema was loaded by the ATTACH above.  */
+      if( pDb->pSchema->schema_cookie!=0 ){
+        rc = SQLITE_ERROR;
+        sqlite3SetString(pzErrMsg, db, "output file already exists");
+        goto end_of_vacuum;
+      }
+    }else{
+      sqlite3_file *id = sqlite3PagerFile(sqlite3BtreePager(pTemp));
+      if( id->pMethods!=0 && (sqlite3OsFileSize(id, &sz)!=SQLITE_OK || sz>0) ){
+        rc = SQLITE_ERROR;
+        sqlite3SetString(pzErrMsg, db, "output file already exists");
+        goto end_of_vacuum;
+      }
     }
     db->mDbFlags |= DBFLAG_VacuumInto;
 
@@ -172971,9 +173006,10 @@ SQLITE_PRIVATE SQLITE_NOINLINE int sqlite3RunVacuum(
 
     /* If the VACUUM INTO target file is a URI filename and if the
     ** "reserve=N" query parameter is present, reset the reserve to the
-    ** amount specified, if the amount is within range */
+    ** amount specified, if the amount is within range. hct databases
+    ** do not report a filename, and do not support reserved bytes. */
     zFilename = sqlite3BtreeGetFilename(pTemp);
-    if( ALWAYS(zFilename) ){
+    if( zFilename ){
       int nNew = (int)sqlite3_uri_int64(zFilename, "reserve", nRes);
       if( nNew>=0 && nNew<=255 ) nRes = nNew;
     }
@@ -173000,6 +173036,11 @@ SQLITE_PRIVATE SQLITE_NOINLINE int sqlite3RunVacuum(
     db->nextPagesize = 0;
   }
 
+  if( sqlite3IsHct(pTemp) ){
+    /* By this point an hct target has already been created on disk,
+    ** using either db->nextPagesize or the page-size of the source
+    ** database (see the ATTACH above).  */
+  }else
   if( sqlite3BtreeSetPageSize(pTemp, sqlite3BtreeGetPageSize(pMain), nRes, 0)
    || (!isMemDb && sqlite3BtreeSetPageSize(pTemp, db->nextPagesize, nRes, 0))
    || NEVER(db->mallocFailed)
@@ -275671,7 +275712,7 @@ static void fts5SourceIdFunc(
 ){
   assert( nArg==0 );
   UNUSED_PARAM2(nArg, apUnused);
-  sqlite3_result_text(pCtx, "fts5: 2026-10-17 16:16:09 a1551bc4240f6a265ae1c3c4d4f7860e998d8d05e91954a3d65f2f518658854c", -1, SQLITE_TRANSIENT);
+  sqlite3_result_text(pCtx, "fts5: 2026-10-22 15:03:14 11f43371b5d66a46008920071c4e707d116b7d4957b42c900b2cbae7aa0115a1", -1, SQLITE_TRANSIENT);
 }
 
 /*
@@ -285033,10 +285074,17 @@ SQLITE_PRIVATE int sqlite3HctFileNewDb(HctFile *pFile){
         int ii = 0;
         u64 iPhys1 = 1 + (((HCT_HEADER_PAGESIZE*2)+szPage-1) / szPage);
 
+        /* Set the logical page mappings before any PHYSICAL_IN_USE flags.
+        ** For page sizes of HCT_HEADER_PAGESIZE*2 or larger, iPhys1 is 2,
+        ** so the PHYSICAL_IN_USE flag for the first system root shares
+        ** a slot with the logical mapping for HCT_ROOTPAGE_META. Setting
+        ** the mapping for HCT_ROOTPAGE_META directly after the flag would
+        ** clear it.  */
+        for(ii=0; ii<ArraySize(aRoot); ii++){
+          hctFilePagemapSetDirect(pMapping, aRoot[ii], (iPhys1 + ii) | f);
+        }
         for(ii=0; ii<ArraySize(aRoot) && rc==SQLITE_OK; ii++){
-          u64 iRoot = aRoot[ii];
           u64 iPhys = iPhys1 + ii;
-          hctFilePagemapSetDirect(pMapping, iRoot, iPhys | f);
           hctFilePagemapSetFlag(pMapping, iPhys, HCT_PMF_PHYSICAL_IN_USE);
           rc = hctFileInitSystemRoot(p, iPhys);
         }
