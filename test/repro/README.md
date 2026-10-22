@@ -6,7 +6,7 @@ uses a fresh database for each case, consumes and finalizes every statement, and
 checks that observations start and finish outside a transaction.
 
 The original failure below was observed on the 2026-10-17 HC-Tree revision.
-The minimal case passes with the 2026-10-22 revision now included in `main`;
+The reproducer passes with the 2026-10-22 revision now included in `main`;
 see the retest results at the end of this document.
 
 ## Build and run
@@ -144,3 +144,15 @@ RESULT gap-no-reopen: PASS (0 mismatches)
 As a positive control, the pre-merge binary built from `a1551bc4` still reproduces
 the original three mismatches on a fresh database. The Bedrock recovery fixture
 also asserts the base connection's row count, in addition to the pooled reader.
+
+The complete 32-configuration matrix passes with each of three builds: native
+debug, native optimized, and the rebuilt Bedrock SQLite object with Bedrock's
+compile definitions. That is 96 passing cases per build, including the failing
+scenario and both controls. Ten additional runs at prefix 2 pass in each native
+build. All runs use new database files.
+
+Bedrock, unit tests, cluster tests, and the test plugin rebuild successfully.
+The native `SQLiteNode` fixture passes 21/21, including the restored base-handle
+assertion. Full unit suites pass 394/394 in each of WAL2 and HC-Tree modes, and
+the targeted cluster fixtures pass 21/21 in each mode. These results support that
+the stale-read issue is fixed in `11f43371` on the tested Linux aarch64 platform.
