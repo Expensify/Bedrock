@@ -3192,6 +3192,9 @@ void SRedactSensitiveValues(string& s)
     // the authToken, so we need to optionally match the closing quote with a question mark (?).
     s = SREReplace("\"authToken\":\".*\"?", s, "\"authToken\":<REDACTED>");
 
+    // authTokens also appear as URL query parameters, for example inside stored redirect URLs.
+    s = SREReplace("authToken=[^&\"'\\s]+", s, "authToken=<REDACTED>");
+
     // Redact queries that contain encrypted fields since there's no value in logging them.
     s = SREReplace("v[0-9]+:[0-9A-F]{10,}", s, "<REDACTED>");
 
