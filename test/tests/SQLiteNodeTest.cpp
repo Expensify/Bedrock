@@ -1139,6 +1139,7 @@ struct SQLiteNodeTest : tpunit::TestFixture
         sqlite3_int64 snapshot = 0;
         EXPECT_EQUAL(sqlite3_hct_journal_snapshot(db.getDBHandle(), &snapshot), SQLITE_OK);
         EXPECT_EQUAL(static_cast<uint64_t>(snapshot), before + 2);
+        EXPECT_EQUAL(db.read("SELECT COUNT(*) FROM recoveryReplication;"), "1");
         // Application reads use a pooled handle, separate from the synchronization connection.
         SQLiteScopedHandle reader(*dbPool, dbPool->getIndex());
         EXPECT_EQUAL(reader.db().read("SELECT COUNT(*) FROM recoveryReplication;"), "1");
