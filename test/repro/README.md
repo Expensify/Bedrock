@@ -5,6 +5,10 @@ APIs directly. It does not use or link any Bedrock code. It is single-threaded,
 uses a fresh database for each case, consumes and finalizes every statement, and
 checks that observations start and finish outside a transaction.
 
+The original failure below was observed on the 2026-10-17 HC-Tree revision.
+The minimal case passes with the 2026-10-22 revision now included in `main`;
+see the retest results at the end of this document.
+
 ## Build and run
 
 From the repository root, build directly from the SQLite amalgamation:
@@ -53,9 +57,10 @@ With `--prefix 2`, the failing case does the following:
 6. Compare the first reopened connection, writer, reader opened before replay,
    and reader opened after replay. All report available snapshot 4, autocommit
    enabled, no active transaction, and no outstanding prepared statements.
-7. Observe that the first reopened connection returns no rows, whereas the other
-   three connections return the inserted row. This affects `COUNT(*)`, primary-key
-   lookup, and a full table scan, not just the count optimization.
+7. On the affected revision, observe that the first reopened connection returns
+   no rows, whereas the other three connections return the inserted row. This
+   affects `COUNT(*)`, primary-key lookup, and a full table scan, not just the
+   count optimization.
 8. Close and replace only the first connection, keeping the other connections
    open. The replacement sees the inserted row correctly.
 
@@ -72,7 +77,7 @@ case of an intentionally retained old read transaction.
 Omit `--case` to run the failing case and both controls:
 
 - `gap-reopen`: apply CID N+2 before N+1, close/reopen all handles, fill the gap,
-  and replay N+2. **Reproduces.**
+  and replay N+2. **Reproduces on the 2026-10-17 revision.**
 - `no-tail-reopen`: close/reopen at the contiguous prefix without first applying
   an out-of-order tail, then apply N+1 and N+2. **Passes.**
 - `gap-no-reopen`: apply N+2 before N+1 and fill the gap without closing/reopening
@@ -84,7 +89,7 @@ Omit `--case` to run the failing case and both controls:
 schema-version pragmas on open, and page-count queries around commits. These
 probes are not needed to reproduce the failure.
 
-## Observed results
+## Original results (2026-10-17 revision)
 
 Tested on Linux 6.8.0-53-generic, aarch64, using Clang 18.1.8:
 
@@ -114,3 +119,28 @@ definitions, also reproduced at prefix 2: an `-O0 -DSQLITE_DEBUG` build and an
 `-O2` build. No SQLite debug assertion fired. This identifies a native HC-Tree
 issue on the source revision above; it does not establish the root cause or
 whether a newer upstream revision fixes it.
+
+## Retest with main's 2026-10-22 revision
+
+Merged `origin/main` at `5558ac2466fea351cacf4f6e94bb1432991470d9`, which includes
+[the HC-Tree update](https://github.com/Expensify/Bedrock/pull/2882). The SQLite source ID is now:
+
+```text
+2026-10-22 15:03:14 11f43371b5d66a46008920071c4e707d116b7d4957b42c900b2cbae7aa0115a1
+```
+
+The update clears the HC-Tree connection's tree state in `hctRecoverOneLog()`
+after recovery writes are flushed. The standalone reproducer itself is unchanged.
+Fresh `-O0 -DSQLITE_DEBUG` and `-O2` builds both pass the minimal case and both
+controls. The first reopened connection now sees the replayed row:
+
+```text
+READ [after-replay/recovered-base] mode=1 snapshot=4 autocommit=1 txn=0 count=1 lookup=1 scan=1
+RESULT gap-reopen: PASS (0 mismatches)
+RESULT no-tail-reopen: PASS (0 mismatches)
+RESULT gap-no-reopen: PASS (0 mismatches)
+```
+
+As a positive control, the pre-merge binary built from `a1551bc4` still reproduces
+the original three mismatches on a fresh database. The Bedrock recovery fixture
+also asserts the base connection's row count, in addition to the pooled reader.
