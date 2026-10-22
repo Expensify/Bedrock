@@ -1376,6 +1376,14 @@ struct LibStuff : tpunit::TestFixture
         SRedactSensitiveValues(logValue);
         ASSERT_EQUAL(R"({"authToken":<REDACTED>)", logValue);
 
+        logValue = R"({"exitTo":"inbox?policyID=1&authToken=123IMANAUTHTOKEN321&email=a%40b.com"})";
+        SRedactSensitiveValues(logValue);
+        ASSERT_EQUAL(R"({"exitTo":"inbox?policyID=1&authToken=<REDACTED>&email=a%40b.com"})", logValue);
+
+        logValue = "UPDATE nameValuePairs SET value='{\"exitTo\":\"inbox?authToken=123IMANAUTH";
+        SRedactSensitiveValues(logValue);
+        ASSERT_EQUAL("UPDATE nameValuePairs SET value='{\"exitTo\":\"inbox?authToken=<REDACTED>", logValue);
+
         logValue = R"({"html":"private conversation happens here"})";
         SRedactSensitiveValues(logValue);
         ASSERT_EQUAL(R"({"html":"<REDACTED>"})", logValue);
