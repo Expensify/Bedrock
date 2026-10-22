@@ -1399,6 +1399,22 @@ struct LibStuff : tpunit::TestFixture
         string methodLineWithControlChars = "500 Internal Server Error\r\nContent-Type: application/json";
         buffer = SComposeHTTP(methodLineWithControlChars, {}, "");
         ASSERT_EQUAL(buffer, "500 Internal Server Error%0D%0AContent-Type%3A application%2Fjson\r\nContent-Length: 0\r\n\r\n");
+
+        // The requestID is first on the wire even when other headers sort before it.
+        for (const string requestIDHeader : {"requestID", "ReQuEsTiD"}) {
+            SData request("CreateJob");
+            request["data"] = "{}";
+            request["name"] = "www-prod/Test";
+            request[requestIDHeader] = "webrock-request-id";
+            request.content = "body";
+            const string expectedRequest = "CreateJob\r\n" + requestIDHeader + ": webrock-request-id\r\n"
+                "data: {}\r\nname: www-prod/Test\r\nContent-Length: 4\r\n\r\nbody";
+            ASSERT_EQUAL(request.serialize(), expectedRequest);
+
+            ostringstream out;
+            request.serialize(out);
+            ASSERT_EQUAL(out.str(), expectedRequest);
+        }
     }
 
     void testEncodeDecodeURIComponent()
