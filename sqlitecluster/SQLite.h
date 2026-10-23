@@ -197,6 +197,12 @@ private:
 
     const set<string>& getTablesUsed() const;
 
+    struct ReplicationInfo
+    {
+        uint64_t commitID;
+        uint64_t snapshot;
+    };
+
     // Prepare to commit or rollback the transaction. This also inserts the current uncommitted query into the
     // journal; no additional writes are allowed until the next transaction has begun.
     // The transactionID and transactionHash, if passed, will be updated with the values prepared for this transaction.
@@ -206,7 +212,8 @@ private:
     // Local transactions generate a new GUID. Replication supplies the received GUID (32 hex characters), or an
     // explicit empty string for a blank journal entry (which must also have an empty query).
     // Replication callers must compare the prepared hash with the received hash before committing.
-    bool prepare(uint64_t* transactionID = nullptr, string* transactionHash = nullptr, chrono::microseconds commitLockTimeout = chrono::hours(24), atomic<bool>* abortPtr = nullptr, const optional<string>& replicationGUID = nullopt);
+    // Explicit replication IDs permit concurrent commits only on experimental HC-Tree followers.
+    bool prepare(uint64_t* transactionID = nullptr, string* transactionHash = nullptr, chrono::microseconds commitLockTimeout = chrono::hours(24), atomic<bool>* abortPtr = nullptr, const optional<string>& replicationGUID = nullopt, const optional<ReplicationInfo>& replication = nullopt);
 
     // This enables or disables automatic re-writing. This feature is to support mocked requests and load testing. This
     // overloads set_authorizer to allow a plugin to deny certain queries from running (currently based only on the
@@ -278,16 +285,18 @@ private:
     // Returns the number of changes that were performed in the last query.
     size_t getLastWriteChangeCount();
 
-    // Returns the current value of commitCount, which should be the highest ID of a commit in any handle to the
-    // database.
+    // Returns the highest contiguous committed ID shared by all handles to the database.
     uint64_t getCommitCount() const;
+
+    // Returns a completed commit's hash above the contiguous prefix, including an empty hash for a blank entry.
+    optional<string> getOutOfOrderCommitHash(uint64_t commitID) const;
 
     // Returns the number of WAL frames that are currently waiting to be checkpointed.
     uint64_t getOutstandingFramesToCheckpoint() const;
 
     struct CommitState
     {
-        // Highest committed journal ID, including blank entries. Zero if there are no commits.
+        // Highest contiguous committed journal ID, including blank entries. Zero if there are no commits.
         uint64_t commitCount;
 
         // ID of the latest nonblank journal entry. Zero if there are no nonblank commits.
@@ -392,6 +401,8 @@ private:
     // This is set only once at startup to enable experimental HC-Tree behavior on HC-Tree databases.
     static atomic<bool> hctreeExperimentalMode;
 
+    bool isExperimentalHCTree() const;
+
     int64_t getLastConflictIdentifier() const;
 
     string getLastConflictLocation() const;
@@ -441,6 +452,13 @@ public:
         // after completing a commit and before releasing the commit lock.
         void incrementCommit(const string& commitHash);
 
+        // Remember completed replication IDs and publish only the contiguous prefix and its nonblank hash.
+        void recordReplicationCommit(uint64_t commitID, const string& commitHash);
+        optional<string> getOutOfOrderCommitHash(uint64_t commitID) const;
+
+        // A reopened HC-Tree database may have rolled back the incomplete journal tail during recovery.
+        void reconcileOutOfOrderCommits(sqlite3* db);
+
         CommitState getCommitState() const;
 
         // This removes and returns all committed transactions.
@@ -466,13 +484,11 @@ public:
         // list.
         void commitTransactionInfo(uint64_t commitID);
 
-        // The current commit count, loaded at initialization from the highest commit ID in the DB, and then accessed
-        // though this atomic integer. getCommitCount() returns the value of this variable.
+        // Highest contiguous committed ID, loaded from the recovered journal at initialization.
         atomic<uint64_t> commitCount;
 
-        // Mutex to serialize commits to this DB. This should be locked anytime a thread needs to commit to the DB, or
-        // needs to prevent other threads from committing to the DB (such as to guarantee there are no commit conflicts
-        // during a transaction).
+        // Serializes commits except explicit experimental HC-Tree follower replication. writeLock and the open writer
+        // count must be used to drain all writers, including those follower commits, when changing database roles.
         recursive_timed_mutex commitLock;
 
         // If set to false, this prevents any thread from being able to commit to the DB.
@@ -515,6 +531,8 @@ private:
         // or if it's been committed.
         map<uint64_t, pair<string, string>> _preparedTransactions;
         map<uint64_t, pair<string, string>> _committedTransactions;
+
+        map<uint64_t, string> _outOfOrderCommits;
 
         // This mutex is locked when we need to change the state of the _shareData object. It is shared between a
         // variety of operations (i.e., updating _committedTransactions, etc).
@@ -565,6 +583,8 @@ private:
 
     // A blank journal entry is prepared even though both its query and hash are empty.
     bool _prepared = false;
+
+    optional<ReplicationInfo> _replication;
 
     // The new query and new hash to add to the journal for a transaction that's nearing completion, before we commit
     // it. During query execution _uncommittedQuery is the raw concatenated SQL; prepare() replaces it in place with

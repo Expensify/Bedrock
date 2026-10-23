@@ -10,7 +10,7 @@ Bedrock's primary feature is its ability to seamlessly synchronize data between 
 
 2. All nodes attempt to connect to all other nodes.
 
-3. During this process all nodes `SYNCHRONIZE` from their peers, advertising their highest journal ID as `CommitCount` and their latest nonblank entry as `HashCommitID` and `Hash`. Anybody who has newer data will respond with the missing transactions, which are all committed in the same order on every node. The journal accepts [GUID transaction hashes and blank entries](https://bedrockdb.com/blockchain.html).
+3. During this process all nodes `SYNCHRONIZE` from their peers, advertising their highest contiguous journal ID as `CommitCount` and the latest nonblank entry in that prefix as `HashCommitID` and `Hash`. Anybody who has newer data will respond with the missing transactions in commit ID order. The journal accepts [GUID transaction hashes and blank entries](https://bedrockdb.com/blockchain.html).
 
 4. Nodes compare the ID and hash of the latest nonblank entry in their shared journal prefix. Trailing blank entries do not affect agreement, but are included when determining which node is ahead. Nodes that disagree disconnect from each other, excluding forked nodes from participation.
 
@@ -21,6 +21,12 @@ Bedrock's primary feature is its ability to seamlessly synchronize data between 
 7. Each node processes read requests from its local database.  By default it will respond based on the latest data.  However, the client can optionally provide a `commitCount`, which if larger than the current commit count of that node's database, will cause the node to hold off on responding until the database has been synchronized up to that point.  In this way, clients can avoid inconsistency by querying two different nodes with different states (though in practice, clients should attempt to query the same node repeatedly to avoid any unnecessary delay).  All of this is provided "out of the box" by Bedrock's [PHP client library](https://github.com/Expensify/Bedrock-PHP).
 
 8. Write commands are escalated to the leader, which commits them to its own database and then streams them to the followers.  The leader does not wait for followers to acknowledge a transaction before committing it, which is what allows write throughput to exceed `1/median(rtt)` transactions per second.
+
+   Each replicated commit includes its commit ID, hash, SQL, and a `Snapshot` dependency. When `Snapshot` is absent, followers require the preceding commit (`ID - 1`). Leaders currently send this sequential dependency explicitly and continue broadcasting commits in order.
+
+   WAL2 and non-experimental HC-Tree followers buffer commits by ID and apply contiguous commits serially. Experimental HC-Tree followers use 16 application threads, dispatching a commit only when its dependency snapshot is available. This permits parallel, out-of-order application when commits carry earlier dependencies, while sequential dependencies still result in serial application. Advertised progress and its associated hash describe only the highest contiguous applied prefix, not commits completed beyond a gap.
+
+   Synchronization and subscription catch-up batches remain ordered. Their commits use the same application workers, and each batch must finish before synchronization advances.
 
 9. The cost of not waiting is that the leader can "race ahead" of the cluster: if it crashes with commits that haven't reached anyone else, those commits are lost.  A cluster is therefore only as durable as the leader's ability to hand its commits off before it dies.  There is no per-transaction way to ask for a stronger guarantee.
 
