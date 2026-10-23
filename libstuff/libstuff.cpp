@@ -1374,7 +1374,18 @@ void SComposeHTTP(string& buffer, const string& methodLine, const STable& nameVa
     }
 
     buffer += methodLineToUse + "\r\n";
+
+    // Keep the requestID ahead of potentially large request parameters.
+    const auto requestID = nameValueMap.find("requestID");
+    if (requestID != nameValueMap.end()) {
+        buffer += requestID->first + ": " + SEscape(requestID->second, "\r\n\t") + "\r\n";
+    }
+
     for (pair<string, string> item : nameValueMap) {
+        if (SIEquals("requestID", item.first)) {
+            continue;
+        }
+
         if (SIEquals("Set-Cookie", item.first)) {
             // Parse this list and generate a separate cookie for each.
             // Technically, this shouldn't be necessary: RFC2109 section 4.2.2
