@@ -91,7 +91,8 @@ struct SQLiteNodeTest : tpunit::TestFixture
                                            TEST(SQLiteNodeTest::testSynchronizeCommitFailure),
                                            TEST(SQLiteNodeTest::testSynchronizeWriteFailure),
                                            TEST(SQLiteNodeTest::testSynchronizeConstraintFailure),
-                                           TEST(SQLiteNodeTest::testSynchronizeHashMismatch))
+                                           TEST(SQLiteNodeTest::testSynchronizeHashMismatch),
+                                           TEST(SQLiteNodeTest::testPoolSharedDataReset))
     {
     }
 
@@ -142,20 +143,33 @@ struct SQLiteNodeTest : tpunit::TestFixture
 
     void restartDB()
     {
-        // SharedData is cached by filename forever. A fresh path forces metadata to be loaded from the journal.
-        char restartedFilename[sizeof(filename)] = "br_sync_dbXXXXXX";
-        const int fd = mkstemp(restartedFilename);
-        ASSERT_TRUE(fd >= 0);
-        close(fd);
         dbPool.reset();
-        for (const auto& suffix : databaseSuffixes()) {
-            if (suffix.empty() || access((string(filename) + suffix).c_str(), F_OK) == 0) {
-                const int result = rename((string(filename) + suffix).c_str(), (string(restartedFilename) + suffix).c_str());
-                EXPECT_EQUAL(result, 0);
-            }
-        }
-        memcpy(filename, restartedFilename, sizeof(filename));
         dbPool = make_shared<SQLitePool>(32, filename, 1000000, 5000, 0, 0, BedrockTester::ENABLE_HCTREE);
+    }
+
+    void testPoolSharedDataReset()
+    {
+        const auto before = dbPool->getBase().getCommitState();
+        {
+            SQLite& db = dbPool->getBase();
+            ASSERT_TRUE(db.beginTransaction(SQLite::TRANSACTION_TYPE::EXCLUSIVE));
+            ASSERT_TRUE(db.writeUnmodified("CREATE TABLE sharedDataRollback (id INTEGER);"));
+            db.setCommitEnabled(false);
+        }
+        restartDB();
+
+        SQLite& db = dbPool->getBase();
+        const auto after = db.getCommitState();
+        EXPECT_EQUAL(after.commitCount, before.commitCount);
+        EXPECT_EQUAL(after.hashCommitID, before.hashCommitID);
+        EXPECT_EQUAL(after.hash, before.hash);
+        EXPECT_EQUAL(db.read("SELECT COUNT(*) FROM sqlite_master WHERE name = 'sharedDataRollback';"), "0");
+        EXPECT_TRUE(db.popCommittedTransactions().empty());
+
+        ASSERT_TRUE(db.beginTransaction());
+        ASSERT_TRUE(db.writeUnmodified("CREATE TABLE sharedDataReset (id INTEGER);"));
+        ASSERT_TRUE(db.prepare());
+        EXPECT_EQUAL(db.commit(), SQLITE_OK);
     }
 
     void testPluginDBPoolLease()
@@ -1136,7 +1150,7 @@ struct SQLiteNodeTest : tpunit::TestFixture
             }
             EXPECT_TRUE(applied);
         }
-        // Reopen the same filename, as detach/attach does. SharedData survives, but HC-Tree rolls back the gapped tail.
+        // Reopen the same filename with fresh metadata after HC-Tree rolls back the gapped tail.
         dbPool.reset();
         dbPool = make_shared<SQLitePool>(32, filename, 1000000, 5000, 0, 0, true);
         SQLite& db = dbPool->getBase();
