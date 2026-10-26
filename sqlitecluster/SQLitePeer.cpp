@@ -18,6 +18,7 @@ SQLitePeer::SQLitePeer(const string& name_, const string& host_, const STable& p
     name(name_),
     params(params_),
     permaFollower(isPermafollower(params)),
+    commandPortBlocked(false),
     latency(0),
     loggedIn(false),
     nextReconnect(0),
@@ -74,6 +75,7 @@ bool SQLitePeer::remainingDataToSend() const
 void SQLitePeer::reset()
 {
     lock_guard<decltype(peerMutex)> lock(peerMutex);
+    commandPortBlocked = false;
     latency = 0;
     loggedIn = false;
     priority = 0;
@@ -273,6 +275,7 @@ STable SQLitePeer::getData() const
         {"hashCommitID", to_string(hashCommitID)},
         {"standupResponse", responseName(standupResponse)},
         {"subscribed", (subscribed ? "true" : "false")},
+        {"commandPortBlocked", (commandPortBlocked ? "true" : "false")},
     });
 
     // And anything from the params (note: doesn't overwrite our standard stuff).

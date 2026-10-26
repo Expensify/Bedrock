@@ -1469,6 +1469,11 @@ void BedrockServer::unblockCommandPort(const string& reason)
     }
 }
 
+bool BedrockServer::isCommandPortBlocked() const
+{
+    return _isCommandPortLikelyBlocked;
+}
+
 void BedrockServer::suppressCommandPort(const string& reason, bool suppress, bool manualOverride)
 {
     if (suppress) {

@@ -345,6 +345,9 @@ private:
     // Keeps track if we have closed the command port because the WAL needs checkpointing.
     bool _blockedCommandPortForWALSize{false};
 
+    // The command port block status we last broadcast to peers, so we can tell them as soon as it changes.
+    bool _lastSentCommandPortBlocked{false};
+
     // This is an integer that increments every time we change states. This is useful for responses to state changes
     // (i.e., approving standup) to verify that the messages we're receiving are relevant to the current state change,
     // and not stale responses to old changes.

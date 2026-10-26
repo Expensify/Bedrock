@@ -59,6 +59,12 @@ public:
     {
         commandPortUnblockReasons.push_back(reason);
     };
+
+    bool commandPortBlocked = false;
+    virtual bool isCommandPortBlocked() const
+    {
+        return commandPortBlocked;
+    }
 };
 
 struct SQLiteNodeTest : tpunit::TestFixture
@@ -69,6 +75,7 @@ struct SQLiteNodeTest : tpunit::TestFixture
                                            AFTER(SQLiteNodeTest::rollback),
                                            TEST(SQLiteNodeTest::testFindSyncPeer),
                                            TEST(SQLiteNodeTest::testCommandPortBlockedForWALSize),
+                                           TEST(SQLiteNodeTest::testForwardingSkipsBlockedPeers),
                                            TEST(SQLiteNodeTest::testGetPeerByName),
                                            TEST(SQLiteNodeTest::testAllBlankJournal),
                                            TEST(SQLiteNodeTest::testPrepareGUID),
@@ -228,6 +235,65 @@ struct SQLiteNodeTest : tpunit::TestFixture
         SQLiteNodeTester::updateCommandPortForWALSize(testNode, 150'000);
         SQLiteNodeTester::updateCommandPortForWALSize(testNode, 100'000);
         ASSERT_EQUAL(testServer.commandPortUnblockReasons, list<string>{"WAL_TOO_LARGE"});
+    }
+
+    void testForwardingSkipsBlockedPeers()
+    {
+        TestServer testServer;
+        SQLiteNode testNode(testServer, dbPool, "test", "localhost:19998", peerList, configuredPriority, maxOutstandingWALFrames, 1000000000, "1.0");
+
+        // Our own block status goes out on every message we send.
+        EXPECT_EQUAL(testNode._addPeerHeaders(SData("PING"))["CommandPortBlocked"], "false");
+        testServer.commandPortBlocked = true;
+        EXPECT_EQUAL(testNode._addPeerHeaders(SData("PING"))["CommandPortBlocked"], "true");
+
+        // peer1 leads, peer2 and peer3 follow on leader's version, and peer4 follows on a different version.
+        for (auto peer : testNode._peerList) {
+            peer->state = peer->name == "peer1" ? SQLiteNodeState::LEADING : SQLiteNodeState::FOLLOWING;
+            peer->version = peer->name == "peer4" ? "2.0" : "1.0";
+            peer->commandAddress = peer->name + ":8890";
+        }
+        testNode._leadPeer = testNode.getPeerByName("peer1");
+        SQLitePeer* peer2 = testNode.getPeerByName("peer2");
+        SQLitePeer* peer3 = testNode.getPeerByName("peer3");
+
+        auto receive = [&](SQLitePeer* peer, const string& method, const string& blocked) {
+            SData message(method);
+            message["Timestamp"] = SToStr(STimeNow());
+            if (!blocked.empty()) {
+                message["CommandPortBlocked"] = blocked;
+            }
+            testNode._onMESSAGE(peer, message);
+        };
+        auto eligibleAddresses = [&]() {
+            set<string> addresses;
+            for (int i = 0; i < 100; i++) {
+                addresses.insert(testNode.getEligibleFollowerForForwardingAddress());
+            }
+            return addresses;
+        };
+
+        EXPECT_EQUAL(eligibleAddresses(), (set<string>{"peer2:8890", "peer3:8890"}));
+
+        // A blocked follower is skipped.
+        receive(peer2, "PING", "true");
+        EXPECT_TRUE(peer2->commandPortBlocked);
+        EXPECT_EQUAL(eligibleAddresses(), set<string>{"peer3:8890"});
+
+        // A message without the header (from an older version) leaves the status alone.
+        receive(peer2, "PONG", "");
+        EXPECT_TRUE(peer2->commandPortBlocked);
+
+        // With every follower blocked, there's nothing to forward to.
+        receive(peer3, "PONG", "true");
+        EXPECT_EQUAL(eligibleAddresses(), set<string>{""});
+
+        // Unblocking makes the follower eligible again, and a reset clears the status.
+        receive(peer2, "PING", "false");
+        EXPECT_FALSE(peer2->commandPortBlocked);
+        EXPECT_EQUAL(eligibleAddresses(), set<string>{"peer2:8890"});
+        peer3->reset();
+        EXPECT_FALSE(peer3->commandPortBlocked);
     }
 
     void testGetPeerByName()

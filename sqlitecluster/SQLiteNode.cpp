@@ -431,8 +431,10 @@ string SQLiteNode::getEligibleFollowerForForwardingAddress() const
         return "";
     }
     for (SQLitePeer* peer : _peerList) {
-        // We want only nodes that are using the same version as leader and are currently followers
-        if (peer->version.load() != leaderVersion || peer->state.load() != SQLiteNodeState::FOLLOWING) {
+        // We want only nodes that are using the same version as leader and are currently followers, and that have their
+        // command port open. A follower blocks its command port when it can't serve commands well (e.g., when it's far
+        // behind leader), and it still accepts forwarded commands on its private port, so we have to skip it here.
+        if (peer->version.load() != leaderVersion || peer->state.load() != SQLiteNodeState::FOLLOWING || peer->commandPortBlocked.load()) {
             continue;
         }
         validPeers.push_back(peer->name);
@@ -1004,6 +1006,11 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message)
         if (message.isSet("HashCommitID") && (hashCommitID > message.calcU64("CommitCount") ||
                                               (hashCommitID == 0) != message["Hash"].empty())) {
             STHROW("invalid HashCommitID");
+        }
+
+        // Peers on older versions don't send this, in which case we leave it as not blocked.
+        if (message.isSet("CommandPortBlocked")) {
+            peer->commandPortBlocked = message.test("CommandPortBlocked");
         }
 
         // Once PING and PONG including `_addPeerHeaders` is universally deployed, we can move the checks that are currently
@@ -1589,6 +1596,7 @@ SData SQLiteNode::_addPeerHeaders(SData message)
         message["Hash"] = commit.hash;
     }
     message["commandAddress"] = _commandAddress;
+    message["CommandPortBlocked"] = _server.isCommandPortBlocked() ? "true" : "false";
     return message;
 }
 
@@ -2401,6 +2409,17 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity)
                 _processPeerMessages(nextActivity, peer);
             }
             break;
+        }
+    }
+
+    // Tell peers right away when our command port is blocked or unblocked, so they stop or resume forwarding commands
+    // to us without waiting for the next message we'd otherwise send them. Every PING carries `CommandPortBlocked`.
+    const bool commandPortBlocked = _server.isCommandPortBlocked();
+    if (commandPortBlocked != _lastSentCommandPortBlocked) {
+        SINFO("Command port is now " << (commandPortBlocked ? "blocked" : "unblocked") << ", sending PING to peers.");
+        _lastSentCommandPortBlocked = commandPortBlocked;
+        for (SQLitePeer* peer : _peerList) {
+            _sendPING(peer);
         }
     }
 
