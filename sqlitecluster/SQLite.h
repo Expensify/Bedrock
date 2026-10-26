@@ -458,9 +458,6 @@ public:
         void recordReplicationCommit(uint64_t commitID, const string& commitHash);
         optional<string> getOutOfOrderCommitHash(uint64_t commitID) const;
 
-        // A reopened HC-Tree database may have rolled back the incomplete journal tail during recovery.
-        void reconcileOutOfOrderCommits(sqlite3* db);
-
         CommitState getCommitState() const;
 
         // This removes and returns all committed transactions.

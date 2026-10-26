@@ -462,7 +462,6 @@ SQLite::SQLite(const string& filename, int cacheSize, int maxJournalSize,
         // All bootstrap/schema writes are finished, and no other handles exist yet.
         SASSERT(sqlite3_hct_journal_setmode(_db, SQLITE_HCT_FOLLOWER) == SQLITE_OK);
         _sharedData.hctreeFollowerMode = true;
-        _sharedData.reconcileOutOfOrderCommits(_db);
     }
 }
 
@@ -2200,27 +2199,6 @@ optional<string> SQLite::SharedData::getOutOfOrderCommitHash(uint64_t commitID) 
     lock_guard<decltype(_internalStateMutex)> lock(_internalStateMutex);
     const auto entry = _outOfOrderCommits.find(commitID);
     return entry == _outOfOrderCommits.end() ? nullopt : optional<string>(entry->second);
-}
-
-void SQLite::SharedData::reconcileOutOfOrderCommits(sqlite3* db)
-{
-    lock_guard<decltype(_internalStateMutex)> lock(_internalStateMutex);
-    if (_outOfOrderCommits.empty()) {
-        return;
-    }
-    SQResult rows;
-    SASSERT(!SQuery(db, "SELECT cid FROM hct_journal WHERE cid >= " + SQ(_outOfOrderCommits.begin()->first), rows));
-    set<uint64_t> retained;
-    for (const auto& row : rows) {
-        retained.insert(SToUInt64(row["cid"]));
-    }
-    for (auto entry = _outOfOrderCommits.begin(); entry != _outOfOrderCommits.end();) {
-        if (retained.contains(entry->first)) {
-            ++entry;
-        } else {
-            entry = _outOfOrderCommits.erase(entry);
-        }
-    }
 }
 
 SQLite::CommitState SQLite::SharedData::getCommitState() const
