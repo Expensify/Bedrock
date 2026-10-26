@@ -167,21 +167,11 @@ SQLiteNode::~SQLiteNode()
 
 SQLite::ReplicationInfo SQLiteNode::_getReplicationInfo(const SData& message)
 {
-    auto number = [&](const string& field) {
-        const string& value = message[field];
-        uint64_t result = 0;
-        const auto parsed = from_chars(value.data(), value.data() + value.size(), result);
-        if (parsed.ec != errc() || parsed.ptr != value.data() + value.size() ||
-            result > static_cast<uint64_t>(numeric_limits<int64_t>::max())) {
-            STHROW("invalid " + field);
-        }
-        return result;
-    };
-    const uint64_t id = number("NewCount");
-    if (!id || number("ID") != id) {
+    const uint64_t id = SToUInt64(message["NewCount"]);
+    if (!id || SToUInt64(message["ID"]) != id) {
         STHROW("invalid transaction ID");
     }
-    const uint64_t snapshot = message.isSet("Snapshot") ? number("Snapshot") : id - 1;
+    const uint64_t snapshot = message.isSet("Snapshot") ? SToUInt64(message["Snapshot"]) : id - 1;
     if (snapshot >= id) {
         STHROW("invalid Snapshot");
     }
