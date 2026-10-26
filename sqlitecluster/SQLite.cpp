@@ -137,6 +137,7 @@ SQLite::SharedData& SQLite::initializeSharedData()
         sharedDataLookupMap.m.emplace(_filename, sharedData);
         return *sharedData;
     } else {
+        // Otherwise, use the existing one.
         return *(sharedDataIterator->second);
     }
 }
