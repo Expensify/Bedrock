@@ -82,6 +82,7 @@ struct SQLiteNodeTest : tpunit::TestFixture
                                            TEST(SQLiteNodeTest::testBlankCommitFailure),
                                            TEST(SQLiteNodeTest::testGUIDHashFailures),
                                            TEST(SQLiteNodeTest::testReplicationRequiresLeader),
+                                           TEST(SQLiteNodeTest::testReplicationIDCompatibility),
                                            TEST(SQLiteNodeTest::testExplicitReplicationIDs),
                                            TEST(SQLiteNodeTest::testReorderedReplication),
                                            TEST(SQLiteNodeTest::testParallelReplication),
@@ -489,7 +490,6 @@ struct SQLiteNodeTest : tpunit::TestFixture
             if (live) {
                 SData transaction("TRANSACTION");
                 transaction["ID"] = to_string(before.commitCount + 1);
-                transaction["NewCount"] = transaction["ID"];
                 transaction["NewHash"] = "";
                 node._handleBeginTransaction(db, peer, transaction);
                 ASSERT_TRUE(node._handlePrepareTransaction(db, peer, transaction, STimeNow()));
@@ -661,7 +661,6 @@ struct SQLiteNodeTest : tpunit::TestFixture
                 if (live) {
                     SData transaction("TRANSACTION");
                     transaction["ID"] = to_string(commitCount + i + 1);
-                    transaction["NewCount"] = transaction["ID"];
                     transaction["NewHash"] = hash;
                     transaction.content = content;
                     node._handleBeginTransaction(db, peer, transaction);
@@ -749,7 +748,6 @@ struct SQLiteNodeTest : tpunit::TestFixture
 
         SData transaction("TRANSACTION");
         transaction["CommitCount"] = to_string(commitCount + 1);
-        transaction["NewCount"] = transaction["CommitCount"];
         transaction["ID"] = transaction["CommitCount"];
         transaction.content = "CREATE TABLE nonLeaderTransaction (id INTEGER);";
         const string guid = "00000000000000000000000000000001";
@@ -765,6 +763,30 @@ struct SQLiteNodeTest : tpunit::TestFixture
         EXPECT_EQUAL(db.getCommitCount(), commitCount);
         EXPECT_EQUAL(db.getCommittedHash(), committedHash);
         EXPECT_EQUAL(db.read("SELECT COUNT(*) FROM sqlite_master WHERE name = 'nonLeaderTransaction';"), "0");
+    }
+
+    void testReplicationIDCompatibility()
+    {
+        SQLite& db = dbPool->getBase();
+        SQLiteNode node(server, dbPool, "test", "", peerList, configuredPriority, maxOutstandingWALFrames, 1000000000, "1.0");
+        node._changeState(SQLiteNodeState::FOLLOWING);
+        SQLitePeer* peer = node.getPeerByName("peer1");
+        node._leadPeer = peer;
+        peer->loggedIn = true;
+
+        for (const string mode : {"ID", "NewCount", "both"}) {
+            const uint64_t id = db.getCommitCount() + 1;
+            SData message = transaction(id, "");
+            if (mode == "NewCount") {
+                message["NewCount"] = message["ID"];
+                message.erase("ID");
+            } else if (mode == "both") {
+                message["NewCount"] = to_string(id + 1);
+            }
+            node._onMESSAGE(peer, message);
+            node._stopReplication();
+            EXPECT_EQUAL(db.getCommitCount(), id);
+        }
     }
 
     void testExplicitReplicationIDs()
@@ -830,7 +852,6 @@ struct SQLiteNodeTest : tpunit::TestFixture
     {
         SData message("TRANSACTION");
         message["ID"] = to_string(id);
-        message["NewCount"] = message["ID"];
         const string guid = SToHex(id, 32);
         message["NewHash"] = query.empty() ? "" : guid + ":" + SToHex(SHashSHA1(guid + query));
         message["CommitCount"] = message["ID"];
@@ -1264,7 +1285,6 @@ struct SQLiteNodeTest : tpunit::TestFixture
                 }
                 SData transaction("TRANSACTION");
                 transaction["ID"] = incoming["CommitIndex"];
-                transaction["NewCount"] = incoming["CommitIndex"];
                 transaction["NewHash"] = incoming["Hash"];
                 transaction.content = incoming.content;
                 try {
@@ -1272,7 +1292,7 @@ struct SQLiteNodeTest : tpunit::TestFixture
                     if (!node._handlePrepareTransaction(db, peer, transaction, STimeNow())) {
                         STHROW("prepare failed");
                     }
-                    if (node._handleCommitTransaction(db, peer, transaction.calcU64("NewCount"), transaction["NewHash"]) != SQLITE_OK) {
+                    if (node._handleCommitTransaction(db, peer, transaction.calcU64("ID"), transaction["NewHash"]) != SQLITE_OK) {
                         STHROW("commit failed");
                     }
                 } catch (const exception& e) {
