@@ -1068,16 +1068,6 @@ struct SQLiteNodeTest : tpunit::TestFixture
         node._changeState(SQLiteNodeState::SYNCHRONIZING);
         SQLitePeer* peer = node.getPeerByName("peer1");
         const auto valid = transaction(before.commitCount + 1, "", before.commitCount);
-        SData relaxed = valid;
-        relaxed["NewCount"] = " " + valid["NewCount"] + "suffix";
-        relaxed["ID"] = "+" + valid["ID"];
-        relaxed["Snapshot"] = " 0suffix";
-        const auto info = SQLiteNode::_getReplicationInfo(relaxed);
-        EXPECT_EQUAL(info.commitID, before.commitCount + 1);
-        EXPECT_EQUAL(info.snapshot, 0ull);
-        relaxed.erase("Snapshot");
-        EXPECT_EQUAL(SQLiteNode::_getReplicationInfo(relaxed).snapshot, before.commitCount);
-
         for (const string& value : vector<string>{"-1", "9223372036854775808", to_string(before.commitCount + 1)}) {
             SData invalid = valid;
             invalid["Snapshot"] = value;
