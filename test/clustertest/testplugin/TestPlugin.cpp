@@ -174,6 +174,7 @@ unique_ptr<BedrockCommand> BedrockPlugin_TestPlugin::getCommand(SQLiteCommand&& 
         "controlcharacterexception",
         "generatesegfaultpeek",
         "generateassertpeek",
+        "holddbpool",
         "preventattach",
         "chainedrequest",
         "ineffectiveUpdate",
@@ -465,6 +466,22 @@ bool TestPluginCommand::peek(SQLite& db)
     } else if (SStartsWith(request.methodLine, "generateassertpeek")) {
         SASSERT(0);
         response["invalid"] = "nope";
+    } else if (request.methodLine == "holddbpool") {
+        auto pool = plugin().server.getDBPool();
+        const string releaseFile = request["releaseFile"];
+        thread([pool, releaseFile]() mutable {
+            SInitialize("heldDBPool");
+            {
+                SQLiteScopedHandle handle(*pool, pool->getIndex());
+                const uint64_t deadline = STimeNow() + 30 * STIME_US_PER_S;
+                while (!SFileExists(releaseFile) && STimeNow() < deadline) {
+                    usleep(10'000);
+                }
+            }
+            pool.reset();
+            SFileSave(releaseFile + ".done", "released");
+        }).detach();
+        return true;
     } else if (SStartsWith(request.methodLine, "preventattach")) {
         // We do all of this work in a thread because plugins don't poll in detached
         // mode, so the tester will send this command to the plugin, then detach BedrockServer,
