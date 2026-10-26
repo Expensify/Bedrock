@@ -10,7 +10,7 @@ Bedrock's primary feature is its ability to seamlessly synchronize data between 
 
 2. All nodes attempt to connect to all other nodes.
 
-3. During this process all nodes `SYNCHRONIZE` from their peers, advertising their highest contiguous journal ID as `CommitCount` and the latest nonblank entry in that prefix as `HashCommitID` and `Hash`. Anybody who has newer data will respond with the missing transactions in commit ID order. The journal accepts [GUID transaction hashes and blank entries](https://bedrockdb.com/blockchain.html).
+3. During this process all nodes `SYNCHRONIZE` from their peers, advertising their highest contiguous journal ID as `CommitCount` and the latest nonblank entry up through that commit as `HashCommitID` and `Hash`. Anybody who has newer data will respond with the missing transactions in commit ID order. The journal accepts [GUID transaction hashes and blank entries](https://bedrockdb.com/blockchain.html).
 
 4. Nodes compare the ID and hash of the latest nonblank entry in their shared journal prefix. Trailing blank entries do not affect agreement, but are included when determining which node is ahead. Nodes that disagree disconnect from each other, excluding forked nodes from participation.
 
@@ -22,11 +22,11 @@ Bedrock's primary feature is its ability to seamlessly synchronize data between 
 
 8. Write commands are escalated to the leader, which commits them to its own database and then streams them to the followers.  The leader does not wait for followers to acknowledge a transaction before committing it, which is what allows write throughput to exceed `1/median(rtt)` transactions per second.
 
-   Each replicated commit includes its commit ID, hash, SQL, and a `Snapshot` dependency. When `Snapshot` is absent, followers require the preceding commit (`ID - 1`). Leaders currently send this sequential dependency explicitly and continue broadcasting commits in order.
+   Each replicated commit includes its commit ID, hash, SQL, and a `Snapshot` dependency. When `Snapshot` is absent, followers require the preceding commit (`ID - 1`). Leaders currently send this sequential dependency explicitly and continue broadcasting commits in order. The support for blank snapshots exists only to facilitate the transititon to newer versions of the code that will always send them.
 
-   WAL2 and non-experimental HC-Tree followers buffer commits by ID and apply contiguous commits serially. Experimental HC-Tree followers use 16 application threads, dispatching a commit only when its dependency snapshot is available. This permits parallel, out-of-order application when commits carry earlier dependencies, while sequential dependencies still result in serial application. Advertised progress and its associated hash describe only the highest contiguous applied prefix, not commits completed beyond a gap.
+   WAL2 and non-experimental HC-Tree followers buffer commits by ID and apply contiguous commits serially. Experimental HC-Tree followers use 16 threads, executing a commit only when its dependency snapshot is available. This permits parallel, out-of-order application when commits carry earlier dependencies, while sequential dependencies still result in serial application.
 
-   Synchronization and subscription catch-up batches remain ordered. Their commits use the same application workers, and each batch must finish before synchronization advances.
+   Synchronization and subscription catch-up batches remain ordered. Their commits use the same worker threads, but they do not yet run in parallel.
 
 9. The cost of not waiting is that the leader can "race ahead" of the cluster: if it crashes with commits that haven't reached anyone else, those commits are lost.  A cluster is therefore only as durable as the leader's ability to hand its commits off before it dies.  There is no per-transaction way to ask for a stronger guarantee.
 
