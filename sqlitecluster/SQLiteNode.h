@@ -186,8 +186,7 @@ private:
     static const size_t MIN_APPROVE_FREQUENCY;
     static const size_t PARALLEL_REPLICATION_THREADS;
 
-    // HC-Tree's completed-CID window contains 8192 entries, and its cached snapshot can lag by 15 commits.
-    // Leave 16 entries of headroom so a far-ahead commit cannot overwrite an unconsumed completion slot.
+    // We only allow ourselves to go so far ahead of the most recent contiguous commit.
     static const uint64_t MAX_REPLICATION_AHEAD;
 
     static const vector<SQLitePeer*> _initPeers(const string& peerList);
@@ -217,7 +216,8 @@ private:
     void _enqueueReplication(SQLitePeer* peer, SData message);
     void _failReplication(SQLitePeer* peer, const SData& command, const string& reason);
 
-    // Called with _replicateMutex held. Only dependency-ready work may occupy an application thread.
+    // Called with _replicateMutex held. Only commits whose required snapshots are already present are allowed to
+    // use a replication thread.
     ReplicationQueue::iterator _nextReplication();
 
     // Handlers for transaction messages.
@@ -240,7 +240,7 @@ private:
     void _reconnectPeer(SQLitePeer* peer);
     void _recvSynchronize(SQLitePeer* peer, const SData& message);
 
-    // One worker serially drains contiguous IDs on ordinary followers; experimental HC-Tree uses 16 workers.
+    // A single replication thread serially applies replicated commits, except experimental HC-Tree uses 16 workers.
     void _replicate(size_t threadID);
     void _startReplication();
     void _stopReplication();
@@ -375,6 +375,7 @@ private:
     mutex _replicateMutex;
     condition_variable _replicateCV;
     ReplicationQueue _replicateQueue;
+
     // Snapshot/ID pairs let workers find ready work without scanning a backlog of dependency-blocked commits.
     set<pair<uint64_t, uint64_t>> _replicationDependencies;
     map<uint64_t, string> _replicating;

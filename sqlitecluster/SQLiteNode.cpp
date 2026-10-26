@@ -78,7 +78,7 @@ const uint64_t SQLiteNode::RECV_TIMEOUT{STIME_US_PER_S* 30};
 
 const size_t SQLiteNode::MIN_APPROVE_FREQUENCY{10};
 const size_t SQLiteNode::PARALLEL_REPLICATION_THREADS{16};
-const uint64_t SQLiteNode::MAX_REPLICATION_AHEAD{8192 - 16};
+const uint64_t SQLiteNode::MAX_REPLICATION_AHEAD{4096};
 
 const vector<SQLitePeer*> SQLiteNode::_initPeers(const string& peerListString)
 {

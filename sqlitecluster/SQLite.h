@@ -483,11 +483,12 @@ public:
         // list.
         void commitTransactionInfo(uint64_t commitID);
 
-        // Highest contiguous committed ID, loaded from the recovered journal at initialization.
+        // Highest contiguous committed ID, loaded from the journal at initialization. Note that any discontiguous commits
+        // in the journal at startup may get dropped.
         atomic<uint64_t> commitCount;
 
         // Serializes commits except explicit experimental HC-Tree follower replication. writeLock and the open writer
-        // count must be used to drain all writers, including those follower commits, when changing database roles.
+        // count must be used to finish all writers, including parallel follower commits, when changing between FOLLOWER/LEADER.
         recursive_timed_mutex commitLock;
 
         // If set to false, this prevents any thread from being able to commit to the DB.
@@ -531,6 +532,8 @@ private:
         map<uint64_t, pair<string, string>> _preparedTransactions;
         map<uint64_t, pair<string, string>> _committedTransactions;
 
+        // Map of commit ID to hash for non-contiguous commits passed the commitCount that are waiting on earlier commits to arrive.
+        // Commits are automatically removed from the beginning when they become part of the contiguous journal.
         map<uint64_t, string> _outOfOrderCommits;
 
         // This mutex is locked when we need to change the state of the _sharedData object. It is shared between a
