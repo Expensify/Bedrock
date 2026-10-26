@@ -70,6 +70,7 @@ struct SQLiteNodeTest : tpunit::TestFixture
                                            BEFORE_CLASS(SQLiteNodeTest::setup),
                                            AFTER_CLASS(SQLiteNodeTest::teardown),
                                            AFTER(SQLiteNodeTest::rollback),
+                                           TEST(SQLiteNodeTest::testPluginDBPoolLease),
                                            TEST(SQLiteNodeTest::testFindSyncPeer),
                                            TEST(SQLiteNodeTest::testCommandPortBlockedForWALSize),
                                            TEST(SQLiteNodeTest::testGetPeerByName),
@@ -155,6 +156,22 @@ struct SQLiteNodeTest : tpunit::TestFixture
         }
         memcpy(filename, restartedFilename, sizeof(filename));
         dbPool = make_shared<SQLitePool>(32, filename, 1000000, 5000, 0, 0, BedrockTester::ENABLE_HCTREE);
+    }
+
+    void testPluginDBPoolLease()
+    {
+        SQLite* pluginHandle;
+        {
+            SQLiteNode node(server, dbPool, "test", "", peerList, configuredPriority, maxOutstandingWALFrames, 1000000000, "1.0");
+            pluginHandle = &node.pluginDB.db();
+            EXPECT_TRUE(pluginHandle != &dbPool->getBase());
+
+            SQLiteScopedHandle workerHandle(*dbPool, dbPool->getIndex());
+            EXPECT_TRUE(&workerHandle.db() != pluginHandle);
+        }
+
+        SQLiteScopedHandle returnedHandle(*dbPool, dbPool->getIndex());
+        EXPECT_TRUE(&returnedHandle.db() == pluginHandle);
     }
 
     void testFindSyncPeer()
@@ -909,6 +926,7 @@ struct SQLiteNodeTest : tpunit::TestFixture
         for (const string mode : {"live", "sync", "subscription"}) {
             const uint64_t before = db.getCommitCount();
             Gate gate;
+            SQLiteNode node(server, dbPool, "test", "", peerList, configuredPriority, maxOutstandingWALFrames, 1000000000, "1.0");
             vector<size_t> handles;
             for (size_t i = 0; i < 16; ++i) {
                 handles.push_back(dbPool->getIndex());
@@ -917,7 +935,6 @@ struct SQLiteNodeTest : tpunit::TestFixture
             for (const auto index : handles) {
                 dbPool->returnToPool(index);
             }
-            SQLiteNode node(server, dbPool, "test", "", peerList, configuredPriority, maxOutstandingWALFrames, 1000000000, "1.0");
             const bool live = mode == "live";
             const bool subscribing = mode == "subscription";
             node._changeState(live ? SQLiteNodeState::FOLLOWING :
