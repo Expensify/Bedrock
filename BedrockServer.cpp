@@ -8,6 +8,7 @@
 #include <csignal>
 #include <cstring>
 #include <fstream>
+#include <future>
 #include <sys/resource.h>
 #include <sys/time.h>
 
@@ -122,8 +123,15 @@ void BedrockServer::sync()
     callbacks.emplace_back([this]() {
         _journalDeleter.wake();
     });
+    auto dbPoolDestroyed = make_shared<promise<void>>();
+    auto dbPoolDestructionComplete = dbPoolDestroyed->get_future();
     SINFO("Setting dbPool size to: " << _dbPoolSize);
-    atomic_store(&_dbPool, make_shared<SQLitePool>(_dbPoolSize, args["-db"], args.calc("-cacheSize"), args.calc("-maxJournalSize"), journalTables, mmapSizeGB, args.isSet("-newDBsUseHctree"), args["-checkpointMode"], callbacks));
+    atomic_store(&_dbPool, shared_ptr<SQLitePool>(
+        new SQLitePool(_dbPoolSize, args["-db"], args.calc("-cacheSize"), args.calc("-maxJournalSize"), journalTables, mmapSizeGB, args.isSet("-newDBsUseHctree"), args["-checkpointMode"], callbacks),
+        [dbPoolDestroyed](SQLitePool* pool) {
+        delete pool;
+        dbPoolDestroyed->set_value();
+        }));
     SQLite& db = getDBPool()->getBase();
     _journalDeleter.start();
 
@@ -408,12 +416,15 @@ void BedrockServer::sync()
 
     _journalDeleter.stop();
 
-    // We clear this before the _syncNode that it references.
+    // Release the server's references in dependency order. Other threads may still hold temporary references.
     atomic_store(&_clusterMessenger, shared_ptr<SQLiteClusterMessenger>(nullptr));
-
-    // Release our handle to this pointer. Any other functions that are still using it will keep the object alive
-    // until they return.
     atomic_store(&_syncNode, shared_ptr<SQLiteNode>(nullptr));
+    atomic_store(&_dbPool, shared_ptr<SQLitePool>(nullptr));
+
+    // The custom deleter signals only after the pool and all its database handles have been destroyed.
+    SINFO("Waiting for DB pool destruction.");
+    dbPoolDestructionComplete.wait();
+    SINFO("DB pool destroyed.");
 
     // If we're not detaching, save that we're shutting down.
     if (!_detach) {
@@ -423,10 +434,6 @@ void BedrockServer::sync()
             file.close();
         }
     }
-
-    // Release the current DB pool, and zero out our pointer. If any socket threads hold a handle to `_syncNode`, they will keep this in existence
-    // until they release it.
-    atomic_store(&_dbPool, shared_ptr<SQLitePool>(nullptr));
 
     // We're really done, store our flag so main() can be aware.
     _syncLoopShouldBeRunning.store(false);
