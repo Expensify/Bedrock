@@ -533,7 +533,7 @@ private:
 
         map<uint64_t, string> _outOfOrderCommits;
 
-        // This mutex is locked when we need to change the state of the _shareData object. It is shared between a
+        // This mutex is locked when we need to change the state of the _sharedData object. It is shared between a
         // variety of operations (i.e., updating _committedTransactions, etc).
         mutable recursive_mutex _internalStateMutex;
     };
