@@ -141,15 +141,11 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, const shared_ptr<SQLitePool>& dbPoo
     _stateChangeCount(0),
     _stateTimeout(STimeNow() + firstTimeout),
     _syncPeer(nullptr),
+    pluginDB(*dbPool, dbPool->getIndex()),
     _replicateThreadShouldExitTime(0)
 {
     KILLABLE_SQLITE_NODE = this;
     SASSERT(_configuredPriority >= 0);
-
-    // We create a copy of the database handle here so that the sync node can operate on its handle and the plugin gets
-    // its own handle to operate on. This avoids conflicts where the sync thread and the plugin are trying to both run
-    // queries at the same time. This also avoids the need to create any share locking between the two.
-    pluginDB = new SQLite(_db);
 
     // Get this party started
     _changeState(SQLiteNodeState::SEARCHING);
@@ -166,10 +162,6 @@ SQLiteNode::~SQLiteNode()
 
     for (SQLitePeer* peer : _peerList) {
         delete peer;
-    }
-
-    if (pluginDB != nullptr) {
-        delete pluginDB;
     }
 }
 
@@ -1783,7 +1775,7 @@ void SQLiteNode::_changeState(SQLiteNodeState newState)
 {
     if (newState != _state) {
         // First, we notify all plugins about the state change
-        _server.notifyStateChangeToPlugins(*pluginDB, newState);
+        _server.notifyStateChangeToPlugins(pluginDB.db(), newState);
 
         // No application thread may survive a role change or continue a failed synchronization session.
         if (_state == SQLiteNodeState::FOLLOWING || _state == SQLiteNodeState::SYNCHRONIZING ||

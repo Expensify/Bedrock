@@ -368,9 +368,8 @@ private:
     // Remove. See: https://github.com/Expensify/Expensify/issues/208439
     SQLitePeer* _syncPeer;
 
-    // A pointer to a SQLite instance that is passed to plugin's stateChanged function. This prevents plugins from operating on the same handle that
-    // the sync node is when they run queries in stateChanged.
-    SQLite* pluginDB;
+    // Reserve a separate pooled handle for plugin state-change callbacks so state transitions never wait for a lease.
+    SQLiteScopedHandle pluginDB;
 
     vector<thread> _replicateThreads;
     mutex _replicateMutex;
