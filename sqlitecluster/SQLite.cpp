@@ -71,25 +71,43 @@ const set<string>& SQLite::getTablesUsed() const
     return _tablesUsed;
 }
 
+struct SQLite::SharedDataLookupMap
+{
+    map<string, SharedData*> m;
+    mutex instantiationMutex;
+
+    ~SharedDataLookupMap()
+    {
+        for (auto& p : m) {
+            delete(p.second);
+        }
+    }
+};
+
+SQLite::SharedDataLookupMap& SQLite::getSharedDataLookupMap()
+{
+    static SharedDataLookupMap sharedDataLookupMap;
+    return sharedDataLookupMap;
+}
+
+void SQLite::clearSharedData(const string& filename)
+{
+    auto& sharedDataLookupMap = getSharedDataLookupMap();
+    lock_guard<mutex> lock(sharedDataLookupMap.instantiationMutex);
+    const auto entry = sharedDataLookupMap.m.find(filename);
+    if (entry != sharedDataLookupMap.m.end()) {
+        delete entry->second;
+        sharedDataLookupMap.m.erase(entry);
+    }
+}
+
 SQLite::SharedData& SQLite::initializeSharedData()
 {
-    static struct SharedDataLookupMapType
-    {
-        map<string, SharedData*> m;
-        ~SharedDataLookupMapType()
-        {
-            for (auto& p : m) {
-                delete(p.second);
-            }
-            m.clear();
-        }
-    } sharedDataLookupMap;
-
-    static mutex instantiationMutex;
-    lock_guard<mutex> lock(instantiationMutex);
+    auto& sharedDataLookupMap = getSharedDataLookupMap();
+    lock_guard<mutex> lock(sharedDataLookupMap.instantiationMutex);
     auto sharedDataIterator = sharedDataLookupMap.m.find(_filename);
     if (sharedDataIterator == sharedDataLookupMap.m.end()) {
-        SharedData* sharedData = new SharedData(); // This is never deleted.
+        SharedData* sharedData = new SharedData();
 
         // Look up the existing wal setting for this DB.
         SQResult result;

@@ -2,6 +2,13 @@
 #include "SQLite.h"
 #include "SQLitePool.h"
 
+SQLitePool::SharedDataCleanup::~SharedDataCleanup()
+{
+    if (!filename.empty()) {
+        SQLite::clearSharedData(filename);
+    }
+}
+
 SQLitePool::SQLitePool(size_t maxDBs,
                        const string& filename,
                        int cacheSize,
@@ -15,6 +22,7 @@ SQLitePool::SQLitePool(size_t maxDBs,
     _baseDB(filename, cacheSize, maxJournalSize, minJournalTables, mmapSizeGB, hctree, checkpointMode, afterCommitCallbacks),
     _objects(_maxDBs, nullptr)
 {
+    _sharedDataCleanup.filename = _baseDB.getFilename();
 }
 
 SQLitePool::~SQLitePool()

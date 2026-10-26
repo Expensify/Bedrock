@@ -435,6 +435,8 @@ private:
     void prepareHCTreeLeadership();
 
 private:
+    friend class SQLitePool;
+
     // This structure contains all of the data that's shared between a set of SQLite objects that share the same
     // underlying database file.
     class SharedData {
@@ -538,6 +540,12 @@ private:
         // variety of operations (i.e., updating _committedTransactions, etc).
         mutable recursive_mutex _internalStateMutex;
     };
+
+    struct SharedDataLookupMap;
+    static SharedDataLookupMap& getSharedDataLookupMap();
+
+    // Remove the cached state only after all connections to this database have been destroyed.
+    static void clearSharedData(const string& filename);
 
     // Initializers to support RAII-style allocation in constructors.
     static string initializeFilename(const string& filename);

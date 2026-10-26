@@ -38,6 +38,16 @@ private:
     // system-imposed limits on FDs.
     size_t _maxDBs;
 
+    struct SharedDataCleanup
+    {
+        string filename;
+        ~SharedDataCleanup();
+    };
+
+    // Declared before _baseDB so cached state is removed after the final connection closes.
+    // TODO: Move SharedData ownership into the pool so cleanup follows its lifetime directly.
+    SharedDataCleanup _sharedDataCleanup;
+
     // Our base object that all others are based upon.
     SQLite _baseDB;
 
