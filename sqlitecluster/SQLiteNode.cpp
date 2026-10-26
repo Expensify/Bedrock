@@ -47,12 +47,12 @@
 // HashCommitID:     The highest nonblank committed transaction ID (0 if none). Defaults to CommitCount when absent.
 // Hash:             The hash corresponding to HashCommitID. Blank rows advance CommitCount only.
 // ID:               The ID of the transaction currently being operated on. It is the same type of information as
-//                   "CommitCount", but not necessarily for the most recent transaction in the DB. Now that nothing
-//                   prefixes it, this duplicates "NewCount" exactly. It's still sent because a follower running older
-//                   code throws "missing ID" without it.
+//                   "CommitCount", but not necessarily for the most recent transaction in the DB. Takes precedence
+//                   over the legacy NewCount field when both are present.
 // NewHash:          Hash, but for "ID" instead of "CommitCount".
 //                   Proposal: rename to "currentTransactionHash".
-// NewCount:         Same as "ID".
+// NewCount:         Deprecated alias of ID. Sent for older peers and accepted only when ID is absent.
+//                   Remove once all peers support ID.
 // Snapshot:         Minimum contiguous commit ID required before replaying this transaction. Defaults to ID - 1.
 // State:            The state of the peer sending the message (i.e., SEARCHING, LEADING).
 // Version:          The version string of the node sending the message.
@@ -167,8 +167,8 @@ SQLiteNode::~SQLiteNode()
 
 SQLite::ReplicationInfo SQLiteNode::_getReplicationInfo(const SData& message)
 {
-    const uint64_t id = SToUInt64(message["NewCount"]);
-    if (!id || SToUInt64(message["ID"]) != id) {
+    const uint64_t id = SToUInt64(message.isSet("ID") ? message["ID"] : message["NewCount"]);
+    if (!id) {
         STHROW("invalid transaction ID");
     }
     const uint64_t snapshot = message.isSet("Snapshot") ? SToUInt64(message["Snapshot"]) : id - 1;
@@ -187,6 +187,7 @@ void SQLiteNode::_enqueueReplication(SQLitePeer* peer, SData message)
     if (message["NewHash"].empty() && !message.content.empty()) {
         STHROW("blank journal entry has a nonblank query");
     }
+    message["ID"] = to_string(info.commitID);
     message["Snapshot"] = to_string(info.snapshot);
     {
         lock_guard<mutex> lock(_replicateMutex);
@@ -536,11 +537,11 @@ void SQLiteNode::_sendOutstandingTransactions()
         // Every transaction we send has already committed here, so it goes out as a single TRANSACTION that the
         // follower applies and commits on its own.
         SData transaction("TRANSACTION");
-        transaction["NewCount"] = to_string(id);
+        transaction["ID"] = to_string(id);
+        transaction["NewCount"] = transaction["ID"];
         transaction["NewHash"] = hash;
         transaction["Snapshot"] = to_string(id - 1);
         transaction["leaderSendTime"] = sendTime;
-        transaction["ID"] = to_string(id);
         transaction.content = query;
 
         // Allows us to easily figure out how far behind followers are by analyzing the logs.
@@ -2025,7 +2026,6 @@ void SQLiteNode::_recvSynchronize(SQLitePeer* peer, const SData& message)
         }
         SData transaction("TRANSACTION");
         transaction["ID"] = commit["CommitIndex"];
-        transaction["NewCount"] = commit["CommitIndex"];
         transaction["NewHash"] = commit["Hash"];
         if (commit.isSet("Snapshot")) {
             transaction["Snapshot"] = commit["Snapshot"];
@@ -2225,9 +2225,6 @@ bool SQLiteNode::_handlePrepareTransaction(SQLite& db, SQLitePeer* peer, const S
     if (!message.isSet("ID")) {
         STHROW("missing ID");
     }
-    if (!message.isSet("NewCount")) {
-        STHROW("missing NewCount");
-    }
     if (!message.isSet("NewHash")) {
         STHROW("missing NewHash");
     }
@@ -2263,7 +2260,7 @@ bool SQLiteNode::_handlePrepareTransaction(SQLite& db, SQLitePeer* peer, const S
     uint64_t applyTimeUS = STimeNow() - prepareStartTime;
     float transitTimeMS = (float) transitTimeUS / 1000.0;
     float applyTimeMS = (float) applyTimeUS / 1000.0;
-    PINFO("[performance] Replicated transaction " << message.calcU64("NewCount") << ", sent by leader at " << leaderSentTimestamp
+    PINFO("[performance] Replicated transaction " << message.calcU64("ID") << ", sent by leader at " << leaderSentTimestamp
           << ", transit/dequeue time: " << transitTimeMS << "ms, applied in: " << applyTimeMS << "ms.");
     return success;
 }
