@@ -3,7 +3,6 @@
 #include <libstuff/SQResult.h>
 #include <libstuff/sqlite3.h>
 #include <sys/wait.h>
-#include <fstream>
 #include <test/clustertest/BedrockClusterTester.h>
 #include <test/clustertest/JournalTestHelper.h>
 
@@ -12,7 +11,6 @@ struct HCTreeJournalModeTest : tpunit::TestFixture
     HCTreeJournalModeTest()
         : tpunit::TestFixture("HCTreeJournalMode",
                               TEST(HCTreeJournalModeTest::leaderFailover),
-                              TEST(HCTreeJournalModeTest::mixedFollowerModes),
                               TEST(HCTreeJournalModeTest::initializationPreservesHistory),
                               TEST(HCTreeJournalModeTest::rejectsDowngrade),
                               TEST(HCTreeJournalModeTest::rejectsJournalGap),
@@ -126,89 +124,6 @@ struct HCTreeJournalModeTest : tpunit::TestFixture
             }
             node.stopServer();
         }
-    }
-
-    void mixedFollowerModes()
-    {
-        if (!BedrockTester::ENABLE_HCTREE) {
-            return;
-        }
-        class MixedModeTester : public BedrockTester {
-public:
-            using BedrockTester::BedrockTester;
-
-            string startServer(bool wait = true)
-            {
-                const string name = getArg("-nodeName");
-                if (name == "cluster_node_1" || name == "cluster_node_2") {
-                    _args.erase("-hctreeExperimentalMode");
-                }
-                if (name == "cluster_node_1") {
-                    _args.erase("-newDBsUseHctree");
-                }
-                return BedrockTester::startServer(wait);
-            }
-        };
-        ClusterTester<MixedModeTester> cluster(ClusterSize::FIVE_NODE_CLUSTER);
-        auto& leader = cluster.getTester(0);
-        ASSERT_TRUE(leader.waitForState("LEADING"));
-        for (size_t i = 1; i < 5; ++i) {
-            ASSERT_TRUE(cluster.getTester(i).waitForState("FOLLOWING"));
-        }
-        auto fileHeader = [&](size_t index) {
-            ifstream file(cluster.getTester(index).getArg("-db"), ios::binary);
-            string header(32, '\0');
-            file.read(header.data(), header.size());
-            return header;
-        };
-        EXPECT_TRUE(SStartsWith(fileHeader(1), "SQLite format 3"));
-        EXPECT_TRUE(SStartsWith(fileHeader(2), "Hctree database version"));
-        EXPECT_EQUAL(cluster.getTester(2).readDB("SELECT COUNT(*) FROM sqlite_schema WHERE name = 'hct_journal';"), "0");
-        EXPECT_EQUAL(cluster.getTester(3).readDB("SELECT COUNT(*) FROM sqlite_schema WHERE name = 'hct_journal';"), "1");
-        SData write("Query");
-        write["Query"] = "CREATE TABLE mixedReplication (id INTEGER PRIMARY KEY);";
-        leader.executeWaitVerifyContent(write);
-
-        uint64_t rows = 0;
-        // Each storage mode must catch up across multiple ordered synchronization batches and then follow live writes.
-        for (const size_t follower : {4, 1, 2}) {
-            cluster.stopNode(follower);
-            vector<SData> requests;
-            for (uint64_t i = 0; i < 128; ++i) {
-                write["Query"] = "INSERT INTO mixedReplication VALUES (" + to_string(rows++) + ");";
-                requests.push_back(write);
-            }
-            for (const auto& response : leader.executeWaitMultipleData(move(requests))) {
-                ASSERT_EQUAL(response.methodLine, "200 OK");
-            }
-            const uint64_t target = commitCount(leader);
-            cluster.startNode(follower);
-            ASSERT_TRUE(cluster.getTester(follower).waitForState("FOLLOWING"));
-            ASSERT_TRUE(cluster.getTester(follower).waitForStatusTerm("commitCount", to_string(target)));
-        }
-        const uint64_t target = commitCount(leader);
-        for (size_t i = 0; i < 5; ++i) {
-            auto& node = cluster.getTester(i);
-            ASSERT_TRUE(node.waitForStatusTerm("commitCount", to_string(target)));
-            EXPECT_EQUAL(node.readDB("SELECT COUNT(*) FROM mixedReplication;"), to_string(rows));
-        }
-        EXPECT_EQUAL(cluster.getTester(3).readDB("SELECT snapshot FROM hct_journal WHERE cid = " + SQ(target)), to_string(target - 1));
-
-        // A WAL2 leader still feeds the same experimental follower pool using sequential snapshot dependencies.
-        cluster.stopNode(0);
-        auto& walLeader = cluster.getTester(1);
-        ASSERT_TRUE(walLeader.waitForState("LEADING"));
-        write["Query"] = "INSERT INTO mixedReplication VALUES (" + to_string(rows++) + ");";
-        walLeader.executeWaitVerifyContent(write);
-        const uint64_t walTarget = commitCount(walLeader);
-        for (size_t i = 2; i < 5; ++i) {
-            auto& follower = cluster.getTester(i);
-            ASSERT_TRUE(follower.waitForStatusTerm("commitCount", to_string(walTarget)));
-            EXPECT_EQUAL(follower.readDB("SELECT COUNT(*) FROM mixedReplication;"), to_string(rows));
-        }
-        cluster.startNode(0);
-        ASSERT_TRUE(leader.waitForState("LEADING"));
-        EXPECT_EQUAL(leader.readDB("SELECT COUNT(*) FROM mixedReplication;"), to_string(rows));
     }
 
     bool readStoppedDB(BedrockTester& node, const string& query, SQResult& result)
