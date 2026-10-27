@@ -136,6 +136,26 @@ if "-MF" in args:
         self.make("compile_commands")
         self.assertNotIn("plugins/Added.cpp", self.database())
 
+    def test_make_diagnostics_preserve_metadata_and_command_line_overrides(self):
+        self.populate_build()
+        for option in ('-p', '--debug=a'):
+            for target in ('compile_commands', 'bedrock'):
+                with self.subTest(option=option, target=target):
+                    self.make(option, target, 'CXXFLAGS=-std=c++17 -DOPTION=\'quoted value\'')
+                    commands = self.database()
+                    self.assertEqual(set(commands), set(self.sources))
+                    self.assertIn('-DOPTION=quoted value', commands['main.cpp']['arguments'])
+                    self.assertIn('-std=c++17', commands['main.cpp']['arguments'])
+                    (self.root / 'compile_commands.json').unlink()
+        self.assertFalse((self.root / 'compiler-ran').exists())
+
+    def test_environment_override_precedence_survives_diagnostic_flags(self):
+        self.environment['CXXFLAGS'] = '-std=c++17 -DENVIRONMENT=1'
+        self.make('-e', '-p', 'compile_commands')
+        arguments = self.database()['main.cpp']['arguments']
+        self.assertIn('-DENVIRONMENT=1', arguments)
+        self.assertNotIn('-std=c++20', arguments)
+
     def test_generation_failure_preserves_previous_database(self):
         self.make("compile_commands")
         output = self.root / "compile_commands.json"
