@@ -211,6 +211,12 @@ endif
 
 ifneq ($(COMPILATION_DATABASE),1)
 ifeq ($(filter clean,$(REQUESTED_GOALS)),)
+# Update metadata even for no-op builds, before an included dependency file can trigger compilation.
+# Avoid changing query/touch/dry-run behavior or making those modes write metadata.
+MAKE_RUN_FLAGS := $(filter-out --% %=%,$(firstword $(MAKEFLAGS)))
+ifeq ($(strip $(foreach flag,n q t,$(findstring $(flag),$(MAKE_RUN_FLAGS)))),)
+$(COMPILE_COMMANDS_OBJECTS) $(COMPILE_COMMANDS_OBJECTS:%.o=%.d) all bedrock bedrock-test-port-server test test/test clustertest test/clustertest/clustertest testplugin test/clustertest/testplugin/testplugin.so bench libstuff.a libjson.a libbedrock.a: | compile_commands
+endif
 ifneq ($(filter-out compile_commands,$(REQUESTED_GOALS)),)
 -include $(sort $(DEPS_TO_INCLUDE))
 endif
