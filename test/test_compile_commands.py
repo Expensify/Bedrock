@@ -180,6 +180,7 @@ if "-MF" in args:
     def test_metadata_precedes_failed_dependency_compilation(self):
         self.populate_build()
         (self.root / ".build/main.d").unlink()
+        (self.root / ".build/main.o").unlink()
         self.environment["FAIL_COMPILATION"] = "1"
         self.make("bedrock", success=False)
         self.assertTrue((self.root / "compiler-ran").exists())
