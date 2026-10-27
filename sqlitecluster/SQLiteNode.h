@@ -228,6 +228,8 @@ private:
     bool _handlePrepareTransaction(SQLite& db, SQLitePeer* peer, const SData& message, uint64_t dequeueTime);
     int _handleCommitTransaction(SQLite& db, SQLitePeer* peer, const uint64_t commandCommitCount, const string& commandCommitHash);
 
+    void _markPeerForked(SQLitePeer* peer);
+
     // Called when we first establish a connection with a new peer
     void _onConnect(SQLitePeer* peer);
 
@@ -374,11 +376,13 @@ private:
     vector<thread> _replicateThreads;
     mutex _replicateMutex;
     condition_variable _replicateCV;
+
+    // Keep IDs reserved through application and out-of-order completion until contiguous progress covers them.
     ReplicationQueue _replicateQueue;
 
     // Snapshot/ID pairs let workers find ready work without scanning a backlog of dependency-blocked commits.
     set<pair<uint64_t, uint64_t>> _replicationDependencies;
-    map<uint64_t, string> _replicating;
+    set<uint64_t> _replicating;
     string _replicationError;
     atomic<bool> _replicateAbort{false};
     atomic<uint64_t> _replicateThreadShouldExitTime;

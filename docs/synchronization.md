@@ -28,6 +28,8 @@ Bedrock's primary feature is its ability to seamlessly synchronize data between 
 
    WAL2 and non-experimental HC-Tree followers buffer commits by ID and apply contiguous commits serially. Experimental HC-Tree followers use 16 threads, executing a commit only when its dependency snapshot is available. This permits parallel, out-of-order application when commits carry earlier dependencies, while sequential dependencies still result in serial application.
 
+   Live transactions are accepted only from the selected leader. Any duplicate commit ID, including an ID at or below the contiguous commit count, is discarded and treated as a fork from the sender, even if its hash matches. Pending IDs stay reserved until contiguous progress covers them, including while applying or completed beyond a gap; duplicate handling does not compare GUIDs or read the journal. Resetting the noncontiguous HC-Tree tail on a leader/session change remains pending SQLite's rollback API and is not yet implemented.
+
    Synchronization and subscription catch-up batches remain ordered. Their commits use the same worker threads, but they do not yet run in parallel.
 
 9. The cost of not waiting is that the leader can "race ahead" of the cluster: if it crashes with commits that haven't reached anyone else, those commits are lost.  A cluster is therefore only as durable as the leader's ability to hand its commits off before it dies.  There is no per-transaction way to ask for a stronger guarantee.

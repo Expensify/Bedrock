@@ -189,38 +189,23 @@ void SQLiteNode::_enqueueReplication(SQLitePeer* peer, SData message)
     }
     message["ID"] = to_string(info.commitID);
     message["Snapshot"] = to_string(info.snapshot);
+    bool inserted;
     {
         lock_guard<mutex> lock(_replicateMutex);
         if (_replicateThreadShouldExitTime || _replicateAbort) {
             STHROW("replication is stopping");
         }
-        optional<string> existingHash;
-        if (info.commitID <= _db.getCommitCount()) {
-            string hash;
-            if (!_db.getCommit(info.commitID, nullptr, &hash)) {
-                STHROW("duplicate transaction is no longer in the journal");
-            }
-            existingHash = move(hash);
-        } else {
-            existingHash = _db.getOutOfOrderCommitHash(info.commitID);
-        }
-        const auto queued = _replicateQueue.find(info.commitID);
-        const auto active = _replicating.find(info.commitID);
-        if (queued != _replicateQueue.end()) {
-            existingHash = queued->second.second["NewHash"];
-        } else if (active != _replicating.end()) {
-            existingHash = active->second;
-        }
-        if (existingHash.has_value()) {
-            if (existingHash.value() != message["NewHash"]) {
-                STHROW("duplicate transaction hash mismatch");
-            }
-            return;
-        }
-        _replicateQueue.emplace(info.commitID, make_pair(peer, move(message)));
-        if (_db.isExperimentalHCTree()) {
+        inserted = info.commitID > _db.getCommitCount() &&
+            _replicateQueue.try_emplace(info.commitID, peer, move(message)).second;
+        if (inserted && _db.isExperimentalHCTree()) {
             _replicationDependencies.emplace(info.snapshot, info.commitID);
         }
+    }
+    if (!inserted) {
+        PWARN("Duplicate transaction " << info.commitID << " from " << peer->name << ", marking peer as forked.");
+        _sendToPeer(peer, SData("FORKED"));
+        _markPeerForked(peer);
+        return;
     }
     _startReplication();
     _replicateCV.notify_one();
@@ -277,7 +262,7 @@ void SQLiteNode::_stopReplication()
     _replicateThreads.clear();
     lock_guard<mutex> lock(_replicateMutex);
     if (!_replicateQueue.empty()) {
-        SWARN("Discarding " << _replicateQueue.size() << " queued commits at replication shutdown");
+        SWARN("Discarding " << _replicateQueue.size() << " pending replication entries at shutdown");
         _replicateQueue.clear();
     }
     _replicationDependencies.clear();
@@ -302,9 +287,8 @@ void SQLiteNode::_replicate(size_t threadID)
                     commitID = next->first;
                     peer = next->second.first;
                     command = move(next->second.second);
-                    _replicateQueue.erase(next);
                     _replicationDependencies.erase({command.calcU64("Snapshot"), commitID});
-                    _replicating.emplace(commitID, command["NewHash"]);
+                    _replicating.emplace(commitID);
                     break;
                 }
                 if (_replicateAbort || (_replicateThreadShouldExitTime &&
@@ -359,6 +343,7 @@ void SQLiteNode::_replicate(size_t threadID)
         {
             lock_guard<mutex> lock(_replicateMutex);
             _replicating.erase(commitID);
+            _replicateQueue.erase(_replicateQueue.begin(), _replicateQueue.upper_bound(_db.getCommitCount()));
         }
         _replicateCV.notify_all();
         notifyCommit();
@@ -1571,25 +1556,8 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message)
             // `peer->setCommit()`. This branch exists only so the message isn't logged as unrecognized. Deliberately no
             // validation: throwing would cost us the peer connection for a message we're about to ignore either way.
         } else if (SIEquals(message.methodLine, "FORKED")) {
-            peer->forked = true;
             PINFO("Peer said we're forked, believing them.");
-            _dieIfForkedFromCluster();
-
-            // If leader said we're forked from it, we need a new leader.
-            if (peer == _leadPeer) {
-                _leadPeer = nullptr;
-                _changeState(SQLiteNodeState::SEARCHING);
-            }
-
-            // If our sync peer said we're forked from it, and we're currently synchronizing, we need a new sync peer.
-            // However, if we're not currently syncing, then we don't need to change states, this peer could have been chosen
-            // hours or days ago.
-            if (peer == _syncPeer) {
-                _syncPeer = nullptr;
-                if (_state == SQLiteNodeState::SYNCHRONIZING) {
-                    _changeState(SQLiteNodeState::SEARCHING);
-                }
-            }
+            _markPeerForked(peer);
         } else {
             auto handler = _messageHandlers.find(SToUpper(message.methodLine));
             if (handler != _messageHandlers.end()) {
@@ -1608,6 +1576,22 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message)
         reconnect["Reason"] = e.what();
         _sendToPeer(peer, reconnect);
         peer->shutdownSocket();
+    }
+}
+
+void SQLiteNode::_markPeerForked(SQLitePeer* peer)
+{
+    peer->forked = true;
+    _dieIfForkedFromCluster();
+    if (peer == _leadPeer) {
+        _leadPeer = nullptr;
+        _changeState(SQLiteNodeState::SEARCHING);
+    }
+    if (peer == _syncPeer) {
+        _syncPeer = nullptr;
+        if (_state == SQLiteNodeState::SYNCHRONIZING) {
+            _changeState(SQLiteNodeState::SEARCHING);
+        }
     }
 }
 
@@ -1772,6 +1756,7 @@ void SQLiteNode::_changeState(SQLiteNodeState newState)
         if (_state == SQLiteNodeState::FOLLOWING || _state == SQLiteNodeState::SYNCHRONIZING ||
             (_state == SQLiteNodeState::SUBSCRIBING && newState != SQLiteNodeState::FOLLOWING)) {
             _stopReplication();
+            // TODO: Reset HC-Tree's noncontiguous tail here when SQLite's rollback API is available.
         }
         if (_state == SQLiteNodeState::FOLLOWING) {
             // We have no leader anymore.
