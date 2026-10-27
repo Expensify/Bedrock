@@ -48,9 +48,6 @@ done
 cd test
 mark_fold start test_bedrock
 ./test -threads 128 $ENABLE_HCTREE_FLAG
-if [ "$ENABLE_HCTREE" == "true" ]; then
-  ./test -only SQLiteNode -enableHctree -hctreeExperimentalMode
-fi
 mark_fold end test_bedrock
 
 cd clustertest

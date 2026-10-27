@@ -9,7 +9,6 @@
 #include <test/lib/ConsoleOutputWriter.h>
 #include <test/lib/NcursesOutputWriter.h>
 #include <libstuff/SSSLState.h>
-#include <sqlitecluster/SQLite.h>
 
 /*
  * Command line args to support:
@@ -17,7 +16,6 @@
  * -except          : comma separated list of tests to skip.
  * -dontStartServer : Doesn't start the server, just prints the command that would have been run.
  * -wait            : Waits before running tests, in case you want to connect with the debugger.
- * -hctreeExperimentalMode : Enable native HC-Tree journals for in-process SQLite fixtures (with -enableHctree).
  * -useNewOutput    : Show the live test dashboard for a single run with stdin/stdout/stderr on terminals (default).
  *                   Repeated runs or redirected streams use console output. Pass false for console output.
  */
@@ -104,7 +102,6 @@ int main(int argc, char* argv[])
     }
 
     // Enable HCTree for the tests
-    SQLite::hctreeExperimentalMode = args.isSet("-hctreeExperimentalMode");
     if (args.isSet("-enableHctree")) {
         BedrockTester::ENABLE_HCTREE = true;
         cout << "HCTree enabled" << endl;

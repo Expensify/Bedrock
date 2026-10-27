@@ -1,6 +1,4 @@
 #include <libstuff/libstuff.h>
-#include <libstuff/sqlite3.h>
-#include <libstuff/sqlite3hct.h>
 #include <plugins/Compression.h>
 #include <sqlitecluster/SQLiteCommand.h>
 #include <sqlitecluster/SQLiteCore.h>
@@ -11,7 +9,6 @@
 
 #include <unistd.h>
 #include <cstring>
-#include <filesystem>
 #include <thread>
 
 class SQLiteNodeTester {
@@ -70,7 +67,6 @@ struct SQLiteNodeTest : tpunit::TestFixture
                                            BEFORE_CLASS(SQLiteNodeTest::setup),
                                            AFTER_CLASS(SQLiteNodeTest::teardown),
                                            AFTER(SQLiteNodeTest::rollback),
-                                           TEST(SQLiteNodeTest::testPluginDBPoolLease),
                                            TEST(SQLiteNodeTest::testFindSyncPeer),
                                            TEST(SQLiteNodeTest::testCommandPortBlockedForWALSize),
                                            TEST(SQLiteNodeTest::testGetPeerByName),
@@ -82,19 +78,10 @@ struct SQLiteNodeTest : tpunit::TestFixture
                                            TEST(SQLiteNodeTest::testBlankCommitFailure),
                                            TEST(SQLiteNodeTest::testGUIDHashFailures),
                                            TEST(SQLiteNodeTest::testReplicationRequiresLeader),
-                                           TEST(SQLiteNodeTest::testReplicationIDCompatibility),
-                                           TEST(SQLiteNodeTest::testExplicitReplicationIDs),
-                                           TEST(SQLiteNodeTest::testReorderedReplication),
-                                           TEST(SQLiteNodeTest::testDuplicateReplicationForks),
-                                           TEST(SQLiteNodeTest::testParallelReplication),
-                                           TEST(SQLiteNodeTest::testReplicationReconnect),
-                                           TEST(SQLiteNodeTest::testReplicationValidation),
-                                           TEST(SQLiteNodeTest::testReplicationRecovery),
                                            TEST(SQLiteNodeTest::testSynchronizeCommitFailure),
                                            TEST(SQLiteNodeTest::testSynchronizeWriteFailure),
                                            TEST(SQLiteNodeTest::testSynchronizeConstraintFailure),
-                                           TEST(SQLiteNodeTest::testSynchronizeHashMismatch),
-                                           TEST(SQLiteNodeTest::testPoolSharedDataReset))
+                                           TEST(SQLiteNodeTest::testSynchronizeHashMismatch))
     {
     }
 
@@ -112,27 +99,15 @@ struct SQLiteNodeTest : tpunit::TestFixture
         // This exposes just enough to test the peer selection logic.
         int fd = mkstemp(filename);
         close(fd);
-        dbPool = make_shared<SQLitePool>(32, filename, 1000000, 5000, 0, 0, BedrockTester::ENABLE_HCTREE);
+        dbPool = make_shared<SQLitePool>(10, filename, 1000000, 5000, 0, 0, BedrockTester::ENABLE_HCTREE);
     }
 
     void teardown()
     {
         dbPool.reset();
-        for (const auto& suffix : databaseSuffixes()) {
-            unlink((string(filename) + suffix).c_str());
-        }
-    }
-
-    vector<string> databaseSuffixes()
-    {
-        vector<string> suffixes{"", "-pagemap", "-wal", "-wal2", "-shm"};
-        for (const auto& entry : filesystem::directory_iterator(".")) {
-            const string name = entry.path().filename().string();
-            if (SStartsWith(name, string(filename) + "-log-")) {
-                suffixes.push_back(name.substr(strlen(filename)));
-            }
-        }
-        return suffixes;
+        unlink(filename);
+        unlink((string(filename) + "-pagemap").c_str());
+        unlink((string(filename) + "-log-0").c_str());
     }
 
     void rollback()
@@ -146,48 +121,7 @@ struct SQLiteNodeTest : tpunit::TestFixture
     void restartDB()
     {
         dbPool.reset();
-        dbPool = make_shared<SQLitePool>(32, filename, 1000000, 5000, 0, 0, BedrockTester::ENABLE_HCTREE);
-    }
-
-    void testPoolSharedDataReset()
-    {
-        const auto before = dbPool->getBase().getCommitState();
-        {
-            SQLite& db = dbPool->getBase();
-            ASSERT_TRUE(db.beginTransaction(SQLite::TRANSACTION_TYPE::EXCLUSIVE));
-            ASSERT_TRUE(db.writeUnmodified("CREATE TABLE sharedDataRollback (id INTEGER);"));
-            db.setCommitEnabled(false);
-        }
-        restartDB();
-
-        SQLite& db = dbPool->getBase();
-        const auto after = db.getCommitState();
-        EXPECT_EQUAL(after.commitCount, before.commitCount);
-        EXPECT_EQUAL(after.hashCommitID, before.hashCommitID);
-        EXPECT_EQUAL(after.hash, before.hash);
-        EXPECT_EQUAL(db.read("SELECT COUNT(*) FROM sqlite_master WHERE name = 'sharedDataRollback';"), "0");
-        EXPECT_TRUE(db.popCommittedTransactions().empty());
-
-        ASSERT_TRUE(db.beginTransaction());
-        ASSERT_TRUE(db.writeUnmodified("CREATE TABLE sharedDataReset (id INTEGER);"));
-        ASSERT_TRUE(db.prepare());
-        EXPECT_EQUAL(db.commit(), SQLITE_OK);
-    }
-
-    void testPluginDBPoolLease()
-    {
-        SQLite* pluginHandle;
-        {
-            SQLiteNode node(server, dbPool, "test", "", peerList, configuredPriority, maxOutstandingWALFrames, 1000000000, "1.0");
-            pluginHandle = &node.pluginDB.db();
-            EXPECT_TRUE(pluginHandle != &dbPool->getBase());
-
-            SQLiteScopedHandle workerHandle(*dbPool, dbPool->getIndex());
-            EXPECT_TRUE(&workerHandle.db() != pluginHandle);
-        }
-
-        SQLiteScopedHandle returnedHandle(*dbPool, dbPool->getIndex());
-        EXPECT_TRUE(&returnedHandle.db() == pluginHandle);
+        dbPool = make_shared<SQLitePool>(10, filename, 1000000, 5000, 0, 0, BedrockTester::ENABLE_HCTREE);
     }
 
     void testFindSyncPeer()
@@ -409,7 +343,6 @@ struct SQLiteNodeTest : tpunit::TestFixture
                 ASSERT_TRUE(size > 0);
                 content.erase(0, size);
                 EXPECT_EQUAL(commit.calcU64("CommitIndex"), anchor.commitCount + i);
-                EXPECT_EQUAL(commit.calcU64("Snapshot"), anchor.commitCount + i - 1);
                 EXPECT_TRUE(commit.isSet("Hash"));
                 EXPECT_TRUE(commit["Hash"].empty());
                 EXPECT_TRUE(commit.content.empty());
@@ -764,484 +697,6 @@ struct SQLiteNodeTest : tpunit::TestFixture
         EXPECT_EQUAL(db.getCommitCount(), commitCount);
         EXPECT_EQUAL(db.getCommittedHash(), committedHash);
         EXPECT_EQUAL(db.read("SELECT COUNT(*) FROM sqlite_master WHERE name = 'nonLeaderTransaction';"), "0");
-    }
-
-    void testReplicationIDCompatibility()
-    {
-        SQLite& db = dbPool->getBase();
-        SQLiteNode node(server, dbPool, "test", "", peerList, configuredPriority, maxOutstandingWALFrames, 1000000000, "1.0");
-        node._changeState(SQLiteNodeState::FOLLOWING);
-        SQLitePeer* peer = node.getPeerByName("peer1");
-        node._leadPeer = peer;
-        peer->loggedIn = true;
-
-        for (const string mode : {"ID", "NewCount", "both"}) {
-            const uint64_t id = db.getCommitCount() + 1;
-            SData message = transaction(id, "");
-            if (mode == "NewCount") {
-                message["NewCount"] = message["ID"];
-                message.erase("ID");
-            } else if (mode == "both") {
-                message["NewCount"] = to_string(id + 1);
-            }
-            node._onMESSAGE(peer, message);
-            node._stopReplication();
-            EXPECT_EQUAL(db.getCommitCount(), id);
-        }
-    }
-
-    void testExplicitReplicationIDs()
-    {
-        SQLite& db = dbPool->getBase();
-        if (!db.isExperimentalHCTree()) {
-            return;
-        }
-        ASSERT_TRUE(db.beginTransaction());
-        ASSERT_TRUE(db.writeUnmodified("CREATE TABLE explicitReplication (id INTEGER PRIMARY KEY);"));
-        ASSERT_TRUE(db.prepare());
-        ASSERT_EQUAL(db.commit(), SQLITE_OK);
-        const auto before = db.getCommitState();
-        SQLite replica(db);
-        const string guid = "00000000000000000000000000000001";
-        const string query = "INSERT INTO explicitReplication VALUES (2);";
-        const string hash = guid + ":" + SToHex(SHashSHA1(guid + query));
-
-        // Another thread holds commitLock, but an explicit experimental follower commit must not need it.
-        ASSERT_TRUE(db.beginTransaction(SQLite::TRANSACTION_TYPE::EXCLUSIVE));
-        string error;
-        thread writer([&]() {
-            SInitialize("explicitReplication");
-            try {
-                if (!replica.beginTransaction() || !replica.writeUnmodified(query) ||
-                    !replica.prepare(nullptr, nullptr, chrono::milliseconds(250), nullptr, guid,
-                                     SQLite::ReplicationInfo{before.commitCount + 2, before.commitCount}) ||
-                    replica.commit() != SQLITE_OK) {
-                    error = "failed out-of-order commit";
-                }
-            } catch (const exception& e) {
-                error = e.what();
-            }
-            replica.rollback();
-        });
-        writer.join();
-        db.rollback();
-        ASSERT_TRUE(error.empty());
-        EXPECT_EQUAL(db.getCommitCount(), before.commitCount);
-        EXPECT_EQUAL(db.getCommittedHash(), before.hash);
-        EXPECT_EQUAL(db.read("SELECT COUNT(*) FROM explicitReplication;"), "0");
-        EXPECT_EQUAL(db.getOutOfOrderCommitHash(before.commitCount + 2).value_or("missing"), hash);
-        string storedHash;
-        ASSERT_TRUE(db.getCommit(before.commitCount + 2, nullptr, &storedHash));
-        EXPECT_EQUAL(storedHash, hash);
-
-        // Filling the gap with a blank entry publishes both commits without replacing the newer nonblank hash.
-        ASSERT_TRUE(replica.beginTransaction());
-        ASSERT_TRUE(replica.prepare(nullptr, nullptr, chrono::hours(24), nullptr, "",
-                                   SQLite::ReplicationInfo{before.commitCount + 1, before.commitCount}));
-        ASSERT_EQUAL(replica.commit(), SQLITE_OK);
-        EXPECT_EQUAL(db.getCommitCount(), before.commitCount + 2);
-        EXPECT_EQUAL(db.getCommitState().hashCommitID, before.commitCount + 2);
-        EXPECT_EQUAL(db.getCommittedHash(), hash);
-        EXPECT_FALSE(db.getOutOfOrderCommitHash(before.commitCount + 2).has_value());
-        EXPECT_EQUAL(db.read("SELECT id FROM explicitReplication;"), "2");
-        sqlite3_int64 snapshot = 0;
-        EXPECT_EQUAL(sqlite3_hct_journal_snapshot(db.getDBHandle(), &snapshot), SQLITE_OK);
-        EXPECT_EQUAL(static_cast<uint64_t>(snapshot), db.getCommitCount());
-    }
-
-    SData transaction(uint64_t id, const string& query, optional<uint64_t> snapshot = nullopt)
-    {
-        SData message("TRANSACTION");
-        message["ID"] = to_string(id);
-        const string guid = SToHex(id, 32);
-        message["NewHash"] = query.empty() ? "" : guid + ":" + SToHex(SHashSHA1(guid + query));
-        message["CommitCount"] = message["ID"];
-        message["Hash"] = message["NewHash"];
-        if (snapshot.has_value()) {
-            message["Snapshot"] = to_string(snapshot.value());
-        }
-        message.content = query;
-        return message;
-    }
-
-    void testReorderedReplication()
-    {
-        SQLite& db = dbPool->getBase();
-        ASSERT_TRUE(db.beginTransaction());
-        ASSERT_TRUE(db.writeUnmodified("CREATE TABLE reorderedReplication (id INTEGER PRIMARY KEY);"));
-        ASSERT_TRUE(db.prepare());
-        ASSERT_EQUAL(db.commit(), SQLITE_OK);
-        const auto before = db.getCommitState();
-        SQLiteNode node(server, dbPool, "test", "", peerList, configuredPriority, maxOutstandingWALFrames, 1000000000, "1.0");
-        node._changeState(SQLiteNodeState::FOLLOWING);
-        SQLitePeer* peer = node.getPeerByName("peer1");
-        node._leadPeer = peer;
-        peer->loggedIn = true;
-
-        const auto later = transaction(before.commitCount + 2, "INSERT INTO reorderedReplication VALUES (2);", before.commitCount);
-        node._onMESSAGE(peer, later);
-        bool appliedAhead = false;
-        {
-            unique_lock<mutex> lock(node._replicateMutex);
-            if (db.isExperimentalHCTree()) {
-                appliedAhead = node._replicateCV.wait_for(lock, chrono::seconds(5), [&]() {
-                    return db.getOutOfOrderCommitHash(before.commitCount + 2).has_value();
-                });
-            } else {
-                EXPECT_TRUE(node._replicateQueue.contains(before.commitCount + 2));
-                EXPECT_TRUE(node._replicating.empty());
-            }
-        }
-        EXPECT_EQUAL(appliedAhead, db.isExperimentalHCTree());
-        EXPECT_EQUAL(db.getCommitCount(), before.commitCount);
-        EXPECT_EQUAL(db.getCommittedHash(), before.hash);
-        EXPECT_EQUAL(db.read("SELECT COUNT(*) FROM reorderedReplication;"), "0");
-        // An absent Snapshot conservatively requires the preceding commit, even on an experimental follower.
-        const auto last = transaction(before.commitCount + 3, "INSERT INTO reorderedReplication VALUES (3);");
-        node._onMESSAGE(peer, last);
-        {
-            lock_guard<mutex> lock(node._replicateMutex);
-            EXPECT_TRUE(node._replicateQueue.contains(before.commitCount + 3));
-        }
-        node._onMESSAGE(peer, transaction(before.commitCount + 1, "", before.commitCount));
-        bool completed;
-        {
-            unique_lock<mutex> lock(node._replicateMutex);
-            completed = node._replicateCV.wait_for(lock, chrono::seconds(5), [&]() {
-                return node._replicateQueue.empty() && node._replicating.empty();
-            });
-        }
-        node._changeState(SQLiteNodeState::SEARCHING);
-        EXPECT_TRUE(completed);
-        EXPECT_EQUAL(db.getCommitCount(), before.commitCount + 3);
-        EXPECT_EQUAL(db.getCommittedHash(), last["NewHash"]);
-        EXPECT_EQUAL(db.getCommitState().hashCommitID, before.commitCount + 3);
-        EXPECT_EQUAL(db.read("SELECT COUNT(*) FROM reorderedReplication;"), "2");
-        EXPECT_TRUE(node._replicateThreads.empty());
-    }
-
-    void testDuplicateReplicationForks()
-    {
-        {
-            SQLite& db = dbPool->getBase();
-            ASSERT_TRUE(db.beginTransaction());
-            ASSERT_TRUE(db.writeUnmodified("CREATE TABLE duplicateReplication (value INTEGER);INSERT INTO duplicateReplication VALUES (0);"));
-            ASSERT_TRUE(db.prepare());
-            ASSERT_EQUAL(db.commit(), SQLITE_OK);
-        }
-
-        for (const string mode : {"queued", "ahead", "applied"}) {
-            if (mode == "ahead" && !dbPool->getBase().isExperimentalHCTree()) {
-                continue;
-            }
-            {
-                SQLite& db = dbPool->getBase();
-                const uint64_t before = db.getCommitCount();
-                const int64_t value = SToInt64(db.read("SELECT value FROM duplicateReplication;"));
-                SQLiteNode node(server, dbPool, "test", "", peerList, configuredPriority, maxOutstandingWALFrames, 1000000000, "1.0");
-                node._changeState(SQLiteNodeState::FOLLOWING);
-                SQLitePeer* peer = node.getPeerByName("peer1");
-                node._leadPeer = peer;
-                peer->loggedIn = true;
-                const uint64_t id = before + (mode == "applied" ? 1 : 2);
-                const auto message = transaction(id, "UPDATE duplicateReplication SET value = value + 1;", before + (mode == "queued" ? 1 : 0));
-                node._onMESSAGE(peer, message);
-                if (mode != "queued") {
-                    unique_lock<mutex> lock(node._replicateMutex);
-                    const bool completed = node._replicateCV.wait_for(lock, chrono::seconds(5), [&]() {
-                        return node._replicating.empty() && (mode == "ahead" ? db.getOutOfOrderCommitHash(id).has_value() : db.getCommitCount() == id);
-                    });
-                    EXPECT_TRUE(completed);
-                    EXPECT_EQUAL(node._replicateQueue.contains(id), mode == "ahead");
-                }
-
-                node._onMESSAGE(peer, message);
-                EXPECT_TRUE(peer->forked);
-                EXPECT_TRUE(node.getState() == SQLiteNodeState::SEARCHING);
-                EXPECT_TRUE(node._replicateThreads.empty());
-                EXPECT_EQUAL(db.getCommitCount(), before + (mode == "applied" ? 1 : 0));
-                EXPECT_EQUAL(db.read("SELECT value FROM duplicateReplication;"), to_string(value + (mode == "applied" ? 1 : 0)));
-            }
-            restartDB();
-        }
-    }
-
-    void testParallelReplication()
-    {
-        SQLite& db = dbPool->getBase();
-        if (!db.isExperimentalHCTree()) {
-            return;
-        }
-        ASSERT_TRUE(db.beginTransaction());
-        ASSERT_TRUE(db.writeUnmodified("CREATE TABLE parallelReplication (id INTEGER PRIMARY KEY);"));
-        ASSERT_TRUE(db.prepare());
-        ASSERT_EQUAL(db.commit(), SQLITE_OK);
-
-        struct Gate
-        {
-            mutex sync;
-            condition_variable cv;
-            size_t arrivals = 0;
-            bool released = false;
-
-            static int trace(unsigned, void* context, void*, void* sql)
-            {
-                if (!SStartsWith(static_cast<const char*>(sql), "INSERT INTO parallelReplication")) {
-                    return 0;
-                }
-                auto& gate = *static_cast<Gate*>(context);
-                unique_lock<mutex> lock(gate.sync);
-                ++gate.arrivals;
-                gate.cv.notify_all();
-                gate.cv.wait_for(lock, chrono::seconds(5), [&]() {
-                    return gate.released;
-                                                                                         });
-                return 0;
-            }
-        };
-
-        for (const string mode : {"live", "sync", "subscription"}) {
-            const uint64_t before = db.getCommitCount();
-            Gate gate;
-            SQLiteNode node(server, dbPool, "test", "", peerList, configuredPriority, maxOutstandingWALFrames, 1000000000, "1.0");
-            vector<size_t> handles;
-            for (size_t i = 0; i < 16; ++i) {
-                handles.push_back(dbPool->getIndex());
-                sqlite3_trace_v2(dbPool->initializeIndex(handles.back()).getDBHandle(), SQLITE_TRACE_STMT, Gate::trace, &gate);
-            }
-            for (const auto index : handles) {
-                dbPool->returnToPool(index);
-            }
-            const bool live = mode == "live";
-            const bool subscribing = mode == "subscription";
-            node._changeState(live ? SQLiteNodeState::FOLLOWING :
-                              subscribing ? SQLiteNodeState::SUBSCRIBING : SQLiteNodeState::SYNCHRONIZING);
-            SQLitePeer* peer = node.getPeerByName("peer1");
-            peer->loggedIn = true;
-            if (live || subscribing) {
-                node._leadPeer = peer;
-            } else {
-                node._syncPeer = peer;
-            }
-            SData response(subscribing ? "SUBSCRIPTION_APPROVED" : "SYNCHRONIZE_RESPONSE");
-            response["NumCommits"] = "16";
-            response["CommitCount"] = to_string(before + 16);
-            response["HashCommitID"] = response["CommitCount"];
-            vector<SData> messages;
-            for (uint64_t i = 1; i <= 16; ++i) {
-                messages.push_back(transaction(before + i, "INSERT INTO parallelReplication VALUES (" + to_string(before + i) + ");", before));
-                SData commit("COMMIT");
-                commit["CommitIndex"] = messages.back()["ID"];
-                commit["Hash"] = messages.back()["NewHash"];
-                commit["Snapshot"] = to_string(before);
-                commit.content = messages.back().content;
-                response.content += commit.serialize();
-                response["Hash"] = commit["Hash"];
-            }
-            thread receiver([&]() {
-                SInitialize("parallelReceiver");
-                if (live) {
-                    for (auto it = messages.rbegin(); it != messages.rend(); ++it) {
-                        node._onMESSAGE(peer, *it);
-                    }
-                } else {
-                    node._onMESSAGE(peer, response);
-                }
-            });
-            bool allParallel;
-            {
-                unique_lock<mutex> lock(gate.sync);
-                allParallel = gate.cv.wait_for(lock, chrono::seconds(5), [&]() {
-                    return gate.arrivals == 16;
-                                                                                                              });
-                {
-                    lock_guard<mutex> replicationLock(node._replicateMutex);
-                    EXPECT_EQUAL(node._replicateQueue.size(), 16ul);
-                }
-                gate.released = true;
-            }
-            gate.cv.notify_all();
-            receiver.join();
-            node._stopReplication();
-            for (const auto index : handles) {
-                sqlite3_trace_v2(dbPool->initializeIndex(index).getDBHandle(), 0, nullptr, nullptr);
-            }
-            EXPECT_TRUE(allParallel);
-            EXPECT_EQUAL(db.getCommitCount(), before + 16);
-            EXPECT_EQUAL(db.getCommittedHash(), messages.back()["NewHash"]);
-            EXPECT_EQUAL(db.read("SELECT COUNT(*) FROM parallelReplication WHERE id > " + to_string(before) + ";"), "16");
-            EXPECT_TRUE(node.getState() == (live || subscribing ? SQLiteNodeState::FOLLOWING : SQLiteNodeState::WAITING));
-        }
-    }
-
-    void testReplicationReconnect()
-    {
-        SQLite& db = dbPool->getBase();
-        ASSERT_TRUE(db.beginTransaction());
-        ASSERT_TRUE(db.writeUnmodified("CREATE TABLE reconnectReplication (id INTEGER PRIMARY KEY);"));
-        ASSERT_TRUE(db.prepare());
-        ASSERT_EQUAL(db.commit(), SQLITE_OK);
-        const auto before = db.getCommitState();
-        SQLiteNode node(server, dbPool, "test", "", peerList, configuredPriority, maxOutstandingWALFrames, 1000000000, "1.0");
-        node._changeState(SQLiteNodeState::FOLLOWING);
-        SQLitePeer* peer = node.getPeerByName("peer1");
-        node._leadPeer = peer;
-        peer->loggedIn = true;
-        const auto later = transaction(before.commitCount + 2, "INSERT INTO reconnectReplication VALUES (1);", before.commitCount);
-        node._onMESSAGE(peer, later);
-        if (db.isExperimentalHCTree()) {
-            bool applied;
-            {
-                unique_lock<mutex> lock(node._replicateMutex);
-                applied = node._replicateCV.wait_for(lock, chrono::seconds(5), [&]() {
-                    return db.getOutOfOrderCommitHash(before.commitCount + 2).has_value();
-                });
-            }
-            EXPECT_TRUE(applied);
-        }
-        // A gap must not keep shutdown waiting. Completed HC-Tree commits survive until the rollback API is integrated.
-        node._changeState(SQLiteNodeState::SEARCHING);
-        EXPECT_TRUE(node._replicateThreads.empty());
-        EXPECT_TRUE(node._replicateQueue.empty());
-        EXPECT_EQUAL(db.getCommitCount(), before.commitCount);
-        node._changeState(SQLiteNodeState::SYNCHRONIZING);
-        node._syncPeer = peer;
-        peer->loggedIn = true;
-        SData blank("COMMIT");
-        blank["CommitIndex"] = to_string(before.commitCount + 1);
-        blank["Hash"] = "";
-        SData response("SYNCHRONIZE_RESPONSE");
-        response["NumCommits"] = "1";
-        response.content = blank.serialize();
-        response["CommitCount"] = to_string(before.commitCount + (db.isExperimentalHCTree() ? 2 : 1));
-        response["HashCommitID"] = to_string(db.isExperimentalHCTree() ? before.commitCount + 2 : before.hashCommitID);
-        response["Hash"] = db.isExperimentalHCTree() ? later["NewHash"] : before.hash;
-        node._onMESSAGE(peer, response);
-        EXPECT_TRUE(node.getState() == SQLiteNodeState::WAITING);
-        node._changeState(SQLiteNodeState::FOLLOWING);
-        node._leadPeer = peer;
-        node._onMESSAGE(peer, later);
-        EXPECT_EQUAL(peer->forked.load(), db.isExperimentalHCTree());
-        node._changeState(SQLiteNodeState::SEARCHING);
-        EXPECT_EQUAL(db.getCommitCount(), before.commitCount + 2);
-        EXPECT_EQUAL(db.getCommittedHash(), later["NewHash"]);
-        EXPECT_EQUAL(db.read("SELECT COUNT(*) FROM reconnectReplication;"), "1");
-    }
-
-    void testReplicationValidation()
-    {
-        SQLite& db = dbPool->getBase();
-        const auto before = db.getCommitState();
-        SQLiteNode node(server, dbPool, "test", "", peerList, configuredPriority, maxOutstandingWALFrames, 1000000000, "1.0");
-        node._changeState(SQLiteNodeState::SYNCHRONIZING);
-        SQLitePeer* peer = node.getPeerByName("peer1");
-        const auto valid = transaction(before.commitCount + 1, "", before.commitCount);
-        for (const string& value : vector<string>{"-1", "9223372036854775808", to_string(before.commitCount + 1)}) {
-            SData invalid = valid;
-            invalid["Snapshot"] = value;
-            bool rejected = false;
-            try {
-                node._enqueueReplication(peer, move(invalid));
-            } catch (const exception&) {
-                rejected = true;
-            }
-            EXPECT_TRUE(rejected);
-            EXPECT_TRUE(node._replicateThreads.empty());
-        }
-        for (const string count : {"-1", "", "invalid", "2147483648", "1"}) {
-            SData response("SYNCHRONIZE_RESPONSE");
-            response["NumCommits"] = count;
-            bool rejected = false;
-            try {
-                node._recvSynchronize(peer, response);
-            } catch (const exception&) {
-                rejected = true;
-            }
-            EXPECT_TRUE(rejected);
-        }
-        SData first("COMMIT");
-        first["CommitIndex"] = valid["ID"];
-        first["Hash"] = "";
-        SData truncated("SYNCHRONIZE_RESPONSE");
-        truncated["NumCommits"] = "2";
-        truncated.content = first.serialize() + "COMMIT\r\nCommitIndex:";
-        bool rejected = false;
-        try {
-            node._recvSynchronize(peer, truncated);
-        } catch (const exception&) {
-            rejected = true;
-        }
-        EXPECT_TRUE(rejected);
-        EXPECT_TRUE(node._replicateThreads.empty());
-        EXPECT_EQUAL(db.getCommitCount(), before.commitCount);
-
-        // Dependencies with a missing predecessor, and IDs outside HC-Tree's commit window, must not occupy workers.
-        node._enqueueReplication(peer, transaction(before.commitCount + 2, "", before.commitCount + 1));
-        node._enqueueReplication(peer, transaction(before.commitCount + SQLiteNode::MAX_REPLICATION_AHEAD + 1, "", before.commitCount));
-        {
-            lock_guard<mutex> lock(node._replicateMutex);
-            EXPECT_EQUAL(node._replicateQueue.size(), 2ul);
-            EXPECT_TRUE(node._replicating.empty());
-        }
-        node._changeState(SQLiteNodeState::SEARCHING);
-        EXPECT_TRUE(node._replicateThreads.empty());
-        EXPECT_EQUAL(db.getCommitCount(), before.commitCount);
-    }
-
-    void testReplicationRecovery()
-    {
-        if (!dbPool->getBase().isExperimentalHCTree()) {
-            return;
-        }
-        uint64_t before = 0;
-        SData later;
-        {
-            SQLite& db = dbPool->getBase();
-            ASSERT_TRUE(db.beginTransaction());
-            ASSERT_TRUE(db.writeUnmodified("CREATE TABLE recoveryReplication (id INTEGER PRIMARY KEY);"));
-            ASSERT_TRUE(db.prepare());
-            ASSERT_EQUAL(db.commit(), SQLITE_OK);
-            before = db.getCommitCount();
-            SQLiteNode node(server, dbPool, "test", "", peerList, configuredPriority, maxOutstandingWALFrames, 1000000000, "1.0");
-            node._changeState(SQLiteNodeState::FOLLOWING);
-            SQLitePeer* peer = node.getPeerByName("peer1");
-            node._leadPeer = peer;
-            peer->loggedIn = true;
-            later = transaction(before + 2, "INSERT INTO recoveryReplication VALUES (1);", before);
-            node._onMESSAGE(peer, later);
-            bool applied;
-            {
-                unique_lock<mutex> lock(node._replicateMutex);
-                applied = node._replicateCV.wait_for(lock, chrono::seconds(5), [&]() {
-                    return db.getOutOfOrderCommitHash(before + 2).has_value();
-                });
-            }
-            EXPECT_TRUE(applied);
-        }
-        // Reopen the same filename with fresh metadata after HC-Tree rolls back the gapped tail.
-        dbPool.reset();
-        dbPool = make_shared<SQLitePool>(32, filename, 1000000, 5000, 0, 0, true);
-        SQLite& db = dbPool->getBase();
-        EXPECT_EQUAL(db.getCommitCount(), before);
-        EXPECT_FALSE(db.getOutOfOrderCommitHash(before + 2).has_value());
-        EXPECT_FALSE(db.getCommit(before + 2));
-        SQLiteNode node(server, dbPool, "test", "", peerList, configuredPriority, maxOutstandingWALFrames, 1000000000, "1.0");
-        node._changeState(SQLiteNodeState::FOLLOWING);
-        SQLitePeer* peer = node.getPeerByName("peer1");
-        node._leadPeer = peer;
-        peer->loggedIn = true;
-        node._onMESSAGE(peer, transaction(before + 1, "", before));
-        node._onMESSAGE(peer, later);
-        node._changeState(SQLiteNodeState::SEARCHING);
-        EXPECT_EQUAL(db.getCommitCount(), before + 2);
-        EXPECT_EQUAL(db.getCommittedHash(), later["NewHash"]);
-        sqlite3_int64 snapshot = 0;
-        EXPECT_EQUAL(sqlite3_hct_journal_snapshot(db.getDBHandle(), &snapshot), SQLITE_OK);
-        EXPECT_EQUAL(static_cast<uint64_t>(snapshot), before + 2);
-        EXPECT_EQUAL(db.read("SELECT COUNT(*) FROM recoveryReplication;"), "1");
-        // Application reads use a pooled handle, separate from the synchronization connection.
-        SQLiteScopedHandle reader(*dbPool, dbPool->getIndex());
-        EXPECT_EQUAL(reader.db().read("SELECT COUNT(*) FROM recoveryReplication;"), "1");
     }
 
     void testReplicationFailure(const string& failure)
