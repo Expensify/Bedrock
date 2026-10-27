@@ -9,7 +9,8 @@ struct HybridClusterReplicationTest : tpunit::TestFixture
 {
     HybridClusterReplicationTest()
         : tpunit::TestFixture("HybridClusterReplication",
-                              TEST(HybridClusterReplicationTest::testReplication))
+                              TEST(HybridClusterReplicationTest::testReplication),
+                              TEST(HybridClusterReplicationTest::testFollowerUpgrade))
     {
     }
 
@@ -130,5 +131,42 @@ struct HybridClusterReplicationTest : tpunit::TestFixture
             const uint64_t target = writeCommits(cluster);
             verifyRows(cluster, 100, target);
         }
+    }
+
+    void testFollowerUpgrade()
+    {
+        if (BedrockTester::ENABLE_HCTREE) {
+            return;
+        }
+        Cluster cluster(Backend::EXPERIMENTAL_HCTREE);
+        ASSERT_TRUE(cluster.initialize());
+        const uint64_t boundary = writeCommits(cluster);
+        verifyRows(cluster, 100, boundary);
+
+        BedrockTester& follower = *cluster.nodes[2];
+        ASSERT_EQUAL(follower.readDB("SELECT COUNT(*) FROM sqlite_schema WHERE name = 'hct_journal';"), "0");
+        const string journalQuery = "SELECT id, hex(query) AS query, hash FROM journalEntries ORDER BY id;";
+        SQResult before;
+        ASSERT_TRUE(follower.readDB(journalQuery, before));
+
+        follower.stopServer();
+        follower.updateArgs({{"-hctreeExperimentalMode", ""}});
+        follower.startServer();
+        ASSERT_TRUE(follower.waitForState("FOLLOWING"));
+        ASSERT_TRUE(follower.waitForStatusTerm("commitCount", to_string(boundary)));
+        EXPECT_EQUAL(follower.readDB("SELECT MIN(cid) FROM hct_journal;"), to_string(boundary));
+        SQResult preserved;
+        ASSERT_TRUE(follower.readDB("SELECT id, hex(query) AS query, hash FROM journalEntries WHERE id <= " + SQ(boundary) + " ORDER BY id;", preserved));
+        EXPECT_EQUAL(preserved.serializeToText(), before.serializeToText());
+
+        const uint64_t target = writeCommits(cluster, 100);
+        verifyRows(cluster, 200, target);
+        EXPECT_EQUAL(follower.readDB("SELECT COUNT(*) FROM hct_journal;"), "101");
+        EXPECT_EQUAL(follower.readDB("SELECT MAX(cid) FROM hct_journal;"), to_string(target));
+        EXPECT_EQUAL(follower.readDB("SELECT COUNT(*) FROM hct_journal WHERE cid > " + SQ(boundary) + " AND snapshot != cid - 1;"), "0");
+        SQResult expected, actual;
+        ASSERT_TRUE(cluster.nodes[0]->readDB(journalQuery, expected));
+        ASSERT_TRUE(follower.readDB(journalQuery, actual));
+        EXPECT_EQUAL(actual.serializeToText(), expected.serializeToText());
     }
 } __HybridClusterReplicationTest;
