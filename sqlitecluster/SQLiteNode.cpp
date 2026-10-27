@@ -56,6 +56,8 @@
 // Permafollower:    Boolean value (string "true" or "false") indicating if the node sending the message is a
 //                   permafollower.
 // Priority:         The priority of the node. 0 for permafollowers.
+// CommandPortBlocked: Boolean value (string "true" or "false") sent with LOGIN and STATE, indicating if the node sending
+//                   the message has its command port blocked. Peers don't forward commands to a node that's blocked.
 // StateChangeCount: The number of state changes that this node has performed since startup. This is useful because
 //                   it's sent at STANDINGUP, and parroted back by followers with an "approve" or "deny". This allows
 //                   the leader to confirm that these responses were in fact sent in response to the correct message,
@@ -342,11 +344,7 @@ void SQLiteNode::setShutdownPriority()
     if (_state == SQLiteNodeState::LEADING) {
         SINFO("Will stop leading.");
     } else {
-        SData state("STATE");
-        state["StateChangeCount"] = to_string(_stateChangeCount);
-        state["State"] = stateName(_state);
-        state["Priority"] = SToStr(_priority);
-        _sendToAllPeers(state);
+        _sendSTATE();
     }
     SINFO("SHUTDOWN Priority changed");
 }
@@ -431,8 +429,10 @@ string SQLiteNode::getEligibleFollowerForForwardingAddress() const
         return "";
     }
     for (SQLitePeer* peer : _peerList) {
-        // We want only nodes that are using the same version as leader and are currently followers
-        if (peer->version.load() != leaderVersion || peer->state.load() != SQLiteNodeState::FOLLOWING) {
+        // We want only nodes that are using the same version as leader and are currently followers, and that have their
+        // command port open. A follower blocks its command port when it can't serve commands well (e.g., when it's far
+        // behind leader), and it still accepts forwarded commands on its private port, so we have to skip it here.
+        if (peer->version.load() != leaderVersion || peer->state.load() != SQLiteNodeState::FOLLOWING || peer->commandPortBlocked.load()) {
             continue;
         }
         validPeers.push_back(peer->name);
@@ -1100,6 +1100,7 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message)
             peer->version = message["Version"];
             peer->state = stateFromName(message["State"]);
             peer->permaFollower = peer->priority == 0;
+            _updatePeerCommandPortBlocked(peer, message);
 
             // Is it on the same version as us?
             if (!_haveSeenPeerOnSameVersion && peer->version.load() == _version) {
@@ -1160,6 +1161,7 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message)
             peer->priority = message.calc("Priority");
             peer->permaFollower = peer->priority == 0;
             peer->state = stateFromName(message["State"]);
+            _updatePeerCommandPortBlocked(peer, message);
             const SQLiteNodeState to = peer->state;
             if (from == to) {
                 // No state change, just new commits?
@@ -1493,6 +1495,7 @@ void SQLiteNode::_onConnect(SQLitePeer* peer)
     login["State"] = stateName(_state);
     login["Version"] = _version;
     login["Permafollower"] = _configuredPriority ? "false" : "true";
+    login["CommandPortBlocked"] = _server.isCommandPortBlocked() ? "true" : "false";
     PINFO("Sending " << login.serialize());
 
     // NOTE: the following call adds CommitCount, Hash, and commandAddress fields.
@@ -1590,6 +1593,26 @@ SData SQLiteNode::_addPeerHeaders(SData message)
     }
     message["commandAddress"] = _commandAddress;
     return message;
+}
+
+void SQLiteNode::_sendSTATE()
+{
+    const bool commandPortBlocked = _server.isCommandPortBlocked();
+    SData state("STATE");
+    state["StateChangeCount"] = to_string(_stateChangeCount);
+    state["State"] = stateName(_state);
+    state["Priority"] = SToStr(_priority);
+    state["CommandPortBlocked"] = commandPortBlocked ? "true" : "false";
+    _sendToAllPeers(state);
+    _lastSentCommandPortBlocked = commandPortBlocked;
+}
+
+void SQLiteNode::_updatePeerCommandPortBlocked(SQLitePeer* peer, const SData& message)
+{
+    // Peers on older versions don't send this, in which case we leave it as not blocked.
+    if (message.isSet("CommandPortBlocked")) {
+        peer->commandPortBlocked = message.test("CommandPortBlocked");
+    }
 }
 
 void SQLiteNode::_sendToPeer(SQLitePeer* peer, const SData& message)
@@ -1758,11 +1781,8 @@ void SQLiteNode::_changeState(SQLiteNodeState newState)
             // but before we receive theirs, and they'll miss it).
             // Broadcast the new state
             _state = newState;
-            SData state("STATE");
-            state["StateChangeCount"] = to_string(++_stateChangeCount);
-            state["State"] = stateName(_state);
-            state["Priority"] = SToStr(_priority);
-            _sendToAllPeers(state);
+            ++_stateChangeCount;
+            _sendSTATE();
         } catch (...) {
             _db.exclusiveUnlockDB();
             throw;
@@ -2404,6 +2424,13 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity)
         }
     }
 
+    // Tell peers right away when our command port is blocked or unblocked, so they stop or resume forwarding commands
+    // to us without waiting for our next state change. Every STATE carries `CommandPortBlocked`.
+    if (_server.isCommandPortBlocked() != _lastSentCommandPortBlocked) {
+        SINFO("Command port is now " << (_lastSentCommandPortBlocked ? "unblocked" : "blocked") << ", sending STATE to peers.");
+        _sendSTATE();
+    }
+
     // Just clear this, it doesn't matter what the contents are.
     _commitsToSend.postPoll(fdm);
     _commitsToSend.clear();
@@ -2681,13 +2708,8 @@ int SQLiteNode::setPriority(int newPriority)
 
     _priority.store(newPriority);
 
-    SData state("STATE");
-    state["Priority"] = SToStr(newPriority);
-    state["State"] = stateName(_state);
-    state["StateChangeCount"] = SToStr(_stateChangeCount);
-
     // All peers will receive the new state and priority.
-    _sendToAllPeers(state);
+    _sendSTATE();
 
     // Force a transition if we were leading and there's a following peer with
     // higher priority than ours. Also force a transition if we're following

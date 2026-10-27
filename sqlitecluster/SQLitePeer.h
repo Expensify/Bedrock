@@ -83,6 +83,10 @@ public:
 
     // An address on which this peer can accept commands. (a.k.a. "private command port")
     atomic<string> commandAddress;
+
+    // Set from the `CommandPortBlocked` header on LOGIN and STATE messages from this peer. We don't forward commands to
+    // peers that have their command port blocked.
+    atomic<bool> commandPortBlocked;
     atomic<uint64_t> latency;
     atomic<bool> loggedIn;
     atomic<uint64_t> nextReconnect;
