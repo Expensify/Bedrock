@@ -85,6 +85,7 @@ struct SQLiteNodeTest : tpunit::TestFixture
                                            TEST(SQLiteNodeTest::testReplicationIDCompatibility),
                                            TEST(SQLiteNodeTest::testExplicitReplicationIDs),
                                            TEST(SQLiteNodeTest::testReorderedReplication),
+                                           TEST(SQLiteNodeTest::testDuplicateReplicationForks),
                                            TEST(SQLiteNodeTest::testParallelReplication),
                                            TEST(SQLiteNodeTest::testReplicationReconnect),
                                            TEST(SQLiteNodeTest::testReplicationValidation),
@@ -879,8 +880,6 @@ struct SQLiteNodeTest : tpunit::TestFixture
 
         const auto later = transaction(before.commitCount + 2, "INSERT INTO reorderedReplication VALUES (2);", before.commitCount);
         node._onMESSAGE(peer, later);
-        // Duplicate queued, active, or completed deliveries must not apply the SQL twice.
-        node._onMESSAGE(peer, later);
         bool appliedAhead = false;
         {
             unique_lock<mutex> lock(node._replicateMutex);
@@ -897,8 +896,6 @@ struct SQLiteNodeTest : tpunit::TestFixture
         EXPECT_EQUAL(db.getCommitCount(), before.commitCount);
         EXPECT_EQUAL(db.getCommittedHash(), before.hash);
         EXPECT_EQUAL(db.read("SELECT COUNT(*) FROM reorderedReplication;"), "0");
-        node._onMESSAGE(peer, later);
-
         // An absent Snapshot conservatively requires the preceding commit, even on an experimental follower.
         const auto last = transaction(before.commitCount + 3, "INSERT INTO reorderedReplication VALUES (3);");
         node._onMESSAGE(peer, last);
@@ -914,7 +911,6 @@ struct SQLiteNodeTest : tpunit::TestFixture
                 return node._replicateQueue.empty() && node._replicating.empty();
             });
         }
-        node._onMESSAGE(peer, last);
         node._changeState(SQLiteNodeState::SEARCHING);
         EXPECT_TRUE(completed);
         EXPECT_EQUAL(db.getCommitCount(), before.commitCount + 3);
@@ -922,6 +918,52 @@ struct SQLiteNodeTest : tpunit::TestFixture
         EXPECT_EQUAL(db.getCommitState().hashCommitID, before.commitCount + 3);
         EXPECT_EQUAL(db.read("SELECT COUNT(*) FROM reorderedReplication;"), "2");
         EXPECT_TRUE(node._replicateThreads.empty());
+    }
+
+    void testDuplicateReplicationForks()
+    {
+        {
+            SQLite& db = dbPool->getBase();
+            ASSERT_TRUE(db.beginTransaction());
+            ASSERT_TRUE(db.writeUnmodified("CREATE TABLE duplicateReplication (value INTEGER);INSERT INTO duplicateReplication VALUES (0);"));
+            ASSERT_TRUE(db.prepare());
+            ASSERT_EQUAL(db.commit(), SQLITE_OK);
+        }
+
+        for (const string mode : {"queued", "ahead", "applied"}) {
+            if (mode == "ahead" && !dbPool->getBase().isExperimentalHCTree()) {
+                continue;
+            }
+            {
+                SQLite& db = dbPool->getBase();
+                const uint64_t before = db.getCommitCount();
+                const int64_t value = SToInt64(db.read("SELECT value FROM duplicateReplication;"));
+                SQLiteNode node(server, dbPool, "test", "", peerList, configuredPriority, maxOutstandingWALFrames, 1000000000, "1.0");
+                node._changeState(SQLiteNodeState::FOLLOWING);
+                SQLitePeer* peer = node.getPeerByName("peer1");
+                node._leadPeer = peer;
+                peer->loggedIn = true;
+                const uint64_t id = before + (mode == "applied" ? 1 : 2);
+                const auto message = transaction(id, "UPDATE duplicateReplication SET value = value + 1;", before + (mode == "queued" ? 1 : 0));
+                node._onMESSAGE(peer, message);
+                if (mode != "queued") {
+                    unique_lock<mutex> lock(node._replicateMutex);
+                    const bool completed = node._replicateCV.wait_for(lock, chrono::seconds(5), [&]() {
+                        return node._replicating.empty() && (mode == "ahead" ? db.getOutOfOrderCommitHash(id).has_value() : db.getCommitCount() == id);
+                    });
+                    EXPECT_TRUE(completed);
+                    EXPECT_EQUAL(node._replicateQueue.contains(id), mode == "ahead");
+                }
+
+                node._onMESSAGE(peer, message);
+                EXPECT_TRUE(peer->forked);
+                EXPECT_TRUE(node.getState() == SQLiteNodeState::SEARCHING);
+                EXPECT_TRUE(node._replicateThreads.empty());
+                EXPECT_EQUAL(db.getCommitCount(), before + (mode == "applied" ? 1 : 0));
+                EXPECT_EQUAL(db.read("SELECT value FROM duplicateReplication;"), to_string(value + (mode == "applied" ? 1 : 0)));
+            }
+            restartDB();
+        }
     }
 
     void testParallelReplication()
@@ -1011,7 +1053,11 @@ struct SQLiteNodeTest : tpunit::TestFixture
                 unique_lock<mutex> lock(gate.sync);
                 allParallel = gate.cv.wait_for(lock, chrono::seconds(5), [&]() {
                     return gate.arrivals == 16;
-                                                                                                             });
+                                                                                                              });
+                {
+                    lock_guard<mutex> replicationLock(node._replicateMutex);
+                    EXPECT_EQUAL(node._replicateQueue.size(), 16ul);
+                }
                 gate.released = true;
             }
             gate.cv.notify_all();
@@ -1053,7 +1099,7 @@ struct SQLiteNodeTest : tpunit::TestFixture
             }
             EXPECT_TRUE(applied);
         }
-        // A gap must not keep shutdown waiting for work that cannot run. Completed HC-Tree commits survive reconnect.
+        // A gap must not keep shutdown waiting. Completed HC-Tree commits survive until the rollback API is integrated.
         node._changeState(SQLiteNodeState::SEARCHING);
         EXPECT_TRUE(node._replicateThreads.empty());
         EXPECT_TRUE(node._replicateQueue.empty());
@@ -1075,6 +1121,7 @@ struct SQLiteNodeTest : tpunit::TestFixture
         node._changeState(SQLiteNodeState::FOLLOWING);
         node._leadPeer = peer;
         node._onMESSAGE(peer, later);
+        EXPECT_EQUAL(peer->forked.load(), db.isExperimentalHCTree());
         node._changeState(SQLiteNodeState::SEARCHING);
         EXPECT_EQUAL(db.getCommitCount(), before.commitCount + 2);
         EXPECT_EQUAL(db.getCommittedHash(), later["NewHash"]);
