@@ -116,7 +116,7 @@ private:
 
     // Performs a read-only query (eg, SELECT). This can be done inside or outside a transaction. Returns true on
     // success, and fills the 'result' with the result of the query. Fails without running anything past the first
-    // statement that could modify the database.
+    // statement that could modify the database, or that controls transactions (BEGIN, COMMIT, SAVEPOINT, ATTACH, etc).
     virtual bool read(const string& query, SQResult& result, bool skipInfoWarn = false) const;
     virtual bool read(const string& query, const map<string, Parameter>& params, SQResult& result, bool skipInfoWarn = false) const;
 
@@ -707,6 +707,10 @@ private:
 
     // Set to true inside of a write query.
     bool _currentlyWriting{false};
+
+    // Set to true inside of a read query, so the authorizer can deny the transaction-control statements that
+    // sqlite3_stmt_readonly() still reports as read-only.
+    mutable bool _currentlyReading{false};
 
     // One of 0|1|2|3 (a.k.a. PASSIVE|FULL|RESTART|TRUNCATE), which is the value to be passed to sqlite3_wal_checkpoint_v2.
     int _checkpointMode;

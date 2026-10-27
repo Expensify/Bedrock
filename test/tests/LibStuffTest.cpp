@@ -1387,6 +1387,23 @@ struct LibStuff : tpunit::TestFixture
         ASSERT_TRUE(db.read("SELECT GROUP_CONCAT(name) FROM users;", result));
         ASSERT_EQUAL("alice", result[0][0]);
         db.rollback();
+
+        // Transaction-control statements are reported as read-only by SQLite, but must not run from a read either:
+        // a COMMIT here would commit the pending write without it ever being journaled.
+        db.beginTransaction(SQLite::TRANSACTION_TYPE::EXCLUSIVE);
+        ASSERT_TRUE(db.write("UPDATE users SET name = 'bob';"));
+        ASSERT_FALSE(db.read("SELECT 1; COMMIT;", result));
+        ASSERT_FALSE(db.read("SELECT 1; ROLLBACK;", result));
+        ASSERT_FALSE(db.read("SAVEPOINT injected;", result));
+        ASSERT_FALSE(db.read("RELEASE injected;", result));
+        ASSERT_FALSE(db.read("BEGIN;", result));
+        ASSERT_FALSE(db.read("ATTACH DATABASE ':memory:' AS injected;", result));
+        ASSERT_FALSE(db.read("DETACH DATABASE main;", result));
+        ASSERT_NOT_EQUAL(db.read("SELECT 1; COMMIT;", nullptr), SQLITE_OK);
+        ASSERT_TRUE(db.insideTransaction());
+        db.rollback();
+        ASSERT_TRUE(db.read("SELECT GROUP_CONCAT(name) FROM users;", result));
+        ASSERT_EQUAL("alice", result[0][0]);
     }
 
     void SRedactSensitiveValuesTest()
