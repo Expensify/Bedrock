@@ -10,3 +10,22 @@ directories in this repo include:
 * `/mbedtls` - The mbed TLS from here: https://tls.mbed.org/
 * `/plugins` - The various plugins provided "out of the box" to Bedrock
 * `/sqlitecluster` - The distributed transaction framework built atop sqlite: http://sqlite.org
+
+## C++ editor diagnostics
+
+Ordinary Make targets refresh the ignored `compile_commands.json` in the repository root,
+including on incremental and no-op builds. The database includes the server, libraries,
+tests, and benchmarks, using the Makefile's compiler commands and flags. Generation requires
+Python 3 and runs in the build environment so paths and compiler settings match that environment.
+
+To refresh only the database, without compiling or setting up dependencies, run:
+
+```sh
+make compile_commands
+```
+
+Use the same compiler and flag overrides as for your build. Generated headers still require
+the normal dependency build. Metadata generation preserves the existing database on failure
+and does not rewrite an unchanged database. `make clean` skips metadata generation.
+
+Run the isolated Make integration tests with `python3 test/test_compile_commands.py -v`.
