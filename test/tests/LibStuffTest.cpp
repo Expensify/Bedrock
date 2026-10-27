@@ -65,6 +65,7 @@ struct LibStuff : tpunit::TestFixture
                                      TEST(LibStuff::testReturningClause),
                                      TEST(LibStuff::testSQueryBoundParameters),
                                      TEST(LibStuff::testSQueryBoundParameterInjections),
+                                     TEST(LibStuff::testReadRejectsWrites),
                                      TEST(LibStuff::SRedactSensitiveValuesTest),
                                      TEST(LibStuff::SComposeHTTPTest),
                                      TEST(LibStuff::testEncodeDecodeURIComponent),
@@ -1366,6 +1367,45 @@ struct LibStuff : tpunit::TestFixture
                                         {{":id", SQLite::Parameter::i(3)}}));
     }
 
+    void testReadRejectsWrites()
+    {
+        TempDBFile dbFile;
+        SQLite db(dbFile.filename, 1000, 1000, 1);
+        db.beginTransaction(SQLite::TRANSACTION_TYPE::EXCLUSIVE);
+        db.write("CREATE TABLE users(id INTEGER PRIMARY KEY, name TEXT);");
+        db.write("INSERT INTO users VALUES (1, 'alice');");
+        db.prepare();
+        db.commit();
+
+        // A write piggybacked on a read, as an injected value would do, fails without running.
+        SQResult result;
+        db.beginTransaction(SQLite::TRANSACTION_TYPE::EXCLUSIVE);
+        ASSERT_FALSE(db.read("SELECT name FROM users; UPDATE users SET name = 'mallory'; --", result));
+        ASSERT_FALSE(db.read("INSERT INTO users VALUES (2, 'mallory');", result));
+        ASSERT_EQUAL(db.read("SELECT name FROM users;", nullptr), SQLITE_OK);
+        ASSERT_NOT_EQUAL(db.read("DELETE FROM users;", nullptr), SQLITE_OK);
+        ASSERT_TRUE(db.read("SELECT GROUP_CONCAT(name) FROM users;", result));
+        ASSERT_EQUAL("alice", result[0][0]);
+        db.rollback();
+
+        // Transaction-control statements are reported as read-only by SQLite, but must not run from a read either:
+        // a COMMIT here would commit the pending write without it ever being journaled.
+        db.beginTransaction(SQLite::TRANSACTION_TYPE::EXCLUSIVE);
+        ASSERT_TRUE(db.write("UPDATE users SET name = 'bob';"));
+        ASSERT_FALSE(db.read("SELECT 1; COMMIT;", result));
+        ASSERT_FALSE(db.read("SELECT 1; ROLLBACK;", result));
+        ASSERT_FALSE(db.read("SAVEPOINT injected;", result));
+        ASSERT_FALSE(db.read("RELEASE injected;", result));
+        ASSERT_FALSE(db.read("BEGIN;", result));
+        ASSERT_FALSE(db.read("ATTACH DATABASE ':memory:' AS injected;", result));
+        ASSERT_FALSE(db.read("DETACH DATABASE main;", result));
+        ASSERT_NOT_EQUAL(db.read("SELECT 1; COMMIT;", nullptr), SQLITE_OK);
+        ASSERT_TRUE(db.insideTransaction());
+        db.rollback();
+        ASSERT_TRUE(db.read("SELECT GROUP_CONCAT(name) FROM users;", result));
+        ASSERT_EQUAL("alice", result[0][0]);
+    }
+
     void SRedactSensitiveValuesTest()
     {
         string logValue = R"({"edits":["test1", "test2", "test3"]})";
@@ -1399,6 +1439,22 @@ struct LibStuff : tpunit::TestFixture
         string methodLineWithControlChars = "500 Internal Server Error\r\nContent-Type: application/json";
         buffer = SComposeHTTP(methodLineWithControlChars, {}, "");
         ASSERT_EQUAL(buffer, "500 Internal Server Error%0D%0AContent-Type%3A application%2Fjson\r\nContent-Length: 0\r\n\r\n");
+
+        // The requestID is first on the wire even when other headers sort before it.
+        for (const string requestIDHeader : {"requestID", "ReQuEsTiD"}) {
+            SData request("CreateJob");
+            request["data"] = "{}";
+            request["name"] = "www-prod/Test";
+            request[requestIDHeader] = "webrock-request-id";
+            request.content = "body";
+            const string expectedRequest = "CreateJob\r\n" + requestIDHeader + ": webrock-request-id\r\n"
+                "data: {}\r\nname: www-prod/Test\r\nContent-Length: 4\r\n\r\nbody";
+            ASSERT_EQUAL(request.serialize(), expectedRequest);
+
+            ostringstream out;
+            request.serialize(out);
+            ASSERT_EQUAL(out.str(), expectedRequest);
+        }
     }
 
     void testEncodeDecodeURIComponent()

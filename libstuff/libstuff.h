@@ -803,7 +803,8 @@ int SQueryBusyHandler(void* context, int count);
 // expanded as SQL literals via sqlite3_expanded_sql) is appended to the string. Write paths use this to
 // journal a self-contained, replay-safe form of the query for replication; followers run the journaled
 // SQL via writeUnmodified() with no params map, so placeholders must already be inlined.
-int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThreshold = 2000* STIME_US_PER_MS, bool skipInfoWarn = false, sqlite3_qrf_spec* spec = nullptr, const map<string, SQliteParameter>& params = {}, string* expandedSql = nullptr);
+// If `readOnly` is true, any statement that could modify the database is rejected with SQLITE_READONLY before it runs.
+int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThreshold = 2000* STIME_US_PER_MS, bool skipInfoWarn = false, sqlite3_qrf_spec* spec = nullptr, const map<string, SQliteParameter>& params = {}, string* expandedSql = nullptr, bool readOnly = false);
 int SQuery(sqlite3* db, const string& sql, int64_t warnThreshold = 2000* STIME_US_PER_MS, bool skipInfoWarn = false);
 int SQuery(sqlite3* db, const string& sql, sqlite3_qrf_spec* spec);
 
