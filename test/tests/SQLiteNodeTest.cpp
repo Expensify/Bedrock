@@ -242,16 +242,21 @@ struct SQLiteNodeTest : tpunit::TestFixture
         TestServer testServer;
         SQLiteNode testNode(testServer, dbPool, "test", "localhost:19998", peerList, configuredPriority, maxOutstandingWALFrames, 1000000000, "1.0");
 
-        // Our own block status goes out on every message we send.
-        EXPECT_EQUAL(testNode._addPeerHeaders(SData("PING"))["CommandPortBlocked"], "false");
+        // Our own block status goes out with STATE, which records what we last broadcast, and not with every message.
+        EXPECT_FALSE(testNode._addPeerHeaders(SData("PING")).isSet("CommandPortBlocked"));
         testServer.commandPortBlocked = true;
-        EXPECT_EQUAL(testNode._addPeerHeaders(SData("PING"))["CommandPortBlocked"], "true");
+        testNode._sendSTATE();
+        EXPECT_TRUE(testNode._lastSentCommandPortBlocked);
+        testServer.commandPortBlocked = false;
+        testNode._sendSTATE();
+        EXPECT_FALSE(testNode._lastSentCommandPortBlocked);
 
         // peer1 leads, peer2 and peer3 follow on leader's version, and peer4 follows on a different version.
         for (auto peer : testNode._peerList) {
             peer->state = peer->name == "peer1" ? SQLiteNodeState::LEADING : SQLiteNodeState::FOLLOWING;
             peer->version = peer->name == "peer4" ? "2.0" : "1.0";
             peer->commandAddress = peer->name + ":8890";
+            peer->loggedIn = true;
         }
         testNode._leadPeer = testNode.getPeerByName("peer1");
         SQLitePeer* peer2 = testNode.getPeerByName("peer2");
@@ -260,6 +265,11 @@ struct SQLiteNodeTest : tpunit::TestFixture
         auto receive = [&](SQLitePeer* peer, const string& method, const string& blocked) {
             SData message(method);
             message["Timestamp"] = SToStr(STimeNow());
+            message["CommitCount"] = "0";
+            message["Hash"] = "";
+            message["State"] = "FOLLOWING";
+            message["Priority"] = "100";
+            message["Version"] = "1.0";
             if (!blocked.empty()) {
                 message["CommandPortBlocked"] = blocked;
             }
@@ -275,25 +285,34 @@ struct SQLiteNodeTest : tpunit::TestFixture
 
         EXPECT_EQUAL(eligibleAddresses(), (set<string>{"peer2:8890", "peer3:8890"}));
 
-        // A blocked follower is skipped.
+        // Only LOGIN and STATE carry the status, so it's ignored on other messages.
         receive(peer2, "PING", "true");
+        EXPECT_FALSE(peer2->commandPortBlocked);
+
+        // A blocked follower is skipped.
+        receive(peer2, "STATE", "true");
         EXPECT_TRUE(peer2->commandPortBlocked);
         EXPECT_EQUAL(eligibleAddresses(), set<string>{"peer3:8890"});
 
-        // A message without the header (from an older version) leaves the status alone.
-        receive(peer2, "PONG", "");
+        // A STATE without the header (from an older version) leaves the status alone.
+        receive(peer2, "STATE", "");
         EXPECT_TRUE(peer2->commandPortBlocked);
 
         // With every follower blocked, there's nothing to forward to.
-        receive(peer3, "PONG", "true");
+        receive(peer3, "STATE", "true");
         EXPECT_EQUAL(eligibleAddresses(), set<string>{""});
 
-        // Unblocking makes the follower eligible again, and a reset clears the status.
-        receive(peer2, "PING", "false");
+        // Unblocking makes the follower eligible again.
+        receive(peer2, "STATE", "false");
         EXPECT_FALSE(peer2->commandPortBlocked);
         EXPECT_EQUAL(eligibleAddresses(), set<string>{"peer2:8890"});
+
+        // A reset clears the status, and a peer that logs in blocked is skipped.
         peer3->reset();
         EXPECT_FALSE(peer3->commandPortBlocked);
+        receive(peer3, "LOGIN", "true");
+        EXPECT_TRUE(peer3->commandPortBlocked);
+        EXPECT_EQUAL(eligibleAddresses(), set<string>{"peer2:8890"});
     }
 
     void testGetPeerByName()
