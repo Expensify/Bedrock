@@ -9,6 +9,7 @@
 
 #include <unistd.h>
 #include <cstring>
+#include <filesystem>
 #include <thread>
 
 class SQLiteNodeTester {
@@ -107,7 +108,12 @@ struct SQLiteNodeTest : tpunit::TestFixture
         dbPool.reset();
         unlink(filename);
         unlink((string(filename) + "-pagemap").c_str());
-        unlink((string(filename) + "-log-0").c_str());
+        for (const auto& entry : filesystem::directory_iterator(".")) {
+            const string name = entry.path().filename().string();
+            if (SStartsWith(name, string(filename) + "-log-")) {
+                unlink(entry.path().c_str());
+            }
+        }
     }
 
     void rollback()
