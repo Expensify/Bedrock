@@ -904,7 +904,9 @@ int SQLite::read(const string& query, const map<string, Parameter>& params, sqli
     // Execute the read-only query. Skips caching.
     uint64_t before = STimeNow();
     SQResult ignore;
-    int queryResult = SQuery(_db, query, ignore, 0, true, spec, params);
+    _currentlyReading = true;
+    int queryResult = SQuery(_db, query, ignore, 0, true, spec, params, nullptr, true);
+    _currentlyReading = false;
     _readElapsed += STimeNow() - before;
     _checkInterruptErrors("SQLite::read"s);
     return queryResult;
@@ -930,7 +932,9 @@ bool SQLite::read(const string& query, const map<string, Parameter>& params, SQR
         queryResult = true;
     } else {
         _isDeterministicQuery = true;
-        queryResult = !SQuery(_db, query, result, 2000 * STIME_US_PER_MS, skipInfoWarn, nullptr, params);
+        _currentlyReading = true;
+        queryResult = !SQuery(_db, query, result, 2000 * STIME_US_PER_MS, skipInfoWarn, nullptr, params, nullptr, true);
+        _currentlyReading = false;
         if (params.empty() && _isDeterministicQuery && queryResult && insideTransaction()) {
             _queryCache.emplace(make_pair(query, result));
         }
@@ -1862,6 +1866,13 @@ int SQLite::_authorize(int actionCode, const char* detail1, const char* detail2,
     // If we've enabled re-writing, see if we need to re-write this query.
     if (_enableRewrite && !_currentlyRunningRewritten && (*_rewriteHandler)(actionCode, detail1, _rewrittenQuery)) {
         // Deny the original query, we'll re-run on the re-written version.
+        return SQLITE_DENY;
+    }
+
+    // sqlite3_stmt_readonly() returns true for these, but inside a read they could commit or roll back the caller's
+    // transaction behind Bedrock's back, or change which databases the connection can reach.
+    if (_currentlyReading && (actionCode == SQLITE_TRANSACTION || actionCode == SQLITE_SAVEPOINT || actionCode == SQLITE_ATTACH || actionCode == SQLITE_DETACH)) {
+        SWARN("[security] Refusing to run a transaction-control statement from a read-only query");
         return SQLITE_DENY;
     }
 
