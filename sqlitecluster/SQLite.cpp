@@ -1854,11 +1854,6 @@ uint64_t SQLite::getCommitCount() const
     return _sharedData.commitCount;
 }
 
-optional<string> SQLite::getOutOfOrderCommitHash(uint64_t commitID) const
-{
-    return _sharedData.getOutOfOrderCommitHash(commitID);
-}
-
 uint64_t SQLite::getOutstandingFramesToCheckpoint() const
 {
     return _sharedData.knownOutstandingFramesToCheckpoint;
@@ -2192,13 +2187,6 @@ void SQLite::SharedData::recordReplicationCommit(uint64_t commitID, const string
         _outOfOrderCommits.erase(_outOfOrderCommits.begin());
         commitCount++;
     }
-}
-
-optional<string> SQLite::SharedData::getOutOfOrderCommitHash(uint64_t commitID) const
-{
-    lock_guard<decltype(_internalStateMutex)> lock(_internalStateMutex);
-    const auto entry = _outOfOrderCommits.find(commitID);
-    return entry == _outOfOrderCommits.end() ? nullopt : optional<string>(entry->second);
 }
 
 SQLite::CommitState SQLite::SharedData::getCommitState() const

@@ -288,9 +288,6 @@ private:
     // Returns the highest contiguous committed ID shared by all handles to the database.
     uint64_t getCommitCount() const;
 
-    // Returns a completed commit's hash above the contiguous prefix, including an empty hash for a blank entry.
-    optional<string> getOutOfOrderCommitHash(uint64_t commitID) const;
-
     // Returns the number of WAL frames that are currently waiting to be checkpointed.
     uint64_t getOutstandingFramesToCheckpoint() const;
 
@@ -456,7 +453,6 @@ public:
 
         // Remember completed replication IDs and publish only the contiguous prefix and its nonblank hash.
         void recordReplicationCommit(uint64_t commitID, const string& commitHash);
-        optional<string> getOutOfOrderCommitHash(uint64_t commitID) const;
 
         CommitState getCommitState() const;
 
