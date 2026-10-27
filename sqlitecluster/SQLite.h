@@ -115,7 +115,8 @@ private:
     sqlite3* getDBHandle();
 
     // Performs a read-only query (eg, SELECT). This can be done inside or outside a transaction. Returns true on
-    // success, and fills the 'result' with the result of the query.
+    // success, and fills the 'result' with the result of the query. Fails without running anything past the first
+    // statement that could modify the database.
     virtual bool read(const string& query, SQResult& result, bool skipInfoWarn = false) const;
     virtual bool read(const string& query, const map<string, Parameter>& params, SQResult& result, bool skipInfoWarn = false) const;
 

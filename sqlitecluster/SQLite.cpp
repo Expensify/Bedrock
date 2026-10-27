@@ -904,7 +904,7 @@ int SQLite::read(const string& query, const map<string, Parameter>& params, sqli
     // Execute the read-only query. Skips caching.
     uint64_t before = STimeNow();
     SQResult ignore;
-    int queryResult = SQuery(_db, query, ignore, 0, true, spec, params);
+    int queryResult = SQuery(_db, query, ignore, 0, true, spec, params, nullptr, true);
     _readElapsed += STimeNow() - before;
     _checkInterruptErrors("SQLite::read"s);
     return queryResult;
@@ -930,7 +930,7 @@ bool SQLite::read(const string& query, const map<string, Parameter>& params, SQR
         queryResult = true;
     } else {
         _isDeterministicQuery = true;
-        queryResult = !SQuery(_db, query, result, 2000 * STIME_US_PER_MS, skipInfoWarn, nullptr, params);
+        queryResult = !SQuery(_db, query, result, 2000 * STIME_US_PER_MS, skipInfoWarn, nullptr, params, nullptr, true);
         if (params.empty() && _isDeterministicQuery && queryResult && insideTransaction()) {
             _queryCache.emplace(make_pair(query, result));
         }
