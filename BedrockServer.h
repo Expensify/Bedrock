@@ -204,6 +204,7 @@ private:
     // You must block and unblock the command port with *identical strings*.
     void blockCommandPort(const string& reason) override;
     void unblockCommandPort(const string& reason) override;
+    bool isCommandPortBlocked() const override;
 
     bool isShuttingDown();
 

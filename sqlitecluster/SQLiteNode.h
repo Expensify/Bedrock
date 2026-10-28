@@ -227,6 +227,9 @@ private:
     void _reconnectPeer(SQLitePeer* peer);
     void _recvSynchronize(SQLitePeer* peer, const SData& message);
 
+    // Stores the `CommandPortBlocked` header from a LOGIN or STATE message on the peer.
+    void _updatePeerCommandPortBlocked(SQLitePeer* peer, const SData& message);
+
     // This is the main replication loop, run in a single replication thread which consumes messages that the sync
     // thread queues onto `_replicateQueue`. Handling them in one thread in the order leader sent them is what keeps our
     // commit order matching leader's.
@@ -243,6 +246,9 @@ private:
     void _sendOutstandingTransactions();
     void _sendStandupResponse(SQLitePeer* peer, const SData& message);
     void _sendPING(SQLitePeer* peer);
+
+    // Broadcasts our current state, priority, and command port block status to all peers.
+    void _sendSTATE();
     void _sendToAllPeers(const SData& message, bool subscribedOnly = false);
     void _sendToPeer(SQLitePeer* peer, const SData& message);
 
@@ -344,6 +350,9 @@ private:
 
     // Keeps track if we have closed the command port because the WAL needs checkpointing.
     bool _blockedCommandPortForWALSize{false};
+
+    // The command port block status we last broadcast to peers, so we can tell them as soon as it changes.
+    bool _lastSentCommandPortBlocked{false};
 
     // This is an integer that increments every time we change states. This is useful for responses to state changes
     // (i.e., approving standup) to verify that the messages we're receiving are relevant to the current state change,

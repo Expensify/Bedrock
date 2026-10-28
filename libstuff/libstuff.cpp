@@ -2661,7 +2661,7 @@ int SQueryBusyHandler(void* context, int count)
 
 // --------------------------------------------------------------------------
 // Executes a SQLite query
-int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThreshold, bool skipInfoWarn, sqlite3_qrf_spec* spec, const map<string, SQliteParameter>& params, string* expandedSql)
+int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThreshold, bool skipInfoWarn, sqlite3_qrf_spec* spec, const map<string, SQliteParameter>& params, string* expandedSql, bool readOnly)
 {
 #define MAX_TRIES 3
     // Execute the query and get the results
@@ -2733,6 +2733,14 @@ int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThresho
                 // If we get a null statement (from parsing a blank string) we can skip, this isn't an error.
                 error = SQLITE_OK;
                 continue;
+            }
+
+            // Checked before binding or stepping so a write smuggled into a read (e.g. via SQL injection) never runs.
+            if (readOnly && !sqlite3_stmt_readonly(preparedStatement)) {
+                SWARN("[security] Refusing to run a statement that writes from a read-only query");
+                sqlite3_finalize(preparedStatement);
+                error = SQLITE_READONLY;
+                break;
             }
 
             // Bind parameters once per prepared statement. The bind state survives sqlite3_reset, so we never
