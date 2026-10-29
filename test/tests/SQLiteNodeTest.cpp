@@ -89,6 +89,7 @@ struct SQLiteNodeTest : tpunit::TestFixture
                                            TEST(SQLiteNodeTest::testGUIDHashFailures),
                                            TEST(SQLiteNodeTest::testReplicationRequiresLeader),
                                            TEST(SQLiteNodeTest::testReplicationShutdownDeadline),
+                                           TEST(SQLiteNodeTest::testReplicationHandleLifetime),
                                            TEST(SQLiteNodeTest::testSynchronizeCommitFailure),
                                            TEST(SQLiteNodeTest::testSynchronizeWriteFailure),
                                            TEST(SQLiteNodeTest::testSynchronizeConstraintFailure),
@@ -840,6 +841,52 @@ struct SQLiteNodeTest : tpunit::TestFixture
 
         node._stopReplication();
         EXPECT_TRUE(node._replicateThreadShouldExitTime.load() == chrono::steady_clock::time_point{});
+    }
+
+    void testReplicationHandleLifetime()
+    {
+        for (bool fail : {false, true}) {
+            SQLiteNode node(server, dbPool, "test", "", peerList, configuredPriority, maxOutstandingWALFrames, 1000000000, "1.0");
+            node._changeState(SQLiteNodeState::SYNCHRONIZING);
+            SQLite* replicationDB;
+            {
+                SQLiteScopedHandle handle(*dbPool, dbPool->getIndex());
+                replicationDB = &handle.db();
+            }
+
+            // Use one worker so the next available handle identifies its reservation in either journal mode.
+            node._replicateThreads.emplace_back(&SQLiteNode::_replicate, &node, 0);
+            const auto commitCount = dbPool->getBase().getCommitCount();
+            SData transaction("TRANSACTION");
+            transaction["ID"] = to_string(commitCount + 1);
+            transaction["NewHash"] = fail ? string(32, '0') + ":" + string(40, '0') : "";
+            node._enqueueReplication(node.getPeerByName("peer1"), move(transaction));
+            {
+                unique_lock<mutex> lock(node._replicateMutex);
+                ASSERT_TRUE(node._replicateCV.wait_for(lock, chrono::seconds(5), [&]() {
+                    return node._replicateQueue.empty() && node._inFlightCommitIDs.empty();
+                }));
+                EXPECT_TRUE(node._replicationError.empty() == !fail);
+            }
+            EXPECT_EQUAL(dbPool->getBase().getCommitCount(), commitCount + (fail ? 0 : 1));
+            if (!fail) {
+                SQLiteScopedHandle spare(*dbPool, dbPool->getIndex());
+                EXPECT_TRUE(&spare.db() != replicationDB);
+            }
+
+            node._stopReplication();
+            SQLiteScopedHandle returned(*dbPool, dbPool->getIndex());
+            EXPECT_TRUE(&returned.db() == replicationDB);
+            EXPECT_FALSE(returned.db().insideTransaction());
+
+            // A returned handle must not keep observing the node's abort flag.
+            node._replicateAbort = true;
+            const int result = sqlite3_exec(returned.db().getDBHandle(),
+                "WITH RECURSIVE counts(n) AS (VALUES(1) UNION ALL SELECT n + 1 FROM counts WHERE n < 1000) "
+                "SELECT SUM(n) FROM counts;", nullptr, nullptr, nullptr);
+            node._replicateAbort = false;
+            EXPECT_EQUAL(result, SQLITE_OK);
+        }
     }
 
     void testReplicationFailure(const string& failure)
