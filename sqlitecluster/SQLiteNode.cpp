@@ -287,80 +287,87 @@ void SQLiteNode::_stopReplication()
 void SQLiteNode::_replicate(size_t threadID)
 {
     SInitialize("replication" + to_string(threadID));
-    while (true) {
-        SQLitePeer* peer = nullptr;
-        SData command;
-        SQLite::CommitID commitID = 0;
-        {
-            unique_lock<mutex> lock(_replicateMutex);
-            while (true) {
-                const auto next = _nextReplication();
-                if (next != _replicateQueue.end()) {
-                    commitID = next->first;
-                    peer = next->second.first;
-                    command = move(next->second.second);
-                    _replicationDependencies.erase({command.calcU64("Snapshot"), commitID});
-                    _inFlightCommitIDs.emplace(commitID);
-                    break;
-                }
-                const auto exitTime = _replicateThreadShouldExitTime.load();
-                if (_replicateAbort || (exitTime != chrono::steady_clock::time_point{} &&
-                                        (_inFlightCommitIDs.empty() || exitTime < chrono::steady_clock::now()))) {
-                    return;
-                }
-                if (exitTime != chrono::steady_clock::time_point{}) {
-                    _replicateCV.wait_for(lock, chrono::milliseconds(10));
-                } else {
-                    _replicateCV.wait(lock);
-                }
-            }
-        }
-        const uint64_t dequeueTime = STimeNow();
-        try {
-            // Reserve handles only while applying work, so an idle replication pool cannot starve command workers.
-            SQLiteScopedHandle dbScope(*_dbPool, _dbPool->getIndex(false));
-            SQLite& db = dbScope.db();
-            db.setAbortRef(_replicateAbort);
-            try {
-                const uint64_t retryDeadline = STimeNow() + RECV_TIMEOUT;
+    try {
+        SQLiteScopedHandle dbScope(*_dbPool, _dbPool->getIndex(false));
+        SQLite& db = dbScope.db();
+        while (true) {
+            SQLitePeer* peer = nullptr;
+            SData command;
+            SQLite::CommitID commitID = 0;
+            {
+                unique_lock<mutex> lock(_replicateMutex);
                 while (true) {
-                    if (_replicateAbort) {
-                        STHROW("replication aborted");
-                    }
-                    _handleBeginTransaction(db, peer, command);
-                    if (!_handlePrepareTransaction(db, peer, command, dequeueTime)) {
-                        STHROW("prepare failed");
-                    }
-                    const int result = _handleCommitTransaction(db, peer, commitID, command["NewHash"]);
-                    if (result == SQLITE_OK) {
+                    const auto next = _nextReplication();
+                    if (next != _replicateQueue.end()) {
+                        commitID = next->first;
+                        peer = next->second.first;
+                        command = move(next->second.second);
+                        _replicationDependencies.erase({command.calcU64("Snapshot"), commitID});
+                        _inFlightCommitIDs.emplace(commitID);
                         break;
                     }
-                    db.rollback();
                     const auto exitTime = _replicateThreadShouldExitTime.load();
-                    if (result != SQLITE_BUSY_SNAPSHOT || !db.isExperimentalHCTree() || STimeNow() >= retryDeadline ||
-                        (exitTime != chrono::steady_clock::time_point{} && exitTime < chrono::steady_clock::now())) {
-                        STHROW("commit failed: " + to_string(result));
+                    if (_replicateAbort || (exitTime != chrono::steady_clock::time_point{} &&
+                                            (_inFlightCommitIDs.empty() || exitTime < chrono::steady_clock::now()))) {
+                        return;
                     }
-                    this_thread::sleep_for(chrono::milliseconds(1));
+                    if (exitTime != chrono::steady_clock::time_point{}) {
+                        _replicateCV.wait_for(lock, chrono::milliseconds(10));
+                    } else {
+                        _replicateCV.wait(lock);
+                    }
                 }
-            } catch (const exception& e) {
-                _onReplicationError(db, peer, command, e.what());
-            } catch (...) {
-                _onReplicationError(db, peer, command, "unknown exception");
             }
-            db.clearAbortRef();
-        } catch (const exception& e) {
-            _failReplication(peer, command, e.what());
-        } catch (...) {
-            _failReplication(peer, command, "unknown exception acquiring replication handle");
+            const uint64_t dequeueTime = STimeNow();
+            try {
+                db.setAbortRef(_replicateAbort);
+                try {
+                    const uint64_t retryDeadline = STimeNow() + RECV_TIMEOUT;
+                    while (true) {
+                        if (_replicateAbort) {
+                            STHROW("replication aborted");
+                        }
+                        _handleBeginTransaction(db, peer, command);
+                        if (!_handlePrepareTransaction(db, peer, command, dequeueTime)) {
+                            STHROW("prepare failed");
+                        }
+                        const int result = _handleCommitTransaction(db, peer, commitID, command["NewHash"]);
+                        if (result == SQLITE_OK) {
+                            break;
+                        }
+                        db.rollback();
+                        const auto exitTime = _replicateThreadShouldExitTime.load();
+                        if (result != SQLITE_BUSY_SNAPSHOT || !db.isExperimentalHCTree() || STimeNow() >= retryDeadline ||
+                            (exitTime != chrono::steady_clock::time_point{} && exitTime < chrono::steady_clock::now())) {
+                            STHROW("commit failed: " + to_string(result));
+                        }
+                        this_thread::sleep_for(chrono::milliseconds(1));
+                    }
+                } catch (const exception& e) {
+                    _onReplicationError(db, peer, command, e.what());
+                } catch (...) {
+                    _onReplicationError(db, peer, command, "unknown exception");
+                }
+                db.clearAbortRef();
+            } catch (const exception& e) {
+                db.clearAbortRef();
+                _failReplication(peer, command, e.what());
+            } catch (...) {
+                db.clearAbortRef();
+                _failReplication(peer, command, "unknown exception processing replication");
+            }
+            {
+                lock_guard<mutex> lock(_replicateMutex);
+                _inFlightCommitIDs.erase(commitID);
+                _replicateQueue.erase(_replicateQueue.begin(), _replicateQueue.upper_bound(_db.getCommitCount()));
+            }
+            _replicateCV.notify_all();
+            notifyCommit();
         }
-        {
-            lock_guard<mutex> lock(_replicateMutex);
-            _inFlightCommitIDs.erase(commitID);
-            _replicateQueue.erase(_replicateQueue.begin(), _replicateQueue.upper_bound(_db.getCommitCount()));
-        }
-        _replicateCV.notify_all();
-        notifyCommit();
+    } catch (const exception& e) {
+        _failReplication(nullptr, SData{}, e.what());
+    } catch (...) {
+        _failReplication(nullptr, SData{}, "unknown exception acquiring replication handle");
     }
 }
 
@@ -376,6 +383,9 @@ void SQLiteNode::_failReplication(SQLitePeer* peer, const SData& command, const 
         lock_guard<mutex> lock(_replicateMutex);
         if (_replicateAbort) {
             return;
+        }
+        if (!peer && !_replicateQueue.empty()) {
+            peer = _replicateQueue.begin()->second.first;
         }
         _replicationError = reason;
         _replicateAbort = true;
