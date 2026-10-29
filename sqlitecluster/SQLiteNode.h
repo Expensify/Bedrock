@@ -76,6 +76,8 @@ public:
     // i.e., immediately reconnecting a network socket after killing it.
     static atomic<bool> NODE_KILLED;
 
+    static const size_t PARALLEL_REPLICATION_THREADS;
+
     // Receive timeout for cluster messages.
     static const uint64_t RECV_TIMEOUT;
 
@@ -185,7 +187,6 @@ private:
     // The minimum frequency of FOLLOWER_STATUS messages we'll send when following, back to leader, to indicate our own current synchronization state.
     // This is expressed as "every Nth message", where e.g., if MIN_APPROVE_FREQUENCY is 10, we will respond to at least every 10th TRANSACTION message.
     static const size_t MIN_APPROVE_FREQUENCY;
-    static const size_t PARALLEL_REPLICATION_THREADS;
 
     // We only allow ourselves to go so far ahead of the most recent contiguous commit.
     static const uint64_t MAX_REPLICATION_AHEAD;

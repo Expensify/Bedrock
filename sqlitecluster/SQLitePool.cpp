@@ -1,4 +1,5 @@
 #include <libstuff/libstuff.h>
+#include <sqlitecluster/SQLiteNode.h>
 #include "SQLite.h"
 #include "SQLitePool.h"
 
@@ -18,7 +19,7 @@ SQLitePool::SQLitePool(size_t maxDBs,
                        bool hctree,
                        const string& checkpointMode,
                        vector<function<void()>> afterCommitCallbacks)
-    : _maxDBs(max(maxDBs, 10ul)),
+    : _maxDBs(max(maxDBs, SQLiteNode::PARALLEL_REPLICATION_THREADS + 3)),
     _baseDB(filename, cacheSize, maxJournalSize, minJournalTables, mmapSizeGB, hctree, checkpointMode, afterCommitCallbacks),
     _objects(_maxDBs, nullptr)
 {
