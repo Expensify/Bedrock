@@ -18,7 +18,7 @@
 ** separate file. This file contains only code for the core SQLite library.
 **
 ** The content in this amalgamation comes from Fossil check-in
-** 11f43371b5d66a46008920071c4e707d116b with changes in files:
+** cba71c08bcfddc65afd22075d73785be3077 with changes in files:
 **
 **    
 */
@@ -476,10 +476,10 @@ extern "C" {
 */
 #define SQLITE_VERSION        "3.54.0"
 #define SQLITE_VERSION_NUMBER 3054000
-#define SQLITE_SOURCE_ID      "2026-10-22 15:03:14 11f43371b5d66a46008920071c4e707d116b7d4957b42c900b2cbae7aa0115a1"
+#define SQLITE_SOURCE_ID      "2026-10-28 14:52:42 cba71c08bcfddc65afd22075d73785be3077fef36ebad607dfa8dcbe8b061327"
 #define SQLITE_SCM_BRANCH     "hctree-bedrock-lcd-ex"
 #define SQLITE_SCM_TAGS       ""
-#define SQLITE_SCM_DATETIME   "2026-10-22T15:03:14.934Z"
+#define SQLITE_SCM_DATETIME   "2026-10-28T14:52:42.704Z"
 
 /*
 ** CAPI3REF: Run-Time Library Version Numbers
@@ -90833,6 +90833,14 @@ SQLITE_API int sqlite3_hct_journal_snapshot(sqlite3 *db, sqlite3_int64 *piCid);
 */
 SQLITE_API int sqlite3_hct_journal_local_commit(sqlite3 *db);
 
+/*
+** FOLLOWER mode only. Roll back all transactions that follow the first
+** gap in the hct_journal table and remove their hct_journal entries,
+** leaving a contiguous journal. Return SQLITE_OK if successful or an
+** SQLite error code otherwise.
+*/
+SQLITE_API int sqlite3_hct_journal_rollback(sqlite3 *db);
+
 
 /*
 ** Testing APIs
@@ -91186,6 +91194,7 @@ SQLITE_PRIVATE int sqlite3HctFilePageGetPhysical(HctFile *pFile, u32 iPg, HctFil
 SQLITE_PRIVATE int sqlite3HctFilePageNewPhysical(HctFile *pFile, HctFilePage *pPg);
 
 SQLITE_PRIVATE u64 sqlite3HctFileAllocateTransid(HctFile *pFile);
+SQLITE_PRIVATE void sqlite3HctFileSetCurrentTid(HctFile *pFile, u64 iTid);
 SQLITE_PRIVATE u64 sqlite3HctFileAllocateCID(HctFile *pFile, i64, int, int *pbValidate);
 SQLITE_PRIVATE u64 sqlite3HctFileGetSnapshotid(HctFile *pFile);
 
@@ -91633,6 +91642,7 @@ SQLITE_PRIVATE int sqlite3HctDbValidate(sqlite3*, HctDatabase*, u64 *piCid, int)
 SQLITE_PRIVATE int sqlite3HctDbPreValidate(HctDatabase *);
 
 SQLITE_PRIVATE void sqlite3HctDbSetTmapForRollback(HctDatabase *pDb);
+SQLITE_PRIVATE void sqlite3HctDbSetTmapRollback(HctDatabase *pDb, u64 iTid, u64 iCid);
 
 SQLITE_PRIVATE void sqlite3HctDbRollbackMode(HctDatabase*,int);
 
@@ -91833,6 +91843,29 @@ SQLITE_PRIVATE void sqlite3HctJrnlLogPtrPtrRelease(HctJournal *pJrnl);
 
 SQLITE_PRIVATE int sqlite3HctJrnlZeroEntries(HctJournal *pJrnl, int nEntry, i64 *aEntry);
 
+/*
+** Used by sqlite3_hct_journal_rollback() in FOLLOWER mode.
+**
+** sqlite3HctJrnlFindRollback():
+**   Invoke the xLog callback for each entry in the hct_journal table with
+**   a cid value greater than iCid, in descending order of cid.
+**
+** sqlite3HctJrnlRollbackCommit():
+**   Clear the HctJrnlServer.aCommit[] slot for rolled back transaction iCid.
+**
+** sqlite3HctJrnlRoot():
+**   Return the root page of the hct_journal table.
+*/
+SQLITE_PRIVATE int sqlite3HctJrnlFindRollback(
+    sqlite3 *db,
+    HctJournal*,
+    i64 iCid,
+    void*,
+    int(*)(void*,i64,int,const u8*)
+);
+SQLITE_PRIVATE void sqlite3HctJrnlRollbackCommit(HctJournal *pJrnl, i64 iCid);
+SQLITE_PRIVATE i64 sqlite3HctJrnlRoot(HctJournal *pJrnl);
+
 SQLITE_PRIVATE int sqlite3HctJrnlRecoveryMode(sqlite3 *db, HctJournal *pJrnl, int *peMode);
 
 /*
@@ -91844,6 +91877,7 @@ SQLITE_PRIVATE int sqlite3HctJrnlIsLocalCommit(HctJournal *pJrnl);
 /************** End of hctJrnlInt.h ******************************************/
 /************** Continuing where we left off in hctInt.h *********************/
 SQLITE_PRIVATE HctJournal *sqlite3HctJrnlFind(sqlite3*);
+SQLITE_PRIVATE int sqlite3HctBtreeJrnlRollback(sqlite3*);
 
 SQLITE_PRIVATE i64 sqlite3HctMainStats(sqlite3 *db, int iStat, const char **pzStat);
 
@@ -92540,53 +92574,65 @@ static i64 hctMapFindCid(HBtree *p, i64 iTid){
   return -1;
 }
 
-static int hctRecoverOneLog(HBtree *p, HctLogReader *pRdr){
+/*
+** Load the in-memory tree with the writes required to roll back each key
+** visited by log reader pRdr. The caller must already have put the
+** database into rollback mode and set the TID being rolled back.
+*/
+static int hctRollbackLogKeys(HBtree *p, HctLogReader *pRdr){
   int rc = SQLITE_OK;
   u32 iPrevRoot = 0;
   RecoverCsr csr;
 
   memset(&csr, 0, sizeof(csr));
+  for(/* no-op */; pRdr->bEof==0; hctLogReaderNext(pRdr)){
+    int op = 0;
+
+    if( pRdr->iRoot!=iPrevRoot ){
+      iPrevRoot = pRdr->iRoot;
+      hctRecoverCursorClose(p, &csr);
+      rc = hctRecoverCursorOpen(p, pRdr->iRoot, &csr);
+    }
+
+    if( pRdr->nKey ){
+      assert( csr.pRec->pKeyInfo==csr.pKeyInfo);
+      sqlite3VdbeRecordUnpack(pRdr->nKey, pRdr->aKey, csr.pRec);
+    }
+    rc = sqlite3HctDbCsrRollbackSeek(csr.pCsr, csr.pRec, pRdr->iKey, &op);
+
+    if( rc==SQLITE_OK && op!=0 ){
+      HctTreeCsr *pTCsr = csr.pTreeCsr;
+      if( op<0 ){
+        /* rollback requires deleting the key */
+        hctRecoverDebug(&csr, "delete", pRdr->iKey, pRdr->aKey, pRdr->nKey);
+        rc = sqlite3HctTreeDeleteKey(
+            pTCsr, csr.pRec, pRdr->iKey, pRdr->nKey, pRdr->aKey
+        );
+      }else if( op>0 ){
+        const u8 *aOld = 0;
+        int nOld = 0;
+        rc = sqlite3HctDbCsrData(csr.pCsr, &nOld, &aOld);
+        if( rc==SQLITE_OK ){
+          hctRecoverDebug(&csr, "insert", pRdr->iKey, aOld, nOld);
+          rc = sqlite3HctTreeInsert(pTCsr, csr.pRec,pRdr->iKey,nOld,aOld,0);
+        }
+      }
+    }
+  }
+  hctRecoverCursorClose(p, &csr);
+
+  return rc;
+}
+
+static int hctRecoverOneLog(HBtree *p, HctLogReader *pRdr){
+  int rc = SQLITE_OK;
 
   if( pRdr->bEof==0 ){
 
     assert( pRdr->iTid!=0 );
     sqlite3HctDbRollbackMode(p->pHctDb, 2);
     sqlite3HctDbRecoverTid(p->pHctDb, pRdr->iTid);
-    for(/* no-op */; pRdr->bEof==0; hctLogReaderNext(pRdr)){
-      int op = 0;
-
-      if( pRdr->iRoot!=iPrevRoot ){
-        iPrevRoot = pRdr->iRoot;
-        hctRecoverCursorClose(p, &csr);
-        rc = hctRecoverCursorOpen(p, pRdr->iRoot, &csr);
-      }
-
-      if( pRdr->nKey ){
-        assert( csr.pRec->pKeyInfo==csr.pKeyInfo);
-        sqlite3VdbeRecordUnpack(pRdr->nKey, pRdr->aKey, csr.pRec);
-      }
-      rc = sqlite3HctDbCsrRollbackSeek(csr.pCsr, csr.pRec, pRdr->iKey, &op);
-
-      if( rc==SQLITE_OK && op!=0 ){
-        HctTreeCsr *pTCsr = csr.pTreeCsr;
-        if( op<0 ){
-          /* rollback requires deleting the key */
-          hctRecoverDebug(&csr, "delete", pRdr->iKey, pRdr->aKey, pRdr->nKey);
-          rc = sqlite3HctTreeDeleteKey(
-              pTCsr, csr.pRec, pRdr->iKey, pRdr->nKey, pRdr->aKey
-          );
-        }else if( op>0 ){
-          const u8 *aOld = 0;
-          int nOld = 0;
-          rc = sqlite3HctDbCsrData(csr.pCsr, &nOld, &aOld);
-          if( rc==SQLITE_OK ){
-            hctRecoverDebug(&csr, "insert", pRdr->iKey, aOld, nOld);
-            rc = sqlite3HctTreeInsert(pTCsr, csr.pRec,pRdr->iKey,nOld,aOld,0);
-          }
-        }
-      }
-    }
-    hctRecoverCursorClose(p, &csr);
+    rc = hctRollbackLogKeys(p, pRdr);
 
     if( rc==SQLITE_OK ){
       rc = btreeFlushData(p, 0);
@@ -93368,6 +93414,23 @@ static int hctUnlinkLog(void *pCtx, const char *zFile){
   return ((unlink(zFile)==0) ? SQLITE_OK : SQLITE_IOERR_DELETE);
 }
 
+/*
+** Free the arrays cached by sqlite3HctJrnlFindLogs() or
+** sqlite3HctJrnlFindRollback().
+*/
+static void hctFreeJrnlCache(HBtree *p){
+  int ii;
+  for(ii=0; ii<p->nJrnlLog; ii++){
+    sqlite3_free(p->aJrnlLog[ii].aLogData);
+  }
+  sqlite3_free(p->aJrnlLog);
+  sqlite3_free(p->aJrnlMap);
+  p->aJrnlLog = 0;
+  p->aJrnlMap = 0;
+  p->nJrnlLog = 0;
+  p->nJrnlMap = 0;
+}
+
 static int hctAttemptRecovery(HBtree *p){
   int rc = SQLITE_OK;
   HctFile *pFile = sqlite3HctDbFile(p->pHctDb);
@@ -93430,21 +93493,113 @@ static int hctAttemptRecovery(HBtree *p){
     }
 
     /* Clean up arrays cached by sqlite3HctJrnlFindLogs() */
-    for(ii=0; ii<p->nJrnlLog; ii++){
-      sqlite3_free(p->aJrnlLog[ii].aLogData);
-    }
-    sqlite3_free(p->aJrnlLog);
-    sqlite3_free(p->aJrnlMap);
-    p->aJrnlLog = 0;
-    p->aJrnlMap = 0;
-    p->nJrnlLog = 0;
-    p->nJrnlMap = 0;
+    hctFreeJrnlCache(p);
 
     hctIntListZero(&lZero);
   }
 
   p->bRecoveryDone = (rc==SQLITE_OK);
 
+  return rc;
+}
+
+/*
+** Implementation of sqlite3_hct_journal_rollback(). The caller has already
+** checked that the main database of connection db is in FOLLOWER mode and
+** that there is no open transaction.
+**
+** Each transaction in the hct_journal table following the first gap is
+** rolled back, in descending order of CID. For each such transaction:
+**
+**   1) The keys written by the transaction are restored to their previous
+**      values, exactly as they are during recovery. These keys are written
+**      with the HCT_TID_ROLLBACK_OVERRIDE flag set.
+**
+**   2) The hct_journal entry is removed, also using an
+**      HCT_TID_ROLLBACK_OVERRIDE key. This is done after (1) has been
+**      flushed, so that if a crash occurs, recovery still finds the
+**      entry and finishes rolling back the transaction.
+**
+**   3) The tmap slot for the transaction is set to ROLLBACK, with the CID
+**      of the current FOLLOWER snapshot, so that the original keys are
+**      now ignored and the rollback keys are visible.
+**
+**   4) The HctJrnlServer.aCommit[] slot for the transaction is cleared.
+**
+** Until (3), the tmap slot for the transaction is COMMITTED with a CID
+** larger than that of any snapshot available to readers (as it follows the
+** gap). So neither the original nor rollback keys are visible to readers.
+** This is also why the pages containing the old versions of keys required
+** by (1) cannot have been reused.
+*/
+SQLITE_PRIVATE int sqlite3HctBtreeJrnlRollback(sqlite3 *db){
+  HBtree *p = (HBtree*)db->aDb[0].pBt;
+  HctFile *pFile = sqlite3HctDbFile(p->pHctDb);
+  i64 iJrnlRoot = sqlite3HctJrnlRoot(p->pHctJrnl);
+  u64 iSnap = 0;
+  int rc = SQLITE_OK;
+  int ii;
+
+  if( p->eTrans!=SQLITE_TXN_NONE ){
+    sqlite3ErrorWithMsg(db, SQLITE_ERROR,
+        "cannot roll back journal - SQL statements in progress"
+    );
+    return SQLITE_ERROR;
+  }
+  assert( p->nJrnlLog==0 && p->aJrnlLog==0 );
+
+  /* Load the logs for all transactions following the first gap. The
+  ** current snapshot is the CID of the last transaction before the gap.  */
+  iSnap = sqlite3HctJrnlSnapshot(p->pHctJrnl);
+  rc = sqlite3HctJrnlFindRollback(db, p->pHctJrnl,
+      (i64)(iSnap / HCT_CID_INCREMENT), (void*)p, hctCacheJrnlLog
+  );
+
+  if( rc==SQLITE_OK && p->nJrnlLog>0 ){
+    rc = sqlite3HctDbStartRead(p->pHctDb, p->pHctJrnl);
+    for(ii=0; rc==SQLITE_OK && ii<p->nJrnlLog; ii++){
+      HctJrnlLog *pJLog = &p->aJrnlLog[ii];
+      HctLogReader rdr;
+
+      sqlite3HctDbRollbackMode(p->pHctDb, 2);
+      sqlite3HctDbRecoverTid(p->pHctDb, pJLog->iTid);
+      sqlite3HctFileSetCurrentTid(pFile, pJLog->iTid);
+
+      /* Step 1 - roll back the data */
+      hctLogReaderJrnlOpen(pJLog, &rdr);
+      rc = hctRollbackLogKeys(p, &rdr);
+      if( rc==SQLITE_OK ){
+        rc = btreeFlushData(p, 0);
+      }
+      sqlite3HctTreeClear(p->pHctTree);
+
+      /* Step 2 - remove the hct_journal entry. This uses a log reader
+      ** with a single entry - the hct_journal key. */
+      if( rc==SQLITE_OK ){
+        memset(&rdr, 0, sizeof(rdr));
+        rdr.iTid = pJLog->iTid;
+        rdr.iRoot = iJrnlRoot;
+        rdr.iKey = pJLog->iCid;
+        rc = hctRollbackLogKeys(p, &rdr);
+        if( rc==SQLITE_OK ){
+          rc = btreeFlushData(p, 0);
+        }
+        sqlite3HctTreeClear(p->pHctTree);
+      }
+
+      sqlite3HctDbRollbackMode(p->pHctDb, 0);
+      sqlite3HctDbRecoverTid(p->pHctDb, 0);
+
+      /* Steps 3 and 4 */
+      if( rc==SQLITE_OK ){
+        sqlite3HctDbSetTmapRollback(p->pHctDb, pJLog->iTid, iSnap);
+        sqlite3HctJrnlRollbackCommit(p->pHctJrnl, pJLog->iCid);
+      }
+    }
+    sqlite3HctDbEndRead(p->pHctDb);
+  }
+
+  hctFreeJrnlCache(p);
   return rc;
 }
 
@@ -275712,7 +275867,7 @@ static void fts5SourceIdFunc(
 ){
   assert( nArg==0 );
   UNUSED_PARAM2(nArg, apUnused);
-  sqlite3_result_text(pCtx, "fts5: 2026-10-22 15:03:14 11f43371b5d66a46008920071c4e707d116b7d4957b42c900b2cbae7aa0115a1", -1, SQLITE_TRANSIENT);
+  sqlite3_result_text(pCtx, "fts5: 2026-10-28 14:52:42 cba71c08bcfddc65afd22075d73785be3077fef36ebad607dfa8dcbe8b061327", -1, SQLITE_TRANSIENT);
 }
 
 /*
@@ -285930,6 +286085,16 @@ SQLITE_PRIVATE u64 sqlite3HctFileAllocateTransid(HctFile *pFile){
 }
 
 /*
+** Set the "current TID" - the TID that pages freed by this connection
+** are associated with - to iTid. This is used when rolling back an
+** already committed transaction in FOLLOWER mode, so that pages freed
+** by the rollback are not reused until it is safe to do so.
+*/
+SQLITE_PRIVATE void sqlite3HctFileSetCurrentTid(HctFile *pFile, u64 iTid){
+  pFile->iCurrentTid = iTid;
+}
+
+/*
 ** Allocate and return a new CID value. The CID will be used to commit a
 ** transaction prepared against snapshot iSnapshot. If this means that
 ** no validation is required, set output parameter (*pbValidate) to 0.
@@ -290696,6 +290861,11 @@ static int hctDbInsertFlushWrite(HctDatabase *pDb, HctDbWriter *p){
   return rc;
 }
 
+/*
+** Put the database in "rollback" mode. eRollback==1 means regular rollback
+** mode, used for rolling back the current transaction. eRollback==2 means
+** recovery rollback.
+*/
 SQLITE_PRIVATE void sqlite3HctDbRollbackMode(HctDatabase *pDb, int eRollback){
   assert( eRollback==0 || pDb->eMode==HCT_MODE_NORMAL );
   pDb->pa.nWriteKey = 0;
@@ -294146,6 +294316,24 @@ SQLITE_PRIVATE void sqlite3HctDbSetTmapForRollback(HctDatabase *p){
   );
   /* Why VALIDATING? See header comment for this function... */
   HctAtomicStore(pEntry, p->iSnapshotId|HCT_TMAP_VALIDATING);
+}
+
+/*
+** This is called after a transaction that was committed in FOLLOWER mode
+** has been rolled back by sqlite3_hct_journal_rollback(). It sets the tmap
+** slot for transaction iTid to ROLLBACK|iCid. iCid must be a CID value
+** for which all HCT_TID_ROLLBACK_OVERRIDE keys written by the rollback
+** are visible - i.e. the current FOLLOWER mode snapshot.
+**
+** Until this is called the tmap slot for iTid remains COMMITTED, with a
+** CID value greater than that of any snapshot readers may use. So neither
+** the original keys written by iTid nor the HCT_TID_ROLLBACK_OVERRIDE keys
+** written by the rollback are visible to any reader.
+*/
+SQLITE_PRIVATE void sqlite3HctDbSetTmapRollback(HctDatabase *p, u64 iTid, u64 iCid){
+  u64 *pEntry = hctDbFindTMapEntry(p->pTmap, iTid);
+  HCT_EXTRA_WR_LOGGING(p, ("mapping %lld to %lld (ROLLBACK)", iTid, iCid));
+  HctAtomicStore(pEntry, iCid|HCT_TMAP_ROLLBACK);
 }
 
 static void hctDbFreeCsrList(HctDbCsr *pList){
@@ -299162,6 +299350,60 @@ SQLITE_PRIVATE int sqlite3HctJrnlZeroEntries(HctJournal *pJrnl, int nEntry, i64 
 }
 
 /*
+** See description in hctJrnlInt.h.
+*/
+SQLITE_PRIVATE int sqlite3HctJrnlFindRollback(
+  sqlite3 *db,
+  HctJournal *pJrnl,
+  i64 iCid,
+  void *pCtx,
+  int (*xLog)(void*, i64, int, const u8*)
+){
+  const char *zSql =
+    "SELECT cid, logptr FROM hct_journal WHERE cid>? ORDER BY cid DESC";
+  sqlite3_stmt *pSql = 0;
+  int bLeader = 0;
+  int rc = SQLITE_OK;
+
+  rc = sqlite3_prepare_v2(db, zSql, -1, &pSql, 0);
+  if( rc==SQLITE_OK ){
+    sqlite3_bind_int64(pSql, 1, iCid);
+    while( rc==SQLITE_OK && SQLITE_ROW==sqlite3_step(pSql) ){
+      i64 iEntryCid = sqlite3_column_int64(pSql, 0);
+      int nPtr = sqlite3_column_bytes(pSql, 1);
+      const u8 *aPtr = (const u8*)sqlite3_column_blob(pSql, 1);
+
+      if( nPtr!=SIZEOF_FOLLOWER_LOGPTR ){
+        /* Not an entry written in FOLLOWER mode. Cannot roll this back. */
+        bLeader = 1;
+        rc = SQLITE_ERROR;
+      }else{
+        rc = xLog(pCtx, iEntryCid, nPtr, aPtr);
+      }
+    }
+    hctJrnlFinalize(&rc, pSql);
+  }
+
+  if( bLeader ){
+    hctJournalSetDbError(db, rc, "cannot roll back non-FOLLOWER transaction");
+  }
+  return rc;
+}
+
+/*
+** See description in hctJrnlInt.h.
+*/
+SQLITE_PRIVATE void sqlite3HctJrnlRollbackCommit(HctJournal *pJrnl, i64 iCid){
+  HctJrnlServer *pServer = pJrnl->pServer;
+  u64 *pSlot = &pServer->aCommit[iCid % pServer->nCommit];
+  (void)HctCASBool(pSlot, (u64)iCid, (u64)0);
+}
+
+SQLITE_PRIVATE i64 sqlite3HctJrnlRoot(HctJournal *pJrnl){
+  return HctAtomicLoad(&pJrnl->pServer->iJrnlRoot);
+}
+
+/*
 ** Return true if currently inside a call to sqlite3_hct_journal_local_commit()
 */
 SQLITE_PRIVATE int sqlite3HctJrnlIsLocalCommit(HctJournal *pJrnl){
@@ -299304,6 +299546,39 @@ SQLITE_API int sqlite3_hct_journal_local_commit(sqlite3 *db){
   return rc;
 }
 
+/*
+** Roll back all transactions that follow the first gap in the hct_journal
+** table of a FOLLOWER mode database, and remove their entries from the
+** hct_journal table. This leaves the database and hct_journal table in
+** the same state as if the process had crashed and been restarted.
+**
+** The caller must ensure that no other connection writes to the database
+** while this function is running. Concurrent readers are permitted.
+*/
+SQLITE_API int sqlite3_hct_journal_rollback(sqlite3 *db){
+  HctJournal *pJrnl = 0;
+  int rc = SQLITE_OK;
+
+  if( sqlite3_get_autocommit(db)==0 ){
+    hctJournalSetDbError(
+        db, SQLITE_ERROR, "cannot roll back journal - transaction is open"
+    );
+    return SQLITE_ERROR;
+  }
+
+  /* Ensure the db is fully initialized (and recovery run, if required). */
+  rc = sqlite3_exec(db, "SELECT 1 FROM sqlite_schema LIMIT 1", 0, 0, 0);
+  if( rc!=SQLITE_OK ) return rc;
+
+  /* Check the db really is an hctree database in FOLLOWER mode */
+  pJrnl = sqlite3HctJrnlFind(db);
+  if( pJrnl==0 || pJrnl->pServer->eMode!=SQLITE_HCT_FOLLOWER ){
+    hctJournalSetDbError(db, SQLITE_ERROR, "not a FOLLOWER mode db");
+    return SQLITE_ERROR;
+  }
+
+  return sqlite3HctBtreeJrnlRollback(db);
+}
 
 /************** End of hct_journal.c *****************************************/
 /************** Begin file hct_log.c *****************************************/
