@@ -169,11 +169,11 @@ SQLiteNode::~SQLiteNode()
 
 SQLite::ReplicationInfo SQLiteNode::_getReplicationInfo(const SData& message)
 {
-    const uint64_t id = SToUInt64(message.isSet("ID") ? message["ID"] : message["NewCount"]);
+    const SQLite::CommitID id = SToUInt64(message.isSet("ID") ? message["ID"] : message["NewCount"]);
     if (!id) {
         STHROW("invalid transaction ID");
     }
-    const uint64_t snapshot = message.isSet("Snapshot") ? SToUInt64(message["Snapshot"]) : id - 1;
+    const SQLite::HCTJournalSnapshotID snapshot = message.isSet("Snapshot") ? SToUInt64(message["Snapshot"]) : id - 1;
     if (snapshot >= id) {
         STHROW("invalid Snapshot");
     }
@@ -218,7 +218,7 @@ SQLiteNode::ReplicationQueue::iterator SQLiteNode::_nextReplication()
     if (_replicateAbort || (_replicateThreadShouldExitTime && _replicateThreadShouldExitTime < STimeNow())) {
         return _replicateQueue.end();
     }
-    const uint64_t contiguous = _db.getCommitCount();
+    const SQLite::CommitID contiguous = _db.getCommitCount();
     if (!_db.isExperimentalHCTree()) {
         const auto first = _replicateQueue.begin();
         return _replicating.empty() && first != _replicateQueue.end() && first->first == contiguous + 1 ?
@@ -280,7 +280,7 @@ void SQLiteNode::_replicate(size_t threadID)
     while (true) {
         SQLitePeer* peer = nullptr;
         SData command;
-        uint64_t commitID = 0;
+        SQLite::CommitID commitID = 0;
         {
             unique_lock<mutex> lock(_replicateMutex);
             while (true) {
@@ -2006,7 +2006,7 @@ void SQLiteNode::_recvSynchronize(SQLitePeer* peer, const SData& message)
         STHROW("invalid NumCommits");
     }
     vector<SData> transactions;
-    uint64_t expectedID = _db.getCommitCount() + 1;
+    SQLite::CommitID expectedID = _db.getCommitCount() + 1;
     SData commit;
     const char* content = message.content.c_str();
     int messageSize = 0;

@@ -1405,7 +1405,7 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash, chrono::m
 
     // Serialized commits allocate the next ID. Parallel follower commits retain the received ID instead.
     const uint64_t commitCount = _sharedData.commitCount;
-    const uint64_t commitID = _replication.has_value() ? _replication.value().commitID : commitCount + 1;
+    const CommitID commitID = _replication.has_value() ? _replication.value().commitID : commitCount + 1;
     if (!parallelFollower && commitID != commitCount + 1) {
         STHROW("Replication commit ID is not contiguous");
     }
@@ -1500,8 +1500,8 @@ int SQLite::commit(uint64_t& journalCommitID, const string& description, const s
     if (_hctree && hctreeExperimentalMode) {
         const string journalData = _uncommittedHash + ":" + _uncommittedQuery;
         if (_sharedData.hctreeFollowerMode) {
-            const uint64_t cid = _replication.has_value() ? _replication.value().commitID : _sharedData.commitCount + 1;
-            const uint64_t snapshot = _replication.has_value() ? _replication.value().snapshot : _sharedData.commitCount.load();
+            const CommitID cid = _replication.has_value() ? _replication.value().commitID : _sharedData.commitCount + 1;
+            const HCTJournalSnapshotID snapshot = _replication.has_value() ? _replication.value().snapshot : _sharedData.commitCount.load();
             result = sqlite3_hct_journal_follower_commit(_db,
                 reinterpret_cast<const unsigned char*>(journalData.data()), journalData.size(),
                 cid, snapshot);

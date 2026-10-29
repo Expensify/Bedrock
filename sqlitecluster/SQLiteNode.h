@@ -179,7 +179,7 @@ public:
     int setPriority(int newPriority);
 
 private:
-    using ReplicationQueue = map<uint64_t, pair<SQLitePeer*, SData>>;
+    using ReplicationQueue = map<SQLite::CommitID, pair<SQLitePeer*, SData>>;
 
     // The minimum frequency of FOLLOWER_STATUS messages we'll send when following, back to leader, to indicate our own current synchronization state.
     // This is expressed as "every Nth message", where e.g., if MIN_APPROVE_FREQUENCY is 10, we will respond to at least every 10th TRANSACTION message.
@@ -390,8 +390,8 @@ private:
     ReplicationQueue _replicateQueue;
 
     // Snapshot/ID pairs let workers find ready work without scanning a backlog of dependency-blocked commits.
-    set<pair<uint64_t, uint64_t>> _replicationDependencies;
-    set<uint64_t> _replicating;
+    set<pair<SQLite::HCTJournalSnapshotID, SQLite::CommitID>> _replicationDependencies;
+    set<SQLite::CommitID> _replicating;
     string _replicationError;
     atomic<bool> _replicateAbort{false};
     atomic<uint64_t> _replicateThreadShouldExitTime;
