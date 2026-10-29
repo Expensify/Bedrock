@@ -10,6 +10,7 @@
 #include <unistd.h>
 #include <cstring>
 #include <filesystem>
+#include <future>
 #include <thread>
 
 class SQLiteNodeTester {
@@ -74,6 +75,7 @@ struct SQLiteNodeTest : tpunit::TestFixture
                                            BEFORE_CLASS(SQLiteNodeTest::setup),
                                            AFTER_CLASS(SQLiteNodeTest::teardown),
                                            AFTER(SQLiteNodeTest::rollback),
+                                           TEST(SQLiteNodeTest::testPoolReservesReplicationCapacity),
                                            TEST(SQLiteNodeTest::testFindSyncPeer),
                                            TEST(SQLiteNodeTest::testCommandPortBlockedForWALSize),
                                            TEST(SQLiteNodeTest::testForwardingSkipsBlockedPeers),
@@ -108,7 +110,7 @@ struct SQLiteNodeTest : tpunit::TestFixture
         // This exposes just enough to test the peer selection logic.
         int fd = mkstemp(filename);
         close(fd);
-        dbPool = make_shared<SQLitePool>(10, filename, 1000000, 5000, 0, 0, BedrockTester::ENABLE_HCTREE);
+        dbPool = make_shared<SQLitePool>(0, filename, 1000000, 5000, 0, 0, BedrockTester::ENABLE_HCTREE);
     }
 
     void teardown()
@@ -135,7 +137,30 @@ struct SQLiteNodeTest : tpunit::TestFixture
     void restartDB()
     {
         dbPool.reset();
-        dbPool = make_shared<SQLitePool>(10, filename, 1000000, 5000, 0, 0, BedrockTester::ENABLE_HCTREE);
+        dbPool = make_shared<SQLitePool>(0, filename, 1000000, 5000, 0, 0, BedrockTester::ENABLE_HCTREE);
+    }
+
+    void testPoolReservesReplicationCapacity()
+    {
+        SQLiteScopedHandle pluginHandle(*dbPool, dbPool->getIndex(false));
+        vector<size_t> reservedIndices;
+        for (size_t i = 0; i < SQLiteNode::PARALLEL_REPLICATION_THREADS + 1; ++i) {
+            auto next = async(launch::async, [this]() { return dbPool->getIndex(false); });
+            const auto status = next.wait_for(chrono::seconds(5));
+            EXPECT_TRUE(status == future_status::ready);
+            if (status != future_status::ready) {
+                // Release a slot so a capacity regression cannot leave the test waiting forever.
+                pluginHandle.release();
+            }
+            reservedIndices.push_back(next.get());
+            if (status != future_status::ready) {
+                break;
+            }
+        }
+        EXPECT_EQUAL(reservedIndices.size(), SQLiteNode::PARALLEL_REPLICATION_THREADS + 1);
+        for (size_t index : reservedIndices) {
+            dbPool->returnToPool(index);
+        }
     }
 
     void testFindSyncPeer()
