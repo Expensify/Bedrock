@@ -393,7 +393,7 @@ private:
     // Each commit is dependent upon a particular snapshot. We store these in order with the snapshot included to
     // make it easy to tell when we cannot yet apply a commit (when we do not have the required snapshot yet).
     set<pair<SQLite::HCTJournalSnapshotID, SQLite::CommitID>> _replicationDependencies;
-    set<SQLite::CommitID> _replicating;
+    set<SQLite::CommitID> _inFlightCommitIDs;
     string _replicationError;
     atomic<bool> _replicateAbort{false};
     atomic<chrono::steady_clock::time_point> _replicateThreadShouldExitTime{};
