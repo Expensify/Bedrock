@@ -86,6 +86,7 @@ struct SQLiteNodeTest : tpunit::TestFixture
                                            TEST(SQLiteNodeTest::testBlankCommitFailure),
                                            TEST(SQLiteNodeTest::testGUIDHashFailures),
                                            TEST(SQLiteNodeTest::testReplicationRequiresLeader),
+                                           TEST(SQLiteNodeTest::testReplicationShutdownDeadline),
                                            TEST(SQLiteNodeTest::testSynchronizeCommitFailure),
                                            TEST(SQLiteNodeTest::testSynchronizeWriteFailure),
                                            TEST(SQLiteNodeTest::testSynchronizeConstraintFailure),
@@ -788,6 +789,32 @@ struct SQLiteNodeTest : tpunit::TestFixture
         EXPECT_EQUAL(db.getCommitCount(), commitCount);
         EXPECT_EQUAL(db.getCommittedHash(), committedHash);
         EXPECT_EQUAL(db.read("SELECT COUNT(*) FROM sqlite_master WHERE name = 'nonLeaderTransaction';"), "0");
+    }
+
+    void testReplicationShutdownDeadline()
+    {
+        SQLiteNode node(server, dbPool, "test", "", peerList, configuredPriority, maxOutstandingWALFrames, 1000000000, "1.0");
+        EXPECT_TRUE(node._replicateThreadShouldExitTime.load() == chrono::steady_clock::time_point{});
+
+        const SQLite::CommitID commitID = dbPool->getBase().getCommitCount() + 1;
+        {
+            lock_guard<mutex> lock(node._replicateMutex);
+            node._replicateQueue.try_emplace(commitID, nullptr, SData{});
+            node._replicationDependencies.emplace(commitID - 1, commitID);
+            EXPECT_TRUE(node._nextReplication() != node._replicateQueue.end());
+
+            node._replicateThreadShouldExitTime.store(chrono::steady_clock::now() + chrono::seconds(10));
+            EXPECT_TRUE(node._nextReplication() != node._replicateQueue.end());
+
+            node._replicateThreadShouldExitTime.store(chrono::steady_clock::now() - chrono::seconds(1));
+            EXPECT_TRUE(node._nextReplication() == node._replicateQueue.end());
+
+            node._replicateQueue.clear();
+            node._replicationDependencies.clear();
+        }
+
+        node._stopReplication();
+        EXPECT_TRUE(node._replicateThreadShouldExitTime.load() == chrono::steady_clock::time_point{});
     }
 
     void testReplicationFailure(const string& failure)
