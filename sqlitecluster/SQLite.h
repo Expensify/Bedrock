@@ -204,7 +204,7 @@ private:
     struct ReplicationInfo
     {
         CommitID commitID;
-        HCTJournalSnapshotID snapshot;
+        HCTJournalSnapshotID hctJournalSnapshotID;
     };
 
     // Prepare to commit or rollback the transaction. This also inserts the current uncommitted query into the
@@ -592,7 +592,7 @@ private:
     // A blank journal entry is prepared even though both its query and hash are empty.
     bool _prepared = false;
 
-    optional<ReplicationInfo> _replication;
+    optional<ReplicationInfo> _replicationInfo;
 
     // The new query and new hash to add to the journal for a transaction that's nearing completion, before we commit
     // it. During query execution _uncommittedQuery is the raw concatenated SQL; prepare() replaces it in place with

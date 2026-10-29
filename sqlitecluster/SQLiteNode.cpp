@@ -79,7 +79,11 @@ atomic<bool> SQLiteNode::NODE_KILLED{false};
 const uint64_t SQLiteNode::RECV_TIMEOUT{STIME_US_PER_S* 30};
 
 const size_t SQLiteNode::MIN_APPROVE_FREQUENCY{10};
-const size_t SQLiteNode::PARALLEL_REPLICATION_THREADS{16};
+const size_t SQLiteNode::PARALLEL_REPLICATION_THREADS{
+    // This is fairly arbirtary, and open to later adjustment. Use half the cores available on the machine,
+    // but at least 2 and not more than 16 threads.
+    clamp<size_t>(thread::hardware_concurrency() / 2, 2, 16)
+};
 const uint64_t SQLiteNode::MAX_REPLICATION_AHEAD{4096};
 
 const vector<SQLitePeer*> SQLiteNode::_initPeers(const string& peerListString)
@@ -189,7 +193,7 @@ void SQLiteNode::_enqueueReplication(SQLitePeer* peer, SData message)
         STHROW("blank journal entry has a nonblank query");
     }
     message["ID"] = to_string(info.commitID);
-    message["Snapshot"] = to_string(info.snapshot);
+    message["Snapshot"] = to_string(info.hctJournalSnapshotID);
     bool inserted;
     {
         lock_guard<mutex> lock(_replicateMutex);
@@ -199,7 +203,7 @@ void SQLiteNode::_enqueueReplication(SQLitePeer* peer, SData message)
         inserted = info.commitID > _db.getCommitCount() &&
             _replicateQueue.try_emplace(info.commitID, peer, move(message)).second;
         if (inserted && _db.isExperimentalHCTree()) {
-            _replicationDependencies.emplace(info.snapshot, info.commitID);
+            _replicationDependencies.emplace(info.hctJournalSnapshotID, info.commitID);
         }
     }
     if (!inserted) {
@@ -221,8 +225,13 @@ SQLiteNode::ReplicationQueue::iterator SQLiteNode::_nextReplication()
     const SQLite::CommitID contiguous = _db.getCommitCount();
     if (!_db.isExperimentalHCTree()) {
         const auto first = _replicateQueue.begin();
-        return _replicating.empty() && first != _replicateQueue.end() && first->first == contiguous + 1 ?
-               first : _replicateQueue.end();
+        if (!_inFlightCommitIDs.empty() || first == _replicateQueue.end()) {
+            return _replicateQueue.end();
+        }
+        if (first->first != contiguous + 1) {
+            return _replicateQueue.end();
+        }
+        return first;
     }
     for (const auto& [snapshot, id] : _replicationDependencies) {
         if (snapshot > contiguous) {
@@ -254,6 +263,7 @@ void SQLiteNode::_startReplication()
 void SQLiteNode::_stopReplication()
 {
     {
+        // Allo 10 seconds for remaining replication threads to finish before we give up and empty the queue.
         lock_guard<mutex> lock(_replicateMutex);
         _replicateThreadShouldExitTime.store(chrono::steady_clock::now() + chrono::seconds(10));
     }
@@ -268,7 +278,7 @@ void SQLiteNode::_stopReplication()
         _replicateQueue.clear();
     }
     _replicationDependencies.clear();
-    SASSERT(_replicating.empty());
+    SASSERT(_inFlightCommitIDs.empty());
     _replicateThreadShouldExitTime.store(chrono::steady_clock::time_point{});
     _replicateAbort = false;
     _replicationError.clear();
@@ -290,12 +300,12 @@ void SQLiteNode::_replicate(size_t threadID)
                     peer = next->second.first;
                     command = move(next->second.second);
                     _replicationDependencies.erase({command.calcU64("Snapshot"), commitID});
-                    _replicating.emplace(commitID);
+                    _inFlightCommitIDs.emplace(commitID);
                     break;
                 }
                 const auto exitTime = _replicateThreadShouldExitTime.load();
                 if (_replicateAbort || (exitTime != chrono::steady_clock::time_point{} &&
-                                        (_replicating.empty() || exitTime < chrono::steady_clock::now()))) {
+                                        (_inFlightCommitIDs.empty() || exitTime < chrono::steady_clock::now()))) {
                     return;
                 }
                 if (exitTime != chrono::steady_clock::time_point{}) {
@@ -346,7 +356,7 @@ void SQLiteNode::_replicate(size_t threadID)
         }
         {
             lock_guard<mutex> lock(_replicateMutex);
-            _replicating.erase(commitID);
+            _inFlightCommitIDs.erase(commitID);
             _replicateQueue.erase(_replicateQueue.begin(), _replicateQueue.upper_bound(_db.getCommitCount()));
         }
         _replicateCV.notify_all();
@@ -2054,7 +2064,7 @@ void SQLiteNode::_recvSynchronize(SQLitePeer* peer, const SData& message)
     }
     unique_lock<mutex> lock(_replicateMutex);
     if (!_replicateCV.wait_for(lock, chrono::microseconds(RECV_TIMEOUT), [&]() {
-        return !_replicationError.empty() || (_replicateQueue.empty() && _replicating.empty());
+        return !_replicationError.empty() || (_replicateQueue.empty() && _inFlightCommitIDs.empty());
     })) {
         _replicateAbort = true;
         _replicateCV.notify_all();

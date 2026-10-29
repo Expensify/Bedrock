@@ -1302,7 +1302,7 @@ bool SQLite::_writeIdempotent(const string& query, const map<string, Parameter>&
     return true;
 }
 
-bool SQLite::prepare(uint64_t* transactionID, string* transactionhash, chrono::microseconds commitLockTimeout, atomic<bool>* abortPtr, const optional<string>& replicationGUID, const optional<ReplicationInfo>& replication)
+bool SQLite::prepare(uint64_t* transactionID, string* transactionhash, chrono::microseconds commitLockTimeout, atomic<bool>* abortPtr, const optional<string>& replicationGUID, const optional<ReplicationInfo>& replicationInfo)
 {
     SASSERT(_insideTransaction);
     SASSERT(!_prepared);
@@ -1318,10 +1318,10 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash, chrono::m
         return false;
     }
 
-    _replication = replication;
-    const bool parallelFollower = _replication.has_value() && isExperimentalHCTree() && _sharedData.hctreeFollowerMode;
-    if (_replication.has_value() && (!_replication.value().commitID ||
-                                     _replication.value().snapshot >= _replication.value().commitID)) {
+    _replicationInfo = replicationInfo;
+    const bool parallelFollower = _replicationInfo.has_value() && isExperimentalHCTree() && _sharedData.hctreeFollowerMode;
+    if (_replicationInfo.has_value() && (!_replicationInfo.value().commitID ||
+                                     _replicationInfo.value().hctJournalSnapshotID >= _replicationInfo.value().commitID)) {
         STHROW("Invalid replication ID or snapshot");
     }
 
@@ -1405,7 +1405,7 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash, chrono::m
 
     // Serialized commits allocate the next ID. Parallel follower commits retain the received ID instead.
     const uint64_t commitCount = _sharedData.commitCount;
-    const CommitID commitID = _replication.has_value() ? _replication.value().commitID : commitCount + 1;
+    const CommitID commitID = _replicationInfo.has_value() ? _replicationInfo.value().commitID : commitCount + 1;
     if (!parallelFollower && commitID != commitCount + 1) {
         STHROW("Replication commit ID is not contiguous");
     }
@@ -1431,7 +1431,7 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash, chrono::m
     }
 
     // Stash the (now possibly compressed) query so SQLiteNode can ship it to peers without re-compressing.
-    if (!_replication.has_value()) {
+    if (!_replicationInfo.has_value()) {
         _sharedData.prepareTransactionInfo(commitID, _uncommittedQuery, _uncommittedHash);
     }
 
@@ -1500,8 +1500,8 @@ int SQLite::commit(uint64_t& journalCommitID, const string& description, const s
     if (_hctree && hctreeExperimentalMode) {
         const string journalData = _uncommittedHash + ":" + _uncommittedQuery;
         if (_sharedData.hctreeFollowerMode) {
-            const CommitID cid = _replication.has_value() ? _replication.value().commitID : _sharedData.commitCount + 1;
-            const HCTJournalSnapshotID snapshot = _replication.has_value() ? _replication.value().snapshot : _sharedData.commitCount.load();
+            const CommitID cid = _replicationInfo.has_value() ? _replicationInfo.value().commitID : _sharedData.commitCount + 1;
+            const HCTJournalSnapshotID snapshot = _replicationInfo.has_value() ? _replicationInfo.value().hctJournalSnapshotID : _sharedData.commitCount.load();
             result = sqlite3_hct_journal_follower_commit(_db,
                 reinterpret_cast<const unsigned char*>(journalData.data()), journalData.size(),
                 cid, snapshot);
@@ -1565,7 +1565,7 @@ int SQLite::commit(uint64_t& journalCommitID, const string& description, const s
     _lastConflictLocation = _conflictLocation;
 
     // If there were conflicting commits, will return SQLITE_BUSY_SNAPSHOT
-    SASSERT(_replication.has_value() || result == SQLITE_OK || result == SQLITE_BUSY_SNAPSHOT);
+    SASSERT(_replicationInfo.has_value() || result == SQLITE_OK || result == SQLITE_BUSY_SNAPSHOT);
     if (result == SQLITE_OK) {
         char time[16];
         snprintf(time, 16, "%.2fms", (double) (STimeNow() - beforeCommit) / 1000.0);
@@ -1589,7 +1589,7 @@ int SQLite::commit(uint64_t& journalCommitID, const string& description, const s
         }
         _totalTransactionElapsed = _transactionTimer.stop();
         if (journalCommitID) {
-            if (_replication.has_value()) {
+            if (_replicationInfo.has_value()) {
                 _sharedData.recordReplicationCommit(journalCommitID, _uncommittedHash);
             } else {
                 _sharedData.incrementCommit(_uncommittedHash);
@@ -1600,7 +1600,7 @@ int SQLite::commit(uint64_t& journalCommitID, const string& description, const s
         }
         _insideTransaction = false;
         _prepared = false;
-        _replication.reset();
+        _replicationInfo.reset();
         _uncommittedHash.clear();
         _uncommittedQuery.clear();
 
@@ -1729,7 +1729,7 @@ void SQLite::rollback(const string& commandName)
         // Finally done with this.
         _insideTransaction = false;
         _prepared = false;
-        _replication.reset();
+        _replicationInfo.reset();
         _uncommittedHash.clear();
         _uncommittedQuery.clear();
 

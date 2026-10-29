@@ -246,7 +246,7 @@ private:
     // Stores the `CommandPortBlocked` header from a LOGIN or STATE message on the peer.
     void _updatePeerCommandPortBlocked(SQLitePeer* peer, const SData& message);
 
-    // A single replication thread serially applies replicated commits, except experimental HC-Tree uses 16 workers.
+    // A single replication thread serially applies replicated commits, except experimental HC-Tree nodes use 16 threads.
     void _replicate(size_t threadID);
     void _startReplication();
     void _stopReplication();
@@ -390,7 +390,8 @@ private:
     // Keep IDs reserved through application and out-of-order completion until contiguous progress covers them.
     ReplicationQueue _replicateQueue;
 
-    // Snapshot/ID pairs let workers find ready work without scanning a backlog of dependency-blocked commits.
+    // Each commit is dependent upon a particular snapshot. We store these in order with the snapshot included to
+    // make it easy to tell when we cannot yet apply a commit (when we do not have the required snapshot yet).
     set<pair<SQLite::HCTJournalSnapshotID, SQLite::CommitID>> _replicationDependencies;
     set<SQLite::CommitID> _replicating;
     string _replicationError;

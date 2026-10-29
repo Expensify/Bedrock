@@ -38,8 +38,10 @@ private:
     // system-imposed limits on FDs.
     size_t _maxDBs;
 
-    struct SharedDataCleanup
+    // RAII scope management class that calls clearSharedData() for the given filename when this pool is destroyed.
+    class SharedDataCleanup
     {
+    public:
         string filename;
         ~SharedDataCleanup();
     };
