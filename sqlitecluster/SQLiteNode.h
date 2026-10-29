@@ -5,6 +5,7 @@
 #include <sqlitecluster/SQLite.h>
 #include <sqlitecluster/SQLitePool.h>
 
+#include <chrono>
 #include <mutex>
 #include <condition_variable>
 #include <thread>
@@ -394,5 +395,5 @@ private:
     set<SQLite::CommitID> _replicating;
     string _replicationError;
     atomic<bool> _replicateAbort{false};
-    atomic<uint64_t> _replicateThreadShouldExitTime;
+    atomic<chrono::steady_clock::time_point> _replicateThreadShouldExitTime{};
 };

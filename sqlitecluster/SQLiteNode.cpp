@@ -143,8 +143,7 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, const shared_ptr<SQLitePool>& dbPoo
     _stateChangeCount(0),
     _stateTimeout(STimeNow() + firstTimeout),
     _syncPeer(nullptr),
-    pluginDB(*dbPool, dbPool->getIndex()),
-    _replicateThreadShouldExitTime(0)
+    pluginDB(*dbPool, dbPool->getIndex())
 {
     KILLABLE_SQLITE_NODE = this;
     SASSERT(_configuredPriority >= 0);
@@ -194,7 +193,7 @@ void SQLiteNode::_enqueueReplication(SQLitePeer* peer, SData message)
     bool inserted;
     {
         lock_guard<mutex> lock(_replicateMutex);
-        if (_replicateThreadShouldExitTime || _replicateAbort) {
+        if (_replicateThreadShouldExitTime.load() != chrono::steady_clock::time_point{} || _replicateAbort) {
             STHROW("replication is stopping");
         }
         inserted = info.commitID > _db.getCommitCount() &&
@@ -215,7 +214,8 @@ void SQLiteNode::_enqueueReplication(SQLitePeer* peer, SData message)
 
 SQLiteNode::ReplicationQueue::iterator SQLiteNode::_nextReplication()
 {
-    if (_replicateAbort || (_replicateThreadShouldExitTime && _replicateThreadShouldExitTime < STimeNow())) {
+    const auto exitTime = _replicateThreadShouldExitTime.load();
+    if (_replicateAbort || (exitTime != chrono::steady_clock::time_point{} && exitTime < chrono::steady_clock::now())) {
         return _replicateQueue.end();
     }
     const SQLite::CommitID contiguous = _db.getCommitCount();
@@ -255,7 +255,7 @@ void SQLiteNode::_stopReplication()
 {
     {
         lock_guard<mutex> lock(_replicateMutex);
-        _replicateThreadShouldExitTime = STimeNow() + 10'000'000;
+        _replicateThreadShouldExitTime.store(chrono::steady_clock::now() + chrono::seconds(10));
     }
     _replicateCV.notify_all();
     for (auto& worker : _replicateThreads) {
@@ -269,7 +269,7 @@ void SQLiteNode::_stopReplication()
     }
     _replicationDependencies.clear();
     SASSERT(_replicating.empty());
-    _replicateThreadShouldExitTime = 0;
+    _replicateThreadShouldExitTime.store(chrono::steady_clock::time_point{});
     _replicateAbort = false;
     _replicationError.clear();
 }
@@ -293,11 +293,12 @@ void SQLiteNode::_replicate(size_t threadID)
                     _replicating.emplace(commitID);
                     break;
                 }
-                if (_replicateAbort || (_replicateThreadShouldExitTime &&
-                                        (_replicating.empty() || _replicateThreadShouldExitTime < STimeNow()))) {
+                const auto exitTime = _replicateThreadShouldExitTime.load();
+                if (_replicateAbort || (exitTime != chrono::steady_clock::time_point{} &&
+                                        (_replicating.empty() || exitTime < chrono::steady_clock::now()))) {
                     return;
                 }
-                if (_replicateThreadShouldExitTime) {
+                if (exitTime != chrono::steady_clock::time_point{}) {
                     _replicateCV.wait_for(lock, chrono::milliseconds(10));
                 } else {
                     _replicateCV.wait(lock);
@@ -325,8 +326,9 @@ void SQLiteNode::_replicate(size_t threadID)
                         break;
                     }
                     db.rollback();
+                    const auto exitTime = _replicateThreadShouldExitTime.load();
                     if (result != SQLITE_BUSY_SNAPSHOT || !db.isExperimentalHCTree() || STimeNow() >= retryDeadline ||
-                        (_replicateThreadShouldExitTime && _replicateThreadShouldExitTime < STimeNow())) {
+                        (exitTime != chrono::steady_clock::time_point{} && exitTime < chrono::steady_clock::now())) {
                         STHROW("commit failed: " + to_string(result));
                     }
                     this_thread::sleep_for(chrono::milliseconds(1));
