@@ -423,7 +423,9 @@ void BedrockServer::sync()
 
     // The custom deleter signals only after the pool and all its database handles have been destroyed.
     SINFO("Waiting for DB pool destruction.");
-    dbPoolDestructionComplete.wait();
+    while (dbPoolDestructionComplete.wait_for(chrono::seconds(5)) != future_status::ready) {
+        SWARN("Still waiting for DB pool destruction.");
+    }
     SINFO("DB pool destroyed.");
 
     // If we're not detaching, save that we're shutting down.
