@@ -198,10 +198,13 @@ private:
 
     const set<string>& getTablesUsed() const;
 
+    using CommitID = uint64_t;
+    using HCTJournalSnapshotID = uint64_t;
+
     struct ReplicationInfo
     {
-        uint64_t commitID;
-        uint64_t snapshot;
+        CommitID commitID;
+        HCTJournalSnapshotID snapshot;
     };
 
     // Prepare to commit or rollback the transaction. This also inserts the current uncommitted query into the
