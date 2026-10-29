@@ -41,7 +41,7 @@ private:
     // RAII scope management class that calls clearSharedData() for the given filename when this pool is destroyed.
     class SharedDataCleanup
     {
-    public:
+public:
         string filename;
         ~SharedDataCleanup();
     };

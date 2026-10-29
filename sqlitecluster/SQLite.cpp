@@ -1321,7 +1321,7 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash, chrono::m
     _replicationInfo = replicationInfo;
     const bool parallelFollower = _replicationInfo.has_value() && isExperimentalHCTree() && _sharedData.hctreeFollowerMode;
     if (_replicationInfo.has_value() && (!_replicationInfo.value().commitID ||
-                                     _replicationInfo.value().hctJournalSnapshotID >= _replicationInfo.value().commitID)) {
+                                         _replicationInfo.value().hctJournalSnapshotID >= _replicationInfo.value().commitID)) {
         STHROW("Invalid replication ID or snapshot");
     }
 

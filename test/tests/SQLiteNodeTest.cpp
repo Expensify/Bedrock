@@ -146,7 +146,9 @@ struct SQLiteNodeTest : tpunit::TestFixture
         SQLiteScopedHandle pluginHandle(*dbPool, dbPool->getIndex(false));
         vector<size_t> reservedIndices;
         for (size_t i = 0; i < SQLiteNode::PARALLEL_REPLICATION_THREADS + 1; ++i) {
-            auto next = async(launch::async, [this]() { return dbPool->getIndex(false); });
+            auto next = async(launch::async, [this]() {
+                return dbPool->getIndex(false);
+                                                                                        });
             const auto status = next.wait_for(chrono::seconds(5));
             EXPECT_TRUE(status == future_status::ready);
             if (status != future_status::ready) {
