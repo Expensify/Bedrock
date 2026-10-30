@@ -8,7 +8,16 @@ import subprocess
 import sys
 import tempfile
 
+from dataclasses import asdict, dataclass
 from pathlib import Path
+
+
+@dataclass
+class CompileCommand:
+    directory: str
+    file: str
+    arguments: list[str]
+    output: str
 
 
 def makeEnvironment():
@@ -50,17 +59,17 @@ def generate(make):
             continue
         source = arguments[arguments.index('-c') + 1]
         output = arguments[arguments.index('-o') + 1]
-        commands.append({
-            'directory': os.getcwd(),
-            'file': source,
-            'arguments': arguments,
-            'output': output,
-        })
+        commands.append(CompileCommand(
+            directory=os.getcwd(),
+            file=source,
+            arguments=arguments,
+            output=output,
+        ))
 
     if not commands:
         raise ValueError('Make did not produce any compilation commands')
-    commands.sort(key=lambda command: (command['file'], command['output']))
-    contents = json.dumps(commands, indent=2) + '\n'
+    commands.sort(key=lambda command: (command.file, command.output))
+    contents = json.dumps([asdict(command) for command in commands], indent=2) + '\n'
     destination = Path('compile_commands.json')
     if destination.exists() and destination.read_text() == contents:
         return
