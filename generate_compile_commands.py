@@ -56,6 +56,7 @@ def generate(make):
             'arguments': arguments,
             'output': output,
         })
+
     if not commands:
         raise ValueError('Make did not produce any compilation commands')
     commands.sort(key=lambda command: (command['file'], command['output']))
