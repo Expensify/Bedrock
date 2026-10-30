@@ -86,6 +86,14 @@ int sqlite3_hct_journal_snapshot(sqlite3 *db, sqlite3_int64 *piCid);
 */
 int sqlite3_hct_journal_local_commit(sqlite3 *db);
 
+/*
+** FOLLOWER mode only. Roll back all transactions that follow the first
+** gap in the hct_journal table and remove their hct_journal entries,
+** leaving a contiguous journal. Return SQLITE_OK if successful or an
+** SQLite error code otherwise.
+*/
+int sqlite3_hct_journal_rollback(sqlite3 *db);
+
 
 /*
 ** Testing APIs
