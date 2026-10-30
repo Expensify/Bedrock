@@ -24,6 +24,7 @@ def makeEnvironment():
             continue
         for flag in option.lstrip('-'):
             if flag in 'CfIjloOW':
+                # These arguments aren't relevant to the dry-run, ignore them
                 break
             if flag in 'erR':
                 semanticFlags += flag
