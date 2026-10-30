@@ -1052,3 +1052,59 @@ struct SQLiteNodeTest : tpunit::TestFixture
         }
     }
 } __SQLiteNodeTest;
+
+struct SQLiteNodeJournalRollbackTest : tpunit::TestFixture
+{
+    SQLiteNodeJournalRollbackTest() : tpunit::TestFixture("SQLiteNodeJournalRollback",
+                                                          TEST(SQLiteNodeJournalRollbackTest::testFollowerJournalRollback))
+    {
+    }
+
+    void testFollowerJournalRollback()
+    {
+        // Experimental mode is process-wide, so isolate it from concurrently running fixtures.
+        if (!getenv("BEDROCK_TEST_JOURNAL_ROLLBACK")) {
+            ASSERT_EQUAL(system(("BEDROCK_TEST_JOURNAL_ROLLBACK=1 /proc/" + to_string(getpid()) +
+                "/exe -only SQLiteNodeJournalRollback -useNewOutput false").c_str()), 0);
+            return;
+        }
+        SQLite::hctreeExperimentalMode = true;
+        BedrockTester files({}, {}, 0, 0, 0, false);
+        auto pool = make_shared<SQLitePool>(0, files.getArg("-db"), 1000, 5000, 0, 0, true);
+        SQLite& db = pool->getBase();
+        TestServer server;
+        atomic<int> priority{1};
+        atomic<uint64_t> maxWALFrames{0};
+        SQLiteNode follower(server, pool, "follower", "", "localhost:15555?nodeName=leader", priority, maxWALFrames, 1000000000, "1.0");
+        SQLitePeer* leader = follower.getPeerByName("leader");
+        follower._changeState(SQLiteNodeState::FOLLOWING);
+        follower._leadPeer = leader;
+        leader->loggedIn = true;
+        const uint64_t commitCount = db.getCommitCount();
+
+        // Send a blank commit beyond a missing ID through the follower's message handler.
+        SData transaction("TRANSACTION");
+        transaction["ID"] = to_string(commitCount + 2);
+        transaction["Snapshot"] = to_string(commitCount);
+        transaction["CommitCount"] = transaction["ID"];
+        transaction["Hash"] = "";
+        transaction["NewHash"] = "";
+        follower._onMESSAGE(leader, transaction);
+        {
+            unique_lock<mutex> lock(follower._replicateMutex);
+            ASSERT_TRUE(follower._replicateCV.wait_for(lock, chrono::seconds(5), [&]() {
+                return follower._replicationDependencies.empty() && follower._inFlightCommitIDs.empty();
+            }));
+            ASSERT_TRUE(follower._replicationError.empty());
+        }
+        ASSERT_FALSE(db.getCommit(commitCount + 1));
+        ASSERT_TRUE(db.getCommit(commitCount + 2));
+
+        // Losing the leader makes the follower stop following and discard the journal tail.
+        follower._onDisconnect(leader);
+        EXPECT_TRUE(follower.getState() == SQLiteNodeState::SEARCHING);
+        EXPECT_TRUE(db.getCommit(commitCount));
+        EXPECT_FALSE(db.getCommit(commitCount + 2));
+        EXPECT_EQUAL(db.read("SELECT MAX(cid) FROM hct_journal;"), to_string(commitCount));
+    }
+} __SQLiteNodeJournalRollbackTest;

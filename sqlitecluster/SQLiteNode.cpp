@@ -1798,10 +1798,10 @@ void SQLiteNode::_changeState(SQLiteNodeState newState)
         _server.notifyStateChangeToPlugins(pluginDB.db(), newState);
 
         // No application thread may survive a role change or continue a failed synchronization session.
-        if (_state == SQLiteNodeState::FOLLOWING || _state == SQLiteNodeState::SYNCHRONIZING ||
-            (_state == SQLiteNodeState::SUBSCRIBING && newState != SQLiteNodeState::FOLLOWING)) {
+        const bool stopReplication = _state == SQLiteNodeState::FOLLOWING || _state == SQLiteNodeState::SYNCHRONIZING ||
+            (_state == SQLiteNodeState::SUBSCRIBING && newState != SQLiteNodeState::FOLLOWING);
+        if (stopReplication) {
             _stopReplication();
-            // TODO: Reset HC-Tree's noncontiguous tail here when SQLite's rollback API is available.
         }
         if (_state == SQLiteNodeState::FOLLOWING) {
             // We have no leader anymore.
@@ -1887,6 +1887,13 @@ void SQLiteNode::_changeState(SQLiteNodeState newState)
         _db.exclusiveLockDB();
 
         try {
+            if (stopReplication || _state == SQLiteNodeState::STANDINGDOWN ||
+                (_state == SQLiteNodeState::LEADING && newState != SQLiteNodeState::STANDINGDOWN)) {
+                // Removing discontiguous journal entries requires follower mode.
+                // It also requires that no other writers exist,but this is enforced by exclusiveLockDB above.
+                _db.setHCTreeFollowerMode(true);
+                _db.rollbackHCTreeJournal();
+            }
             if (newState == SQLiteNodeState::LEADING) {
                 _db.prepareHCTreeLeadership();
             }
