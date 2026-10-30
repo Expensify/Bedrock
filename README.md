@@ -28,4 +28,3 @@ Use the same compiler and flag overrides as for your build. Generated headers st
 the normal dependency build. Metadata generation preserves the existing database on failure
 and does not rewrite an unchanged database. `make clean` skips metadata generation.
 
-Run the isolated Make integration tests with `python3 test/test_compile_commands.py -v`.
