@@ -9,6 +9,8 @@
 
 #include <unistd.h>
 #include <cstring>
+#include <filesystem>
+#include <future>
 #include <thread>
 
 class SQLiteNodeTester {
@@ -73,6 +75,7 @@ struct SQLiteNodeTest : tpunit::TestFixture
                                            BEFORE_CLASS(SQLiteNodeTest::setup),
                                            AFTER_CLASS(SQLiteNodeTest::teardown),
                                            AFTER(SQLiteNodeTest::rollback),
+                                           TEST(SQLiteNodeTest::testPoolReservesReplicationCapacity),
                                            TEST(SQLiteNodeTest::testFindSyncPeer),
                                            TEST(SQLiteNodeTest::testCommandPortBlockedForWALSize),
                                            TEST(SQLiteNodeTest::testForwardingSkipsBlockedPeers),
@@ -85,6 +88,8 @@ struct SQLiteNodeTest : tpunit::TestFixture
                                            TEST(SQLiteNodeTest::testBlankCommitFailure),
                                            TEST(SQLiteNodeTest::testGUIDHashFailures),
                                            TEST(SQLiteNodeTest::testReplicationRequiresLeader),
+                                           TEST(SQLiteNodeTest::testReplicationShutdownDeadline),
+                                           TEST(SQLiteNodeTest::testReplicationHandleLifetime),
                                            TEST(SQLiteNodeTest::testSynchronizeCommitFailure),
                                            TEST(SQLiteNodeTest::testSynchronizeWriteFailure),
                                            TEST(SQLiteNodeTest::testSynchronizeConstraintFailure),
@@ -106,7 +111,7 @@ struct SQLiteNodeTest : tpunit::TestFixture
         // This exposes just enough to test the peer selection logic.
         int fd = mkstemp(filename);
         close(fd);
-        dbPool = make_shared<SQLitePool>(10, filename, 1000000, 5000, 0, 0, BedrockTester::ENABLE_HCTREE);
+        dbPool = make_shared<SQLitePool>(0, filename, 1000000, 5000, 0, 0, BedrockTester::ENABLE_HCTREE);
     }
 
     void teardown()
@@ -114,7 +119,12 @@ struct SQLiteNodeTest : tpunit::TestFixture
         dbPool.reset();
         unlink(filename);
         unlink((string(filename) + "-pagemap").c_str());
-        unlink((string(filename) + "-log-0").c_str());
+        for (const auto& entry : filesystem::directory_iterator(".")) {
+            const string name = entry.path().filename().string();
+            if (SStartsWith(name, string(filename) + "-log-")) {
+                unlink(entry.path().c_str());
+            }
+        }
     }
 
     void rollback()
@@ -127,20 +137,33 @@ struct SQLiteNodeTest : tpunit::TestFixture
 
     void restartDB()
     {
-        // SharedData is cached by filename forever. A fresh path forces metadata to be loaded from the journal.
-        char restartedFilename[sizeof(filename)] = "br_sync_dbXXXXXX";
-        const int fd = mkstemp(restartedFilename);
-        ASSERT_TRUE(fd >= 0);
-        close(fd);
         dbPool.reset();
-        for (const string suffix : {"", "-pagemap", "-log-0"}) {
-            if (suffix.empty() || access((string(filename) + suffix).c_str(), F_OK) == 0) {
-                const int result = rename((string(filename) + suffix).c_str(), (string(restartedFilename) + suffix).c_str());
-                EXPECT_EQUAL(result, 0);
+        dbPool = make_shared<SQLitePool>(0, filename, 1000000, 5000, 0, 0, BedrockTester::ENABLE_HCTREE);
+    }
+
+    void testPoolReservesReplicationCapacity()
+    {
+        SQLiteScopedHandle pluginHandle(*dbPool, dbPool->getIndex(false));
+        vector<size_t> reservedIndices;
+        for (size_t i = 0; i < SQLiteNode::PARALLEL_REPLICATION_THREADS + 1; ++i) {
+            auto next = async(launch::async, [this]() {
+                return dbPool->getIndex(false);
+                                                                                        });
+            const auto status = next.wait_for(chrono::seconds(5));
+            EXPECT_TRUE(status == future_status::ready);
+            if (status != future_status::ready) {
+                // Release a slot so a capacity regression cannot leave the test waiting forever.
+                pluginHandle.release();
+            }
+            reservedIndices.push_back(next.get());
+            if (status != future_status::ready) {
+                break;
             }
         }
-        memcpy(filename, restartedFilename, sizeof(filename));
-        dbPool = make_shared<SQLitePool>(10, filename, 1000000, 5000, 0, 0, BedrockTester::ENABLE_HCTREE);
+        EXPECT_EQUAL(reservedIndices.size(), SQLiteNode::PARALLEL_REPLICATION_THREADS + 1);
+        for (size_t index : reservedIndices) {
+            dbPool->returnToPool(index);
+        }
     }
 
     void testFindSyncPeer()
@@ -359,6 +382,7 @@ struct SQLiteNodeTest : tpunit::TestFixture
             ASSERT_EQUAL(db.getCommitCount(), 1ull);
             SQLiteNode node(server, dbPool, "test", "", peerList, configuredPriority, maxOutstandingWALFrames, 1000000000, "1.0");
             SQLitePeer* peer = node.getPeerByName("peer1");
+            node._changeState(SQLiteNodeState::SYNCHRONIZING);
             SData response("SYNCHRONIZE_RESPONSE");
             response["NumCommits"] = "2";
             for (int i = 2; i <= 3; ++i) {
@@ -520,7 +544,6 @@ struct SQLiteNodeTest : tpunit::TestFixture
             if (live) {
                 SData transaction("TRANSACTION");
                 transaction["ID"] = to_string(before.commitCount + 1);
-                transaction["NewCount"] = transaction["ID"];
                 transaction["NewHash"] = "";
                 node._handleBeginTransaction(db, peer, transaction);
                 ASSERT_TRUE(node._handlePrepareTransaction(db, peer, transaction, STimeNow()));
@@ -604,6 +627,12 @@ struct SQLiteNodeTest : tpunit::TestFixture
                 string hash;
                 if (attempt == 2) {
                     ASSERT_TRUE(core.commit(node, commitID, hash, "testGenerateGUID", false) == SQLiteCore::COMMIT_RESULT::OK);
+                    if (db.isExperimentalHCTree() && query.empty()) {
+                        EXPECT_EQUAL(commitID, 0ull);
+                        EXPECT_TRUE(hash.empty());
+                        EXPECT_EQUAL(db.getCommitCount(), commitCount);
+                        continue;
+                    }
                 } else {
                     ASSERT_TRUE(db.prepare(&commitID, &hash));
                 }
@@ -686,7 +715,6 @@ struct SQLiteNodeTest : tpunit::TestFixture
                 if (live) {
                     SData transaction("TRANSACTION");
                     transaction["ID"] = to_string(commitCount + i + 1);
-                    transaction["NewCount"] = transaction["ID"];
                     transaction["NewHash"] = hash;
                     transaction.content = content;
                     node._handleBeginTransaction(db, peer, transaction);
@@ -774,7 +802,6 @@ struct SQLiteNodeTest : tpunit::TestFixture
 
         SData transaction("TRANSACTION");
         transaction["CommitCount"] = to_string(commitCount + 1);
-        transaction["NewCount"] = transaction["CommitCount"];
         transaction["ID"] = transaction["CommitCount"];
         transaction.content = "CREATE TABLE nonLeaderTransaction (id INTEGER);";
         const string guid = "00000000000000000000000000000001";
@@ -784,12 +811,84 @@ struct SQLiteNodeTest : tpunit::TestFixture
 
         EXPECT_TRUE(otherPeer->connected());
         EXPECT_TRUE(peerSocket->sendBufferEmpty());
-        EXPECT_EQUAL(node._replicateThread, nullptr);
+        EXPECT_TRUE(node._replicateThreads.empty());
         EXPECT_TRUE(node._replicateQueue.empty());
         EXPECT_FALSE(db.insideTransaction());
         EXPECT_EQUAL(db.getCommitCount(), commitCount);
         EXPECT_EQUAL(db.getCommittedHash(), committedHash);
         EXPECT_EQUAL(db.read("SELECT COUNT(*) FROM sqlite_master WHERE name = 'nonLeaderTransaction';"), "0");
+    }
+
+    void testReplicationShutdownDeadline()
+    {
+        SQLiteNode node(server, dbPool, "test", "", peerList, configuredPriority, maxOutstandingWALFrames, 1000000000, "1.0");
+        EXPECT_TRUE(node._replicateThreadShouldExitTime.load() == chrono::steady_clock::time_point{});
+
+        const SQLite::CommitID commitID = dbPool->getBase().getCommitCount() + 1;
+        {
+            lock_guard<mutex> lock(node._replicateMutex);
+            node._replicateQueue.try_emplace(commitID, nullptr, SData{});
+            node._replicationDependencies.emplace(commitID - 1, commitID);
+            EXPECT_TRUE(node._nextReplication() != node._replicateQueue.end());
+
+            node._replicateThreadShouldExitTime.store(chrono::steady_clock::now() + chrono::seconds(10));
+            EXPECT_TRUE(node._nextReplication() != node._replicateQueue.end());
+
+            node._replicateThreadShouldExitTime.store(chrono::steady_clock::now() - chrono::seconds(1));
+            EXPECT_TRUE(node._nextReplication() == node._replicateQueue.end());
+
+            node._replicateQueue.clear();
+            node._replicationDependencies.clear();
+        }
+
+        node._stopReplication();
+        EXPECT_TRUE(node._replicateThreadShouldExitTime.load() == chrono::steady_clock::time_point{});
+    }
+
+    void testReplicationHandleLifetime()
+    {
+        for (bool fail : {false, true}) {
+            SQLiteNode node(server, dbPool, "test", "", peerList, configuredPriority, maxOutstandingWALFrames, 1000000000, "1.0");
+            node._changeState(SQLiteNodeState::SYNCHRONIZING);
+            SQLite* replicationDB;
+            {
+                SQLiteScopedHandle handle(*dbPool, dbPool->getIndex());
+                replicationDB = &handle.db();
+            }
+
+            // Use one worker so the next available handle identifies its reservation in either journal mode.
+            node._replicateThreads.emplace_back(&SQLiteNode::_replicate, &node, 0);
+            const auto commitCount = dbPool->getBase().getCommitCount();
+            SData transaction("TRANSACTION");
+            transaction["ID"] = to_string(commitCount + 1);
+            transaction["NewHash"] = fail ? string(32, '0') + ":" + string(40, '0') : "";
+            node._enqueueReplication(node.getPeerByName("peer1"), move(transaction));
+            {
+                unique_lock<mutex> lock(node._replicateMutex);
+                ASSERT_TRUE(node._replicateCV.wait_for(lock, chrono::seconds(5), [&]() {
+                    return node._replicateQueue.empty() && node._inFlightCommitIDs.empty();
+                }));
+                EXPECT_TRUE(node._replicationError.empty() == !fail);
+            }
+            EXPECT_EQUAL(dbPool->getBase().getCommitCount(), commitCount + (fail ? 0 : 1));
+            if (!fail) {
+                SQLiteScopedHandle spare(*dbPool, dbPool->getIndex());
+                EXPECT_TRUE(&spare.db() != replicationDB);
+            }
+
+            node._stopReplication();
+            SQLiteScopedHandle returned(*dbPool, dbPool->getIndex());
+            EXPECT_TRUE(&returned.db() == replicationDB);
+            EXPECT_FALSE(returned.db().insideTransaction());
+
+            // A returned handle must not keep observing the node's abort flag.
+            node._replicateAbort = true;
+            const int result = sqlite3_exec(returned.db().getDBHandle(),
+                "WITH RECURSIVE counts(n) AS (VALUES(1) UNION ALL SELECT n + 1 FROM counts WHERE n < 1000) "
+                "SELECT SUM(n) FROM counts;", nullptr, nullptr, nullptr);
+            node._replicateAbort = false;
+            EXPECT_EQUAL(result, SQLITE_OK);
+        }
     }
 
     void testReplicationFailure(const string& failure)
@@ -880,7 +979,6 @@ struct SQLiteNodeTest : tpunit::TestFixture
                 }
                 SData transaction("TRANSACTION");
                 transaction["ID"] = incoming["CommitIndex"];
-                transaction["NewCount"] = incoming["CommitIndex"];
                 transaction["NewHash"] = incoming["Hash"];
                 transaction.content = incoming.content;
                 try {
@@ -888,7 +986,7 @@ struct SQLiteNodeTest : tpunit::TestFixture
                     if (!node._handlePrepareTransaction(db, peer, transaction, STimeNow())) {
                         STHROW("prepare failed");
                     }
-                    if (node._handleCommitTransaction(db, peer, transaction.calcU64("NewCount"), transaction["NewHash"]) != SQLITE_OK) {
+                    if (node._handleCommitTransaction(db, peer, transaction.calcU64("ID"), transaction["NewHash"]) != SQLITE_OK) {
                         STHROW("commit failed");
                     }
                 } catch (const exception& e) {
@@ -899,8 +997,9 @@ struct SQLiteNodeTest : tpunit::TestFixture
             };
             receive(commit);
 
-            if (failure != "blank-query") {
-                EXPECT_TRUE(db.getLastTransactionType() == SQLite::TRANSACTION_TYPE::EXCLUSIVE);
+            if (live && failure != "blank-query") {
+                EXPECT_TRUE(db.getLastTransactionType() == (db.isExperimentalHCTree() ?
+                    SQLite::TRANSACTION_TYPE::SHARED : SQLite::TRANSACTION_TYPE::EXCLUSIVE));
             }
             EXPECT_TRUE(node.getState() == (live ? SQLiteNodeState::FOLLOWING : SQLiteNodeState::SEARCHING));
             if (live && (failure == "hash" || failure == "guid-value" || failure == "guid-digest" || failure == "guid-query")) {

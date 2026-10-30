@@ -926,18 +926,26 @@ void BedrockPlugin_TestPlugin::stateChanged(SQLite& db, SQLiteNodeState newState
     // we can let the code wait for a condition to be met before it actually runs. In our case, we want to
     // wait until upgradeDatabase has completed so that we can run a query on a table.
     SINFO("Running stateChanged new state " << SQLiteNode::stateName(newState));
-    thread([&, newState]() {
-        if (newState != SQLiteNodeState::LEADING) {
-            SINFO("Returning early stateChanged new state " << SQLiteNode::stateName(newState));
-            return;
-        }
+    if (newState != SQLiteNodeState::LEADING) {
+        return;
+    }
+    auto pool = server.getDBPool();
+    thread([this, pool]() {
+        SInitialize("TestStateChanged");
         SINFO("Sleeping until the server is done upgrading.");
         while (!server.dbReadyToHandleRequests()) {
+            if (server.isShuttingDown()) {
+                return;
+            }
             usleep(50'000);
         }
+        if (server.isShuttingDown() || server.getState() != SQLiteNodeState::LEADING) {
+            return;
+        }
 
+        SQLiteScopedHandle handle(*pool, pool->getIndex());
         SQResult result;
-        db.read("SELECT count(*) FROM dbupgrade", result);
+        handle.db().read("SELECT count(*) FROM dbupgrade", result);
         // It's possible to fall out of leading and be following again, and if so, we don't want to
         // set _maxID.
         if (server.getState() == SQLiteNodeState::LEADING) {

@@ -54,6 +54,8 @@ To see a full list of Bedrock's configuration options, just run `bedrock -?` on 
 
 With `-hctreeExperimentalMode`, HC-Tree nodes write leader and follower commits to `hct_journal` and do not create legacy journal tables. Existing legacy tables remain readable for synchronization. This is a one-way transition: once `hct_journal` exists, starting without the flag aborts with "cannot downgrade from hct_journal, restore from backup". To run without the flag again, restore a backup that has no `hct_journal`.
 
+Experimental HC-Tree followers use up to 16 replication threads for live commits and synchronization batches. A commit waits until its dependency snapshot is available. Leaders currently send sequential dependencies (`commitID - 1`), so ordinary replication remains sequential. The receiver can also accept earlier dependency snapshots and apply independent commits in parallel. WAL2 and non-experimental HC-Tree followers always apply commits in ID order.
+
 On first initialization, the newest legacy commit is moved atomically into `hct_journal`, preserving older legacy history. With no legacy history, HC-Tree starts at its initial CID 1. Legacy-only databases also create a blank entry at ID 1, so new databases in either mode start normal commits at ID 2. Subsequent startups reuse the journal without rebasing it.
 
 Before becoming leader, the node requires a contiguous HC-Tree journal and, if legacy entries remain, the newest legacy ID must be exactly one less than the oldest HC-Tree CID. An unsupported boundary aborts the node. The background deleter preserves that boundary until legacy history is fully drained, then trims HC-Tree history in CID order. Promotion itself does not prune journal entries.

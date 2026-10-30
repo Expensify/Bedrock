@@ -8,6 +8,7 @@
 #include <csignal>
 #include <cstring>
 #include <fstream>
+#include <future>
 #include <sys/resource.h>
 #include <sys/time.h>
 
@@ -76,7 +77,7 @@ void BedrockServer::syncWrapper()
 
 shared_ptr<SQLitePool> BedrockServer::getDBPool()
 {
-    return _dbPool;
+    return atomic_load(&_dbPool);
 }
 
 void BedrockServer::sync()
@@ -122,9 +123,16 @@ void BedrockServer::sync()
     callbacks.emplace_back([this]() {
         _journalDeleter.wake();
     });
+    auto dbPoolDestroyed = make_shared<promise<void>>();
+    auto dbPoolDestructionComplete = dbPoolDestroyed->get_future();
     SINFO("Setting dbPool size to: " << _dbPoolSize);
-    _dbPool = make_shared<SQLitePool>(_dbPoolSize, args["-db"], args.calc("-cacheSize"), args.calc("-maxJournalSize"), journalTables, mmapSizeGB, args.isSet("-newDBsUseHctree"), args["-checkpointMode"], callbacks);
-    SQLite& db = _dbPool->getBase();
+    atomic_store(&_dbPool, shared_ptr<SQLitePool>(
+        new SQLitePool(_dbPoolSize, args["-db"], args.calc("-cacheSize"), args.calc("-maxJournalSize"), journalTables, mmapSizeGB, args.isSet("-newDBsUseHctree"), args["-checkpointMode"], callbacks),
+        [dbPoolDestroyed](SQLitePool* pool) {
+        delete pool;
+        dbPoolDestroyed->set_value();
+        }));
+    SQLite& db = getDBPool()->getBase();
     _journalDeleter.start();
 
     // Allow plugins to read from the DB at startup.
@@ -136,14 +144,14 @@ void BedrockServer::sync()
     uint64_t firstTimeout = STIME_US_PER_M * 2 + SRandom::rand64() % STIME_US_PER_S * 30;
 
     // Initialize the shared pointer to our sync node object.
-    atomic_store(&_syncNode, make_shared<SQLiteNode>(*this, _dbPool, args["-nodeName"], args["-nodeHost"],
+    atomic_store(&_syncNode, make_shared<SQLiteNode>(*this, getDBPool(), args["-nodeName"], args["-nodeHost"],
                                                             args["-peerList"], _configuredPriority, _maxOutstandingWALFrames,
                                                             firstTimeout, _version, args["-commandPortPrivate"]));
     _syncNode->registerMessageHandler("CRASH_COMMAND", [this](const SData& message) {
         _handleCrashCommand(message);
     });
 
-    _clusterMessenger = make_shared<SQLiteClusterMessenger>(_syncNode);
+    atomic_store(&_clusterMessenger, make_shared<SQLiteClusterMessenger>(_syncNode));
 
     // The node is now coming up, and should eventually end up in a `LEADING` or `FOLLOWING` state. We can start adding
     // our worker threads now. We don't wait until the node is `LEADING` or `FOLLOWING`, as it's state can change while
@@ -408,12 +416,17 @@ void BedrockServer::sync()
 
     _journalDeleter.stop();
 
-    // We clear this before the _syncNode that it references.
-    _clusterMessenger.reset();
-
-    // Release our handle to this pointer. Any other functions that are still using it will keep the object alive
-    // until they return.
+    // Release the server's references in dependency order. Other threads may still hold temporary references.
+    atomic_store(&_clusterMessenger, shared_ptr<SQLiteClusterMessenger>(nullptr));
     atomic_store(&_syncNode, shared_ptr<SQLiteNode>(nullptr));
+    atomic_store(&_dbPool, shared_ptr<SQLitePool>(nullptr));
+
+    // The custom deleter signals only after the pool and all its database handles have been destroyed.
+    SINFO("Waiting for DB pool destruction.");
+    while (dbPoolDestructionComplete.wait_for(chrono::seconds(5)) != future_status::ready) {
+        SWARN("Still waiting for DB pool destruction.");
+    }
+    SINFO("DB pool destroyed.");
 
     // If we're not detaching, save that we're shutting down.
     if (!_detach) {
@@ -423,10 +436,6 @@ void BedrockServer::sync()
             file.close();
         }
     }
-
-    // Release the current DB pool, and zero out our pointer. If any socket threads hold a handle to `_syncNode`, they will keep this in existence
-    // until they release it.
-    _dbPool = nullptr;
 
     // We're really done, store our flag so main() can be aware.
     _syncLoopShouldBeRunning.store(false);
@@ -516,7 +525,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
     // If a signal is caught on this thread, which should only happen for unrecoverable, yet synchronous
     // signals, like SIGSEGV, this function will be called.
     SSetSignalHandlerDieFunc([&]() {
-        _clusterMessenger->runOnAll(_generateCrashMessage(command));
+        atomic_load(&_clusterMessenger)->runOnAll(_generateCrashMessage(command));
         return addLogParams("CRASHING from BedrockServer::runCommand, command:" + command->request.methodLine, command->request.nameValueMap);
     });
 
@@ -581,7 +590,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
     // for a previous commit to be delivered to this follower);
     // 2. Any commands if the current version of the code is not the same one as leader is executing.
     if (getState() == SQLiteNodeState::FOLLOWING && !command->complete && (command->escalateImmediately || _version != _leaderVersion.load())) {
-        auto _clusterMessengerCopy = _clusterMessenger;
+        auto _clusterMessengerCopy = atomic_load(&_clusterMessenger);
         if (command->escalateImmediately && _clusterMessengerCopy && _clusterMessengerCopy->runOnPeer(*command, true)) {
             // command->complete is now true for this command. It will get handled a few lines below.
             SINFO("Immediately escalated " << command->request.methodLine << " to leader.");
@@ -597,7 +606,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
     // If we happen to be synchronizing but the command port is open, which is an uncommon but possible scenario (i.e., we were momentarily disconnected from leader and need to catch back
     // up), we will forward commands to any other follower similar to if we were running as a different version from leader.
     if (getState() == SQLiteNodeState::SYNCHRONIZING) {
-        auto _clusterMessengerCopy = _clusterMessenger;
+        auto _clusterMessengerCopy = atomic_load(&_clusterMessenger);
         bool result = _clusterMessengerCopy->runOnPeer(*command, false);
         if (result) {
             SINFO("Synchronizing while accepting commands; successfully forwarded the command to peer", {{"command", command->request.methodLine}});
@@ -652,12 +661,13 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
         command->waitForHTTPSRequests();
 
         // Get a DB handle to work on. This will automatically be returned when dbScope goes out of scope.
-        if (!_dbPool) {
+        auto dbPool = getDBPool();
+        if (!dbPool) {
             SERROR("Can't run a command with no DB pool");
         }
         {
             uint64_t dbHandleStartTime = STimeNow();
-            SQLiteScopedHandle dbScope(*_dbPool, _dbPool->getIndex());
+            SQLiteScopedHandle dbScope(*dbPool, dbPool->getIndex());
             SQLite& db = dbScope.db();
             command->recordTiming(BedrockCommand::DB_HANDLE, dbHandleStartTime);
             BedrockCore core(db, *this);
@@ -757,7 +767,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                         // Roll back the transaction, it'll get re-run wherever this command ends up.
                         core.rollback(command->getMethodName());
                         dbScope.release();
-                        auto _clusterMessengerCopy = _clusterMessenger;
+                        auto _clusterMessengerCopy = atomic_load(&_clusterMessenger);
                         if (_clusterMessengerCopy && _clusterMessengerCopy->runOnPeer(*command, true)) {
                             SINFO("Escalated " << command->request.methodLine << " to leader and complete, responding.");
                             _reply(command);
@@ -1658,7 +1668,7 @@ void BedrockServer::_status(unique_ptr<BedrockCommand>& command)
             content["syncNodeAvailable"] = "false";
         }
 
-        auto dbPoolCopy = _dbPool;
+        auto dbPoolCopy = getDBPool();
         if (dbPoolCopy) {
             SQLiteScopedHandle dbScope(*dbPoolCopy, dbPoolCopy->getIndex());
             SQLite& db = dbScope.db();
@@ -1897,9 +1907,9 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command)
             response.methodLine = "400 Already Blocked";
         } else {
             __quiesceThread = new thread([&]() {
-                shared_ptr<SQLitePool> dbPoolCopy = _dbPool;
+                shared_ptr<SQLitePool> dbPoolCopy = getDBPool();
                 if (dbPoolCopy) {
-                    SQLiteScopedHandle dbScope(*_dbPool, _dbPool->getIndex());
+                    SQLiteScopedHandle dbScope(*dbPoolCopy, dbPoolCopy->getIndex());
                     SQLite& db = dbScope.db();
                     SINFO("[quiesce] Exclusive locking DB");
                     db.exclusiveLockDB();
@@ -1988,7 +1998,7 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command)
         } else {
             // Journal IDs start at 1, so 0 (which is also what we get for anything unparseable) is never valid.
             uint64_t commitCount = command->request.calcU64("commitCount");
-            shared_ptr<SQLitePool> dbPoolCopy = _dbPool;
+            shared_ptr<SQLitePool> dbPoolCopy = getDBPool();
             if (!commitCount) {
                 response.methodLine = "400 Invalid commitCount";
             } else if (!dbPoolCopy) {
@@ -2138,7 +2148,7 @@ SData BedrockServer::_generateCrashMessage(const unique_ptr<BedrockCommand>& com
 
 void BedrockServer::broadcastCommand(const SData& command, const string& peerName)
 {
-    auto _clusterMessengerCopy = _clusterMessenger;
+    auto _clusterMessengerCopy = atomic_load(&_clusterMessenger);
     if (!_clusterMessengerCopy) {
         SINFO("Failed to broadcast command " << command.methodLine << " to all nodes, cluster messenger does not exist.");
         return;
@@ -2180,7 +2190,7 @@ void BedrockServer::onNodeLogin(SQLitePeer* peer)
         _syncNode->sendMessageToPeer(peer, peerCommand->request);
 
         // Keep HTTP replay for older nodes that ignore cluster CRASH_COMMAND messages. Remove once all nodes support it.
-        auto _clusterMessengerCopy = _clusterMessenger;
+        auto _clusterMessengerCopy = atomic_load(&_clusterMessenger);
         auto peerName = peer->name;
         if (_clusterMessengerCopy) {
             thread([command = move(peerCommand), _clusterMessengerCopy, peerName]() {

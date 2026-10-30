@@ -38,6 +38,18 @@ private:
     // system-imposed limits on FDs.
     size_t _maxDBs;
 
+    // RAII scope management class that calls clearSharedData() for the given filename when this pool is destroyed.
+    class SharedDataCleanup
+    {
+public:
+        string filename;
+        ~SharedDataCleanup();
+    };
+
+    // Declared before _baseDB so cached state is removed after the final connection closes.
+    // TODO: Move SharedData ownership into the pool so cleanup follows its lifetime directly.
+    SharedDataCleanup _sharedDataCleanup;
+
     // Our base object that all others are based upon.
     SQLite _baseDB;
 
