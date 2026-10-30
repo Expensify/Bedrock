@@ -41,6 +41,8 @@ def generate(make):
          'COMPILATION_DATABASE=1', '_compile_commands'],
         check=True, capture_output=True, text=True, env=makeEnvironment(),
     )
+
+    # Parse compile commands
     commands = []
     for line in result.stdout.splitlines():
         arguments = shlex.split(line)
