@@ -62,7 +62,6 @@ enum class SQLiteNodeState
 class SQLiteNode : public STCPManager {
     // This exists to expose internal state to a test harness. It is not used otherwise.
     friend struct SQLiteNodeTest;
-    friend struct SQLiteNodeJournalRollbackTest;
     friend class SQLiteNodeTester;
 
 public:
