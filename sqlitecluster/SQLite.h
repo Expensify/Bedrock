@@ -435,7 +435,8 @@ private:
     void setHCTreeFollowerMode(bool following);
     void prepareHCTreeLeadership();
 
-    // Discard the noncontiguous follower journal tail with exclusiveLockDB held and replication workers stopped.
+    // Discard any juournal entries past the contiguous block. If a follower falls out of the cluster with gaps in the journal,
+    // this removes everything after the first gap (also applies if we unexpectedly stop leading).
     void rollbackHCTreeJournal();
 
 private:
@@ -461,7 +462,8 @@ public:
         // Remember completed replication IDs and publish only the contiguous prefix and its nonblank hash.
         void recordReplicationCommit(uint64_t commitID, const string& commitHash);
 
-        // Discard completion records for the rolled-back noncontiguous journal tail.
+        // When rolling back non-contiguous journal entries (as with rollbackHCTreeJournal), we also want to remove
+        // pending journal entries that we will not apply.
         void discardOutOfOrderCommits();
 
         CommitState getCommitState() const;
