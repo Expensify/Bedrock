@@ -247,7 +247,8 @@ private:
     // Stores the `CommandPortBlocked` header from a LOGIN or STATE message on the peer.
     void _updatePeerCommandPortBlocked(SQLitePeer* peer, const SData& message);
 
-    // A single replication thread serially applies replicated commits, except experimental HC-Tree nodes use 16 threads.
+    // A single replication thread serially applies replicated commits, except experimental
+    //  HC-Tree nodes use up to 16 threads.
     void _replicate(size_t threadID);
     void _startReplication();
     void _stopReplication();

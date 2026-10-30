@@ -80,7 +80,7 @@ const uint64_t SQLiteNode::RECV_TIMEOUT{STIME_US_PER_S* 30};
 
 const size_t SQLiteNode::MIN_APPROVE_FREQUENCY{10};
 const size_t SQLiteNode::PARALLEL_REPLICATION_THREADS{
-    // This is fairly arbirtary, and open to later adjustment. Use half the cores available on the machine,
+    // This is fairly arbitrary, and open to later adjustment. Use half the cores available on the machine,
     // but at least 2 and not more than 16 threads.
     clamp<size_t>(thread::hardware_concurrency() / 2, 2, 16)
 };
@@ -263,7 +263,7 @@ void SQLiteNode::_startReplication()
 void SQLiteNode::_stopReplication()
 {
     {
-        // Allo 10 seconds for remaining replication threads to finish before we give up and empty the queue.
+        // Allow 10 seconds for remaining replication threads to finish before we give up and empty the queue.
         lock_guard<mutex> lock(_replicateMutex);
         _replicateThreadShouldExitTime.store(chrono::steady_clock::now() + chrono::seconds(10));
     }
