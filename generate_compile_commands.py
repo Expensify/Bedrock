@@ -12,6 +12,10 @@ from pathlib import Path
 
 
 def makeEnvironment():
+    """
+    Prepare the environment for a separate Make dry-run.
+    Keep Make's evaluation flags and command-line overrides, but drop options specific to the parent run.
+    """
     environment = os.environ.copy()
     options, separator, overrides = environment.get('MAKEFLAGS', '').partition(' -- ')
     semanticFlags = ''
