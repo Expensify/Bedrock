@@ -1,3 +1,4 @@
+#include <libstuff/JSON/Utils.h>
 #include <libstuff/JSON/Value.h>
 #include <sys/stat.h>
 #include <test/clustertest/BedrockClusterTester.h>
@@ -108,7 +109,7 @@ struct ClusterUpgradeTest : tpunit::TestFixture
         vector<string> versions(3);
         for (auto i: {0, 1, 2}) {
             vector<SData> statusResult = tester->getTester(i).executeWaitMultipleData({status});
-            versions[i] = JSON::Value::parse(statusResult[0].content)["version"].getString();
+            versions[i] = JSON::Utils::toSTable(JSON::Value::parse(statusResult[0].content))["version"];
         }
         return versions;
     }
