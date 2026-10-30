@@ -1052,3 +1052,104 @@ struct SQLiteNodeTest : tpunit::TestFixture
         }
     }
 } __SQLiteNodeTest;
+
+struct SQLiteNodeJournalRollbackTest : tpunit::TestFixture
+{
+    SQLiteNodeJournalRollbackTest() : tpunit::TestFixture("SQLiteNodeJournalRollback",
+                                                          TEST(SQLiteNodeJournalRollbackTest::testStateChangeRollback))
+    {
+    }
+
+    void testStateChangeRollback()
+    {
+        // Experimental mode is process-wide, so isolate it from concurrently running fixtures.
+        if (!getenv("BEDROCK_TEST_JOURNAL_ROLLBACK")) {
+            ASSERT_EQUAL(system(("BEDROCK_TEST_JOURNAL_ROLLBACK=1 /proc/" + to_string(getpid()) +
+                "/exe -only SQLiteNodeJournalRollback -useNewOutput false").c_str()), 0);
+            return;
+        }
+        SQLite::hctreeExperimentalMode = true;
+        BedrockTester files({}, {}, 0, 0, 0, false);
+        auto pool = make_shared<SQLitePool>(0, files.getArg("-db"), 1000, 5000, 0, 0, true);
+        SQLite& db = pool->getBase();
+        TestServer server;
+        atomic<int> priority{1};
+        atomic<uint64_t> maxWALFrames{0};
+        SQLiteNode node(server, pool, "test", "", "localhost:15555?nodeName=peer1", priority, maxWALFrames, 1000000000, "1.0");
+        SQLitePeer* peer = node.getPeerByName("peer1");
+        ASSERT_TRUE(db.beginTransaction());
+        ASSERT_TRUE(db.writeUnmodified("CREATE TABLE rollbackTest(value TEXT);"));
+        ASSERT_TRUE(db.prepare());
+        ASSERT_EQUAL(db.commit(), SQLITE_OK);
+
+        for (const auto state : {SQLiteNodeState::FOLLOWING, SQLiteNodeState::SYNCHRONIZING, SQLiteNodeState::SUBSCRIBING}) {
+            node._changeState(state);
+            node._leadPeer = peer;
+            // Keep a blank commit at the end of the prefix to check that its nonblank hash survives rollback.
+            ASSERT_TRUE(db.beginTransaction());
+            ASSERT_TRUE(db.prepare(nullptr, nullptr, chrono::hours(24), nullptr, ""));
+            ASSERT_EQUAL(db.commit(), SQLITE_OK);
+            const auto prefix = db.getCommitState();
+            const string guid = "00000000000000000000000000000001";
+            SData tail("TRANSACTION");
+            tail["ID"] = to_string(prefix.commitCount + 2);
+            tail["Snapshot"] = to_string(prefix.commitCount);
+            tail.content = "INSERT INTO rollbackTest VALUES ('discarded');";
+            tail["NewHash"] = guid + ":" + SToHex(SHashSHA1(guid + tail.content));
+            node._enqueueReplication(peer, tail);
+            {
+                unique_lock<mutex> lock(node._replicateMutex);
+                ASSERT_TRUE(node._replicateCV.wait_for(lock, chrono::seconds(5), [&]() {
+                    return node._replicationDependencies.empty() && node._inFlightCommitIDs.empty();
+                }));
+                ASSERT_TRUE(node._replicationError.empty());
+            }
+            EXPECT_EQUAL(db.getCommitCount(), prefix.commitCount);
+            ASSERT_TRUE(db.getCommit(prefix.commitCount + 2));
+
+            // A non-replication writer must finish before the journal can be rolled back.
+            SQLite writer(db);
+            ASSERT_TRUE(writer.beginTransaction());
+            ASSERT_TRUE(writer.writeUnmodified("INSERT INTO rollbackTest VALUES ('uncommitted');"));
+            promise<void> changing;
+            auto changed = async(launch::async, [&]() {
+                changing.set_value();
+                node._changeState(SQLiteNodeState::SEARCHING);
+            });
+            changing.get_future().wait();
+            EXPECT_TRUE(changed.wait_for(chrono::milliseconds(100)) == future_status::timeout);
+            writer.rollback();
+            changed.get();
+            EXPECT_TRUE(node._replicateThreads.empty());
+            EXPECT_FALSE(db.getCommit(prefix.commitCount + 2));
+            EXPECT_EQUAL(db.getCommitCount(), prefix.commitCount);
+            EXPECT_EQUAL(db.getCommitState().hashCommitID, prefix.hashCommitID);
+            EXPECT_EQUAL(db.getCommittedHash(), prefix.hash);
+
+            // Filling the gap must not advertise the discarded completion, and its ID must be reusable.
+            node._changeState(SQLiteNodeState::FOLLOWING);
+            node._leadPeer = peer;
+            SData blank("TRANSACTION");
+            blank["ID"] = to_string(prefix.commitCount + 1);
+            blank["NewHash"] = "";
+            node._handleBeginTransaction(db, peer, blank);
+            ASSERT_TRUE(node._handlePrepareTransaction(db, peer, blank, STimeNow()));
+            ASSERT_EQUAL(node._handleCommitTransaction(db, peer, prefix.commitCount + 1, ""), SQLITE_OK);
+            EXPECT_EQUAL(db.getCommitCount(), prefix.commitCount + 1);
+            tail.content = "INSERT INTO rollbackTest VALUES ('replacement');";
+            tail["NewHash"] = guid + ":" + SToHex(SHashSHA1(guid + tail.content));
+            node._handleBeginTransaction(db, peer, tail);
+            ASSERT_TRUE(node._handlePrepareTransaction(db, peer, tail, STimeNow()));
+            ASSERT_EQUAL(node._handleCommitTransaction(db, peer, prefix.commitCount + 2, tail["NewHash"]), SQLITE_OK);
+            EXPECT_EQUAL(db.getCommitCount(), prefix.commitCount + 2);
+            EXPECT_EQUAL(db.getCommittedHash(), tail["NewHash"]);
+            EXPECT_EQUAL(db.read("SELECT COUNT(*) FROM rollbackTest WHERE value != 'replacement';"), "0");
+        }
+        node._changeState(SQLiteNodeState::STANDINGUP);
+        node._changeState(SQLiteNodeState::LEADING);
+        ASSERT_TRUE(db.beginTransaction());
+        ASSERT_TRUE(db.writeUnmodified("INSERT INTO rollbackTest VALUES ('leader');"));
+        ASSERT_TRUE(db.prepare());
+        ASSERT_EQUAL(db.commit(), SQLITE_OK);
+    }
+} __SQLiteNodeJournalRollbackTest;
