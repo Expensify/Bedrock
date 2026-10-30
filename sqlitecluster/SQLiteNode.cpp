@@ -1887,8 +1887,10 @@ void SQLiteNode::_changeState(SQLiteNodeState newState)
         _db.exclusiveLockDB();
 
         try {
-            if (stopReplication) {
-                // Workers are joined and the exclusive lock drains and blocks all other writers, including local writes.
+            if (stopReplication || _state == SQLiteNodeState::STANDINGDOWN ||
+                (_state == SQLiteNodeState::LEADING && newState != SQLiteNodeState::STANDINGDOWN)) {
+                // The exclusive lock drains and blocks all writers. Journal rollback also requires follower mode.
+                _db.setHCTreeFollowerMode(true);
                 _db.rollbackHCTreeJournal();
             }
             if (newState == SQLiteNodeState::LEADING) {
