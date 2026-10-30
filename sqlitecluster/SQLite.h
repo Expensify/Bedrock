@@ -435,6 +435,9 @@ private:
     void setHCTreeFollowerMode(bool following);
     void prepareHCTreeLeadership();
 
+    // Discard the noncontiguous follower journal tail with exclusiveLockDB held and replication workers stopped.
+    void rollbackHCTreeJournal();
+
 private:
     friend class SQLitePool;
 
@@ -457,6 +460,9 @@ public:
 
         // Remember completed replication IDs and publish only the contiguous prefix and its nonblank hash.
         void recordReplicationCommit(uint64_t commitID, const string& commitHash);
+
+        // Discard completion records for the rolled-back noncontiguous journal tail.
+        void discardOutOfOrderCommits();
 
         CommitState getCommitState() const;
 
