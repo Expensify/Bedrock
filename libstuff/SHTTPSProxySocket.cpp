@@ -147,7 +147,10 @@ bool SHTTPSProxySocket::recv()
                         }
                         proxyNegotiationComplete = true;
                     } else {
+                        // The proxy's reply is about the tunnel, not the request, so it must not be mistaken for the
+                        // target host's response. The request was never sent, so the caller can retry it.
                         SWARN("Proxy server " << proxyAddress << " returned methodLine: " << connectionEstablished.methodLine);
+                        recvBuffer.clear();
                         close(s);
                         s = -1;
                         state = STCPManager::Socket::CLOSED;
