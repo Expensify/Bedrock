@@ -7,6 +7,7 @@ test/clustertest/cluster_node_?_bedrocktest*
 bedrock
 bedrock-test-port-server
 .build
+build
 libbedrock.a
 libstuff.a
 libjson.a
