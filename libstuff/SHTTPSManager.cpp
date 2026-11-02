@@ -96,6 +96,7 @@ void SStandaloneHTTPSManager::postPoll(fd_map& fdm, SStandaloneHTTPSManager::Tra
         ? transaction.readResponse(string_view(transaction.s->recvBuffer.c_str(), transaction.s->recvBuffer.size()), transaction.s->state == Socket::CLOSED)
         : transaction.fullResponse.deserialize(transaction.s->recvBuffer);
     if (size < 0) {
+        SHMMM("Invalid or incomplete streaming HTTP response, responding 502");
         transaction.response = 502;
         transaction.finished = now;
         delete transaction.s;
@@ -227,11 +228,11 @@ int SStandaloneHTTPSManager::Transaction::readResponse(const string_view receive
     if (responsePhase == ResponsePhase::HEADERS) {
         // A CRLF delimiter can itself be split across socket reads.
         if (received.find("\r\n\r\n") == string_view::npos && received.find("\n\n") == string_view::npos) {
-            return isClosed ? -1 : 0;
+            return 0;
         }
         const int headerSize = SParseHTTP(received.data(), received.size(), fullResponse.methodLine, fullResponse.nameValueMap, fullResponse.content, true);
         if (!headerSize) {
-            return isClosed ? -1 : 0;
+            return 0;
         }
         responseOffset = static_cast<size_t>(headerSize);
         if (getHTTPResponseCode(fullResponse.methodLine) == 204 || getHTTPResponseCode(fullResponse.methodLine) == 304) {

@@ -250,25 +250,28 @@ struct SSLTest : tpunit::TestFixture
         close(fd);
         const string host = "127.0.0.1:" + to_string(ntohs(addr.sin_port));
 
-        SStandaloneHTTPSManager manager;
-        SStandaloneHTTPSManager::Transaction transaction(manager);
-        transaction.targetHost = host;
-        transaction.timeoutAt = STimeNow() + 5'000'000;
-        transaction.s = new STCPManager::Socket(host, false);
-        transaction.s->send(SData("GET / HTTP/1.1").serialize());
+        for (const bool shouldStreamResponse : {false, true}) {
+            SStandaloneHTTPSManager manager;
+            SStandaloneHTTPSManager::Transaction transaction(manager);
+            transaction.shouldStreamResponse = shouldStreamResponse;
+            transaction.targetHost = host;
+            transaction.timeoutAt = STimeNow() + 5'000'000;
+            transaction.s = new STCPManager::Socket(host, false);
+            transaction.s->send(SData("GET / HTTP/1.1").serialize());
 
-        while (!transaction.response) {
-            fd_map fdm;
-            uint64_t nextActivity = STimeNow();
-            manager.prePoll(fdm, transaction);
-            S_poll(fdm, 100'000);
-            manager.postPoll(fdm, transaction, nextActivity);
+            while (!transaction.response) {
+                fd_map fdm;
+                uint64_t nextActivity = STimeNow();
+                manager.prePoll(fdm, transaction);
+                S_poll(fdm, 100'000);
+                manager.postPoll(fdm, transaction, nextActivity);
+            }
+
+            // A failed transaction is finished and its socket is freed, so polling it again doesn't report the failure
+            // again.
+            EXPECT_EQUAL(transaction.response, 500);
+            EXPECT_TRUE(transaction.finished);
+            EXPECT_FALSE(transaction.s);
         }
-
-        // A failed transaction is finished and its socket is freed, so polling it again doesn't report the failure
-        // again.
-        EXPECT_EQUAL(transaction.response, 500);
-        EXPECT_TRUE(transaction.finished);
-        EXPECT_FALSE(transaction.s);
     }
 } __SSLTest;
