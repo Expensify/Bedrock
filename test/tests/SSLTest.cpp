@@ -193,7 +193,6 @@ struct SSLTest : tpunit::TestFixture
         ASSERT_TRUE(stalled.response >= 400);
         ASSERT_TRUE(stalled.finished);
         ASSERT_FALSE(stalled.s);
-
     }
 
     void failureStageTest()

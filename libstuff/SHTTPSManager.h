@@ -27,6 +27,7 @@ public:
 
         // Returns the consumed HTTP size on completion, zero while waiting, or -1 for invalid framing.
         int readResponse(string_view received, bool isClosed);
+
         SStandaloneHTTPSManager& manager;
         const string requestID;
 
@@ -39,7 +40,7 @@ public:
         uint64_t scheduledStart = 0;
         function<void(Transaction&)> startFunc;
 
-    private:
+private:
         enum class ResponsePhase { HEADERS, BODY, CHUNK_SIZE, CHUNK_DATA, CHUNK_END, TRAILERS, COMPLETE };
         ResponsePhase responsePhase = ResponsePhase::HEADERS;
         size_t responseOffset = 0;

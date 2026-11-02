@@ -114,9 +114,10 @@ void SStandaloneHTTPSManager::postPoll(fd_map& fdm, SStandaloneHTTPSManager::Tra
         }
     }
 
-    // If there's not a Content-Length, we need to check for the socket being closed.
+    // The streaming reader returns a size only when framing is complete.
+    // Buffered responses without Content-Length need the socket to close.
     bool hasContentLength = transaction.fullResponse.nameValueMap.contains("Content-Length");
-    bool completeRequest = size && ((statusCode == 204) || hasContentLength || (transaction.s->state == STCPManager::Socket::CLOSED));
+    bool completeRequest = size && (transaction.shouldStreamResponse || (statusCode == 204) || hasContentLength || (transaction.s->state == STCPManager::Socket::CLOSED));
     if (completeRequest) {
         // Consume how much we read.
         transaction.s->recvBuffer.consumeFront(size);
@@ -235,9 +236,10 @@ int SStandaloneHTTPSManager::Transaction::readResponse(const string_view receive
         responseOffset = static_cast<size_t>(headerSize);
         if (getHTTPResponseCode(fullResponse.methodLine) == 204 || getHTTPResponseCode(fullResponse.methodLine) == 304) {
             responsePhase = ResponsePhase::COMPLETE;
-            fullResponse["Content-Length"] = "0";
         } else if (SIEquals(fullResponse["Transfer-Encoding"], "chunked")) {
             responsePhase = ResponsePhase::CHUNK_SIZE;
+        } else if (!fullResponse["Transfer-Encoding"].empty()) {
+            return -1;
         } else {
             responsePhase = ResponsePhase::BODY;
             hasResponseLength = fullResponse.isSet("Content-Length");
