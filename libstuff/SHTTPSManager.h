@@ -21,6 +21,12 @@ public:
         SData fullRequest;
         SData fullResponse;
         int response;
+
+        // Expose decoded body bytes during postPoll while response remains zero until HTTP completion.
+        bool shouldStreamResponse = false;
+
+        // Returns the consumed HTTP size on completion, zero while waiting, or -1 for invalid framing.
+        int readResponse(string_view received, bool isClosed);
         SStandaloneHTTPSManager& manager;
         const string requestID;
 
@@ -32,6 +38,13 @@ public:
         // If it is scheduled to start in the future, we will call `startFunc` at the timestamp scheduled.
         uint64_t scheduledStart = 0;
         function<void(Transaction&)> startFunc;
+
+    private:
+        enum class ResponsePhase { HEADERS, BODY, CHUNK_SIZE, CHUNK_DATA, CHUNK_END, TRAILERS, COMPLETE };
+        ResponsePhase responsePhase = ResponsePhase::HEADERS;
+        size_t responseOffset = 0;
+        size_t responseRemaining = 0;
+        bool hasResponseLength = false;
     };
 
     static const string proxyAddressHTTPS;

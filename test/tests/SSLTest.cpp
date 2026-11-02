@@ -36,6 +36,7 @@ struct SSLTest : tpunit::TestFixture
                               TEST(SSLTest::proxyTest),
                               TEST(SSLTest::failureStageTest),
                               TEST(SSLTest::failureFinishesTransactionTest),
+                              TEST(SSLTest::streamingResponseTest),
                               AFTER_CLASS(SSLTest::teardown))
     {
     }
@@ -113,6 +114,89 @@ struct SSLTest : tpunit::TestFixture
         // Make sure that the response has a body. This differentiates it from the response to a CONNECT message
         // So that we can test we're looking at the actual proxied response and not just the response from the proxy itself.
         EXPECT_TRUE(transaction->fullResponse.content.size());
+    }
+
+    void streamingResponseTest()
+    {
+        // Given a chunked HTTP response arriving one byte at a time.
+        SStandaloneHTTPSManager manager;
+        SStandaloneHTTPSManager::Transaction transaction(manager);
+        const string header = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n";
+        const string prefix = header + "5;extension=value\r\nhello\r\n";
+        string received;
+
+        // When a complete chunk arrives before the response terminates.
+        for (const char character : prefix) {
+            received += character;
+            const int consumed = transaction.readResponse(received, false);
+            ASSERT_EQUAL(consumed, 0);
+        }
+
+        // Then its body is available without completing the transaction.
+        ASSERT_EQUAL(transaction.fullResponse.content, "hello");
+        ASSERT_EQUAL(transaction.response, 0);
+
+        // When later chunks and trailers finish the same response.
+        received += "6\r\n world\r\n0\r\nX-Result: done\r\n\r\n";
+        const int consumed = transaction.readResponse(received, false);
+
+        // Then the accumulated body and framing match a completed buffered response.
+        ASSERT_EQUAL(consumed, static_cast<int>(received.size()));
+        ASSERT_EQUAL(transaction.fullResponse.content, "hello world");
+        ASSERT_EQUAL(transaction.fullResponse["Content-Length"], "11");
+        ASSERT_EQUAL(transaction.fullResponse["X-Result"], "done");
+        ASSERT_FALSE(transaction.fullResponse.isSet("Transfer-Encoding"));
+        SData buffered;
+        ASSERT_EQUAL(buffered.deserialize(prefix), 0);
+        ASSERT_TRUE(buffered.content.empty());
+
+        // Given a response with a declared length and a separate close-delimited response.
+        SStandaloneHTTPSManager::Transaction sized(manager);
+        SStandaloneHTTPSManager::Transaction closeDelimited(manager);
+        const string sizedPrefix = "HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhe";
+        const string closePrefix = "HTTP/1.1 200 OK\r\n\r\nhe";
+
+        // When partial bodies arrive and then finish by their respective delimiters.
+        ASSERT_EQUAL(sized.readResponse(sizedPrefix, false), 0);
+        ASSERT_EQUAL(closeDelimited.readResponse(closePrefix, false), 0);
+        ASSERT_EQUAL(sized.fullResponse.content, "he");
+        ASSERT_EQUAL(closeDelimited.fullResponse.content, "he");
+        ASSERT_TRUE(sized.readResponse(sizedPrefix + "llo", false) > 0);
+        ASSERT_TRUE(closeDelimited.readResponse(closePrefix + "llo", true) > 0);
+
+        // Then both preserve the full body without duplicating prior bytes.
+        ASSERT_EQUAL(sized.fullResponse.content, "hello");
+        ASSERT_EQUAL(closeDelimited.fullResponse.content, "hello");
+
+        // Given a chunked response that closes before its declared chunk is complete.
+        SStandaloneHTTPSManager::Transaction truncated(manager);
+
+        // When the connection closes after only part of that chunk.
+        const int truncatedResult = truncated.readResponse(header + "5\r\nhe", true);
+
+        // Then incomplete HTTP framing is reported instead of successful completion.
+        ASSERT_EQUAL(truncatedResult, -1);
+
+        // Given an open socket with an incomplete chunk whose transaction deadline has passed.
+        int sockets[2];
+        ASSERT_EQUAL(socketpair(AF_UNIX, SOCK_STREAM, 0, sockets), 0);
+        SStandaloneHTTPSManager::Transaction stalled(manager);
+        stalled.shouldStreamResponse = true;
+        stalled.s = new STCPManager::Socket(sockets[0], STCPManager::Socket::CONNECTED);
+        stalled.s->recvBuffer = header + "5\r\nhe";
+        stalled.timeoutAt = STimeNow() - 1;
+        fd_map fdm;
+        uint64_t nextActivity = 0;
+
+        // When postPoll handles the deadline without a completed HTTP body.
+        manager.postPoll(fdm, stalled, nextActivity);
+        close(sockets[1]);
+
+        // Then parsed success headers cannot turn a transport timeout into HTTP 200.
+        ASSERT_TRUE(stalled.response >= 400);
+        ASSERT_TRUE(stalled.finished);
+        ASSERT_FALSE(stalled.s);
+
     }
 
     void failureStageTest()

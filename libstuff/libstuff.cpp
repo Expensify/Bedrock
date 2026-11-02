@@ -962,6 +962,11 @@ void _SParseHTTP_GetUpToEnd(const char* start, const char* end, string& out)
 // --------------------------------------------------------------------------
 int SParseHTTP(const char* buffer, size_t length, string& methodLine, STable& nameValueMap, string& content)
 {
+    return SParseHTTP(buffer, length, methodLine, nameValueMap, content, false);
+}
+
+int SParseHTTP(const char* buffer, size_t length, string& methodLine, STable& nameValueMap, string& content, const bool shouldParseHeadersOnly)
+{
     // Clear the output
     methodLine.clear();
     nameValueMap.clear();
@@ -994,6 +999,15 @@ int SParseHTTP(const char* buffer, size_t length, string& methodLine, STable& na
             // We want to look this up without inserting it.
             auto it = nameValueMap.find("Transfer-Encoding");
             if (!methodLine.empty()) {
+                if (shouldParseHeadersOnly) {
+                    const char* headerEnd = lineEnd;
+                    int remainingEOLs = 2;
+                    while (headerEnd < inputEnd && (*headerEnd == '\r' || *headerEnd == '\n') && remainingEOLs--) {
+                        ++headerEnd;
+                    }
+                    return static_cast<int>(headerEnd - buffer);
+                }
+
                 // If we are done processing a chunked body.
                 if (isChunked) {
                     // Figure out the end of the message by consuming up to 2 EOL characters,

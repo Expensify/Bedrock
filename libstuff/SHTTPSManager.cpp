@@ -6,6 +6,7 @@
 #include <BedrockServer.h>
 #include <libstuff/libstuff.h>
 #include <sqlitecluster/SQLiteNode.h>
+#include <charconv>
 
 const string SStandaloneHTTPSManager::proxyAddressHTTPS = initProxyAddressHTTPS();
 
@@ -91,7 +92,16 @@ void SStandaloneHTTPSManager::postPoll(fd_map& fdm, SStandaloneHTTPSManager::Tra
     // are complete solely based on the content, so these return the size as if the body thus-far were the entire content.
     // This means we have to check if we've hit EOF and closed the socket to know for sure that we've received the entire
     // response in these cases.
-    int size = transaction.fullResponse.deserialize(transaction.s->recvBuffer);
+    int size = transaction.shouldStreamResponse
+        ? transaction.readResponse(string_view(transaction.s->recvBuffer.c_str(), transaction.s->recvBuffer.size()), transaction.s->state == Socket::CLOSED)
+        : transaction.fullResponse.deserialize(transaction.s->recvBuffer);
+    if (size < 0) {
+        transaction.response = 502;
+        transaction.finished = now;
+        delete transaction.s;
+        transaction.s = nullptr;
+        return;
+    }
 
     // `204 No Content` is an implicit content length of 0. If we successfully parsed a 204 request, we can always
     // treat the request as complete, becuase we need to have parsed all of the headers for `deserialize` above to
@@ -146,8 +156,9 @@ void SStandaloneHTTPSManager::postPoll(fd_map& fdm, SStandaloneHTTPSManager::Tra
             (now > transaction.s->lastSendTime + timeoutMS * 1000) ||
             (now > transaction.timeoutAt)) {
             // Connection died or timed out. Check if we have any partial response data.
-            bool hasPartialResponse = !transaction.fullResponse.methodLine.empty() || size > 0;
-            if (hasPartialResponse) {
+            // Streaming headers can be present before HTTP framing is complete.
+            const bool canUsePartialResponse = !transaction.shouldStreamResponse && (!transaction.fullResponse.methodLine.empty() || size > 0);
+            if (canUsePartialResponse) {
                 // We received some response data before connection closed. This is expected when
                 // server sends error response and closes (especially through proxies). Use the
                 // partial response we got.
@@ -161,7 +172,7 @@ void SStandaloneHTTPSManager::postPoll(fd_map& fdm, SStandaloneHTTPSManager::Tra
                 delete transaction.s;
                 transaction.s = nullptr;
             } else {
-                // No response data at all - this is a genuine failure
+                // The response did not complete before its transport deadline.
                 const Socket::State state = transaction.s->state.load();
                 transaction.response = transaction.s->sendBufferEmpty() ? 501 : 500;
                 const string progress = _describeRequestProgress(transaction);
@@ -205,6 +216,103 @@ SStandaloneHTTPSManager::Transaction::Transaction(SStandaloneHTTPSManager& manag
     if (isBlockingCommitThread) {
         STHROW("500 Refused - HTTPS request attempted on blockingCommit thread");
     }
+}
+
+int SStandaloneHTTPSManager::Transaction::readResponse(const string_view received, const bool isClosed)
+{
+    if (received.size() < responseOffset) {
+        return -1;
+    }
+    if (responsePhase == ResponsePhase::HEADERS) {
+        // A CRLF delimiter can itself be split across socket reads.
+        if (received.find("\r\n\r\n") == string_view::npos && received.find("\n\n") == string_view::npos) {
+            return isClosed ? -1 : 0;
+        }
+        const int headerSize = SParseHTTP(received.data(), received.size(), fullResponse.methodLine, fullResponse.nameValueMap, fullResponse.content, true);
+        if (!headerSize) {
+            return isClosed ? -1 : 0;
+        }
+        responseOffset = static_cast<size_t>(headerSize);
+        if (getHTTPResponseCode(fullResponse.methodLine) == 204 || getHTTPResponseCode(fullResponse.methodLine) == 304) {
+            responsePhase = ResponsePhase::COMPLETE;
+            fullResponse["Content-Length"] = "0";
+        } else if (SIEquals(fullResponse["Transfer-Encoding"], "chunked")) {
+            responsePhase = ResponsePhase::CHUNK_SIZE;
+        } else {
+            responsePhase = ResponsePhase::BODY;
+            hasResponseLength = fullResponse.isSet("Content-Length");
+            if (hasResponseLength) {
+                const string& length = fullResponse["Content-Length"];
+                const auto parsed = from_chars(length.data(), length.data() + length.size(), responseRemaining);
+                if (length.empty() || parsed.ec != errc() || parsed.ptr != length.data() + length.size()) {
+                    return -1;
+                }
+            }
+        }
+    }
+
+    while (responsePhase != ResponsePhase::COMPLETE) {
+        if (responsePhase == ResponsePhase::BODY || responsePhase == ResponsePhase::CHUNK_DATA) {
+            const bool isCloseDelimited = responsePhase == ResponsePhase::BODY && !hasResponseLength;
+            const size_t count = isCloseDelimited ? received.size() - responseOffset : min(responseRemaining, received.size() - responseOffset);
+            fullResponse.content.append(received.data() + responseOffset, count);
+            responseOffset += count;
+            if (isCloseDelimited) {
+                if (!isClosed) {
+                    return 0;
+                }
+                responsePhase = ResponsePhase::COMPLETE;
+                break;
+            }
+            responseRemaining -= count;
+            if (responseRemaining) {
+                return isClosed ? -1 : 0;
+            }
+            responsePhase = responsePhase == ResponsePhase::BODY ? ResponsePhase::COMPLETE : ResponsePhase::CHUNK_END;
+        } else if (responsePhase == ResponsePhase::CHUNK_END) {
+            if (received.size() - responseOffset < 2) {
+                return isClosed ? -1 : 0;
+            }
+            if (received.substr(responseOffset, 2) != "\r\n") {
+                return -1;
+            }
+            responseOffset += 2;
+            responsePhase = ResponsePhase::CHUNK_SIZE;
+        } else {
+            const size_t lineEnd = received.find("\r\n", responseOffset);
+            if (lineEnd == string_view::npos) {
+                return isClosed ? -1 : 0;
+            }
+            const string_view line = received.substr(responseOffset, lineEnd - responseOffset);
+            responseOffset = lineEnd + 2;
+            if (responsePhase == ResponsePhase::TRAILERS) {
+                if (line.empty()) {
+                    fullResponse.erase("Transfer-Encoding");
+                    fullResponse["Content-Length"] = to_string(fullResponse.content.size());
+                    responsePhase = ResponsePhase::COMPLETE;
+                } else {
+                    const size_t colon = line.find(':');
+                    if (colon == string_view::npos) {
+                        return -1;
+                    }
+                    const string name = STrim(string(line.substr(0, colon)));
+
+                    // Framing remains determined by the original headers.
+                    if (!SIEquals(name, "Content-Length") && !SIEquals(name, "Transfer-Encoding")) {
+                        fullResponse[name] = STrim(string(line.substr(colon + 1)));
+                    }
+                }
+            } else {
+                const string_view length = line.substr(0, line.find(';'));
+                const auto parsed = from_chars(length.data(), length.data() + length.size(), responseRemaining, 16);
+                if (length.empty() || parsed.ec != errc() || parsed.ptr != length.data() + length.size()) {
+                    return -1;
+                }
+                responsePhase = responseRemaining ? ResponsePhase::CHUNK_DATA : ResponsePhase::TRAILERS;
+            }
+        }
+    }
+    return static_cast<int>(responseOffset);
 }
 
 SStandaloneHTTPSManager::Transaction::~Transaction()
