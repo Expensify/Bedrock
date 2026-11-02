@@ -5,8 +5,8 @@ endif
 
 # Pull some variables from the git repo itself. Note that this means this build does not work if Bedrock isn't
 # contained in a git repo.
-GIT_REVISION = -DGIT_REVISION=$(shell git rev-parse HEAD | grep -o '^.\{10\}')
-PROJECT = $(shell git rev-parse --show-toplevel)
+GIT_REVISION := -DGIT_REVISION=$(shell git rev-parse HEAD | grep -o '^.\{10\}')
+PROJECT := $(shell git rev-parse --show-toplevel)
 
 # Set our include paths. We need this for the pre-processor to use to generate dependencies.
 INCLUDE = -I$(PROJECT) -I$(PROJECT)/mbedtls/include -isystem $(PROJECT)/externalLib/rapidjson/include
@@ -25,7 +25,7 @@ LIBPATHS =-L$(PROJECT) -Lmbedtls/library
 LIBRARIES =-Wl,--exclude-libs,libjson.a -Wl,--start-group -lbedrock -lstuff -ljson -Wl,--end-group -ldl -lpcre2-8 -lpthread -lmbedtls -lmbedx509 -lmbedcrypto -lz -lzstd -lm
 
 # These targets aren't actual files.
-.PHONY: all test clustertest clean testplugin checkjsonsymbols
+.PHONY: all test clustertest clean testplugin checkjsonsymbols compile_commands _compile_commands
 
 # This sets our default by being the first target, and also sets `all` in case someone types `make all`.
 all: bedrock bedrock-test-port-server test clustertest checkjsonsymbols
@@ -146,6 +146,19 @@ BENCHDEP = $(BENCHCPP:%.cpp=$(INTERMEDIATEDIR)/%.d)
 bench: $(BENCHOBJ) $(BINPREREQS)
 	$(CXX) -o benchmarks/bench $(BENCHOBJ) $(LIBPATHS) -rdynamic $(LIBRARIES)
 
+# Enumerate the editor's complete source set without building objects or dependencies.
+COMPILE_COMMANDS_OBJECTS = $(sort $(STUFFOBJ) $(JSONOBJ) $(LIBBEDROCKOBJ) $(BEDROCKOBJ) $(TESTOBJ) $(CLUSTERTESTOBJ) $(TESTPLUGINOBJ) $(BENCHOBJ) $(INTERMEDIATEDIR)/test/portserver/main.o $(INTERMEDIATEDIR)/test/portserver/PortServer.o)
+COMPILE_COMMANDS_MAKE = $(MAKE)
+compile_commands:
+	@python3 generate_compile_commands.py "$(COMPILE_COMMANDS_MAKE)"
+
+ifeq ($(COMPILATION_DATABASE),1)
+_compile_commands: $(COMPILE_COMMANDS_OBJECTS)
+$(INTERMEDIATEDIR):
+else
+CPP_BUILD_PREREQUISITES = mbedtls/library/libmbedcrypto.a
+endif
+
 # The rule to build TestPlugin
 test/clustertest/testplugin/testplugin.so : $(TESTPLUGINOBJ) $(TESTPLUGINCPP) $(TESTPLUGINTDEP) $(BINPREREQS)
 	$(CXX) $(CXXFLAGS) $(INCLUDE) $(TESTPLUGINOBJ) $(LIBPATHS) -shared -o $@
@@ -164,7 +177,7 @@ $(INTERMEDIATEDIR)/plugins/MySQL.d $(INTERMEDIATEDIR)/plugins/MySQL.o: plugins/M
 # This builds both the dependencies and the object file from the cpp.
 # We include one of the mbedtls files as a dependency because building it will cause our header files to get created,
 # which many of our cpp files will reference.
-$(INTERMEDIATEDIR)/%.d $(INTERMEDIATEDIR)/%.o: %.cpp | mbedtls/library/libmbedcrypto.a
+$(INTERMEDIATEDIR)/%.d $(INTERMEDIATEDIR)/%.o: %.cpp | $(CPP_BUILD_PREREQUISITES)
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) -MMD -MF $(INTERMEDIATEDIR)/$*.d -MT $(INTERMEDIATEDIR)/$*.o -o $(INTERMEDIATEDIR)/$*.o -c $<
 
@@ -196,6 +209,16 @@ ifneq ($(filter bench,$(REQUESTED_GOALS)),)
 DEPS_TO_INCLUDE += $(BENCHDEP)
 endif
 
+ifneq ($(COMPILATION_DATABASE),1)
 ifeq ($(filter clean,$(REQUESTED_GOALS)),)
+# Update metadata even for no-op builds, before an included dependency file can trigger compilation.
+# Avoid changing query/touch/dry-run behavior or making those modes write metadata.
+MAKE_RUN_FLAGS := $(filter-out --% %=%,$(firstword $(MAKEFLAGS)))
+ifeq ($(strip $(foreach flag,n q t,$(findstring $(flag),$(MAKE_RUN_FLAGS)))),)
+$(COMPILE_COMMANDS_OBJECTS) $(COMPILE_COMMANDS_OBJECTS:%.o=%.d) all bedrock bedrock-test-port-server test test/test clustertest test/clustertest/clustertest testplugin test/clustertest/testplugin/testplugin.so bench libstuff.a libjson.a libbedrock.a: | compile_commands
+endif
+ifneq ($(filter-out compile_commands,$(REQUESTED_GOALS)),)
 -include $(sort $(DEPS_TO_INCLUDE))
+endif
+endif
 endif
