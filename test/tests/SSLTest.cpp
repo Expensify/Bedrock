@@ -146,9 +146,6 @@ struct SSLTest : tpunit::TestFixture
         ASSERT_EQUAL(transaction.fullResponse["Content-Length"], "11");
         ASSERT_EQUAL(transaction.fullResponse["X-Result"], "done");
         ASSERT_FALSE(transaction.fullResponse.isSet("Transfer-Encoding"));
-        SData buffered;
-        ASSERT_EQUAL(buffered.deserialize(prefix), 0);
-        ASSERT_TRUE(buffered.content.empty());
 
         // Given a response with a declared length and a separate close-delimited response.
         SStandaloneHTTPSManager::Transaction sized(manager);

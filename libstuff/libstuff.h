@@ -606,7 +606,8 @@ void SAppend(string& lhs, const string& rhs);
 
 // HTTP message management
 int SParseHTTP(const char* buffer, size_t length, string& methodLine, STable& nameValueMap, string& content);
-// Header-only parsing leaves body framing to an incremental reader. The consumed size ends after the header delimiter.
+
+// Stops after the header delimiter when shouldParseHeadersOnly is true, leaving body framing to the incremental reader.
 int SParseHTTP(const char* buffer, size_t length, string& methodLine, STable& nameValueMap, string& content, bool shouldParseHeadersOnly);
 int SParseHTTP(string_view buffer, string& methodLine, STable& nameValueMap, string& content);
 bool SParseRequestMethodLine(const string& methodLine, string& method, string& uri);
