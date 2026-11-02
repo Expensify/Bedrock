@@ -78,6 +78,15 @@ void SStandaloneHTTPSManager::postPoll(fd_map& fdm, SStandaloneHTTPSManager::Tra
             return;
         }
         transaction.reconnectAt = 0;
+
+        // Polling can resume after the transaction's deadline, and a request sent then could reach the target after
+        // the caller has already given up on it.
+        if (transaction.timeoutAt && now >= transaction.timeoutAt) {
+            transaction.response = 500;
+            transaction.finished = now;
+            SHMMM("Reconnect to " << transaction.targetHost << " skipped, transaction timed out; request not sent, responding 500");
+            return;
+        }
         transaction.reconnectAttempts++;
         transaction.s = _openSocket(transaction);
         if (!transaction.s) {
@@ -196,8 +205,8 @@ void SStandaloneHTTPSManager::postPoll(fd_map& fdm, SStandaloneHTTPSManager::Tra
                 // Nothing reached the target host, so it's safe to try again on a new connection: back off 0.5s, 1s,
                 // 2s, 4s, ... unless the transaction would time out first.
                 const uint64_t retryDelay = RECONNECT_BASE_DELAY_US << transaction.reconnectAttempts;
-                const bool canRetry = progress == "not sent" && transaction.reconnectAttempts < transaction.maxReconnectAttempts
-                                      && (!transaction.timeoutAt || now + retryDelay < transaction.timeoutAt);
+                const bool canRetry = progress == "not sent" && transaction.reconnectAttempts < transaction.maxReconnectAttempts &&
+                    (!transaction.timeoutAt || now + retryDelay < transaction.timeoutAt);
                 if (canRetry) {
                     transaction.reconnectAt = now + retryDelay;
                     SHMMM("Connection " << outcome << " " << stage << " to " << target << via

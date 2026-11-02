@@ -119,6 +119,7 @@ struct SSLTest : tpunit::TestFixture
                               TEST(SSLTest::proxyRefusedReconnectTest),
                               TEST(SSLTest::noReconnectAfterSendTest),
                               TEST(SSLTest::reconnectOptOutTest),
+                              TEST(SSLTest::reconnectAfterTimeoutTest),
                               AFTER_CLASS(SSLTest::teardown))
     {
     }
@@ -366,5 +367,29 @@ struct SSLTest : tpunit::TestFixture
         EXPECT_EQUAL(transaction->response, 500);
         EXPECT_EQUAL(transaction->reconnectAttempts, 0);
         EXPECT_FALSE(transaction->reconnectAt);
+    }
+
+    void reconnectAfterTimeoutTest()
+    {
+        // The reconnect is due, but polling resumes after the transaction's deadline. The request must not be sent.
+        FailureStageHTTPSManager manager;
+        const uint16_t port = FakeHTTPServer::unusedPort();
+        FakeHTTPServer server(port);
+        SStandaloneHTTPSManager::Transaction transaction(manager, "reconnectAfterTimeoutTest");
+        transaction.targetHost = "127.0.0.1:" + to_string(port);
+        transaction.maxReconnectAttempts = SStandaloneHTTPSManager::MAX_RECONNECT_ATTEMPTS;
+        transaction.fullRequest = SData("GET / HTTP/1.1");
+        transaction.fullRequest["Host"] = transaction.targetHost;
+        transaction.reconnectAt = STimeNow() - 2;
+        transaction.timeoutAt = STimeNow() - 1;
+
+        waitForResponse(manager, transaction, 1'000, [&]() {
+            server.answer("HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok");
+        });
+
+        EXPECT_EQUAL(transaction.response, 500);
+        EXPECT_EQUAL(transaction.reconnectAttempts, 0);
+        EXPECT_FALSE(transaction.s);
+        EXPECT_EQUAL(server.connections, 0);
     }
 } __SSLTest;
