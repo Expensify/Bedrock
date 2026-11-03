@@ -435,7 +435,7 @@ private:
     void setHCTreeFollowerMode(bool following);
     void prepareHCTreeLeadership();
 
-    // Discard any juournal entries past the contiguous block. If a follower falls out of the cluster with gaps in the journal,
+    // Discard any journal entries past the contiguous block. If a follower falls out of the cluster with gaps in the journal,
     // this removes everything after the first gap (also applies if we unexpectedly stop leading).
     void rollbackHCTreeJournal();
 
