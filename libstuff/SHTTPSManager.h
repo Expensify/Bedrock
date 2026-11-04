@@ -28,6 +28,18 @@ public:
         string targetHost;
         string proxyHost;
 
+        // What's needed to open a fresh connection for this request, and how many times it may be resent on one.
+        // Only `_httpsSend` sets `maxReconnectAttempts`; other managers build their own sockets, so a failed
+        // connection for them is final.
+        bool isHttps = false;
+        shared_ptr<const STCPManager::MTLSConnection> mtlsConnection;
+        int maxReconnectAttempts = 0;
+
+        // How many times the request has been resent on a new connection after failing before it reached the target
+        // host, and when the next attempt is due (0 if none is pending).
+        int reconnectAttempts = 0;
+        uint64_t reconnectAt = 0;
+
         // Allow a transaction to be scheduled to start in the future.
         // If it is scheduled to start in the future, we will call `startFunc` at the timestamp scheduled.
         uint64_t scheduledStart = 0;
@@ -35,6 +47,13 @@ public:
     };
 
     static const string proxyAddressHTTPS;
+
+    // By default, a request sent with `_httpsSend` that fails before reaching its target host (DNS, connect, or the
+    // proxy refusing the tunnel) is retried on a new connection up to this many times, waiting
+    // RECONNECT_BASE_DELAY_US, then twice that, and so on. That spans a few seconds of lost connectivity, such as a
+    // firewall failover.
+    static constexpr int MAX_RECONNECT_ATTEMPTS = 4;
+    static constexpr uint64_t RECONNECT_BASE_DELAY_US = 500'000;
 
     // Constructor/Destructor
     SStandaloneHTTPSManager();
@@ -58,10 +77,12 @@ protected:   // Child API
     const string _caCrt;
 
     // Methods
-    unique_ptr<Transaction> _httpsSend(const string& url, const SData& request, bool allowProxy = false);
+    // `maxReconnectAttempts` limits how many times a request that never reached its target host is resent on a new
+    // connection. Pass 0 to fail on the first connection failure.
+    unique_ptr<Transaction> _httpsSend(const string& url, const SData& request, bool allowProxy = false, int maxReconnectAttempts = MAX_RECONNECT_ATTEMPTS);
 
     // A non-null connection requires an HTTPS URL with a matching host:port.
-    unique_ptr<Transaction> _httpsSend(const string& url, const SData& request, shared_ptr<const MTLSConnection> connection, bool allowProxy = false);
+    unique_ptr<Transaction> _httpsSend(const string& url, const SData& request, shared_ptr<const MTLSConnection> connection, bool allowProxy = false, int maxReconnectAttempts = MAX_RECONNECT_ATTEMPTS);
 
     unique_ptr<Transaction> _createErrorTransaction();
 
@@ -71,6 +92,11 @@ protected:   // Child API
 
     // Says whether a failed transaction's request reached the target host: "sent", "not fully sent", or "not sent".
     static string _describeRequestProgress(const Transaction& transaction);
+
+    // Opens a socket to the transaction's target host, through its proxy if it has one. Returns null if the socket
+    // can't be created.
+    static Socket* _openSocket(Transaction& transaction);
+
     virtual bool _onRecv(Transaction& transaction);
 
     static string initProxyAddressHTTPS();
