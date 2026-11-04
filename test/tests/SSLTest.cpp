@@ -208,10 +208,29 @@ struct SSLTest : tpunit::TestFixture
             pollTransaction(transaction);
 
             // Then parsed success headers cannot turn the interrupted stream into HTTP 200.
-            ASSERT_TRUE(transaction.response >= 400);
+            ASSERT_EQUAL(transaction.response, 501);
+            ASSERT_EQUAL(transaction.fullResponse.methodLine, "HTTP/1.1 200 OK");
+            ASSERT_EQUAL(transaction.fullResponse.content, "he");
             ASSERT_TRUE(transaction.finished);
             ASSERT_FALSE(transaction.s);
         }
+
+        int sockets[2];
+        ASSERT_EQUAL(socketpair(AF_UNIX, SOCK_STREAM, 0, sockets), 0);
+        STCPManager::Socket peer(sockets[1], State::CONNECTED);
+        SStandaloneHTTPSManager::Transaction transaction(manager);
+        transaction.shouldStreamResponse = true;
+        transaction.s = new STCPManager::Socket(sockets[0], State::CONNECTED);
+        transaction.timeoutAt = STimeNow() + 5'000'000;
+        ASSERT_TRUE(peer.send("HTTP/1.1 200 OK\r\nContent-Ty"));
+        pollTransaction(transaction);
+        ASSERT_EQUAL(transaction.response, 0);
+        ASSERT_EQUAL(::shutdown(peer.s, SHUT_WR), 0);
+        pollTransaction(transaction);
+
+        ASSERT_EQUAL(transaction.response, 501);
+        ASSERT_TRUE(transaction.finished);
+        ASSERT_FALSE(transaction.s);
     }
 
     void failureStageTest()

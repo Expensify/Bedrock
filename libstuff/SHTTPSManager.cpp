@@ -134,14 +134,11 @@ void SStandaloneHTTPSManager::postPoll(fd_map& fdm, SStandaloneHTTPSManager::Tra
             SHMMM("Message failed: '" << transaction.fullResponse.methodLine << "'");
             transaction.response = getHTTPResponseCode(transaction.fullResponse.methodLine, 500);
         }
-    } else if (
-        result == SHTTPResponseParser::Result::INVALID ||
-        (result == SHTTPResponseParser::Result::TRUNCATED && transaction.shouldStreamResponse)
-    ) {
-        SHMMM("Invalid or incomplete HTTP response, responding 502");
+    } else if (result == SHTTPResponseParser::Result::INVALID) {
+        SHMMM("Invalid HTTP response, responding 502");
         transaction.response = 502;
     } else {
-        // Buffered callers use these transport statuses to decide whether resending a request is safe.
+        // Callers use these transport statuses to decide whether and when to retry.
         transaction.response = transaction.s->sendBufferEmpty() ? 501 : 500;
         const string progress = _describeRequestProgress(transaction);
         const string outcome = (state > Socket::CONNECTED) ? "died prematurely" : "timed out";

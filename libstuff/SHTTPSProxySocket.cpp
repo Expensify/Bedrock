@@ -125,8 +125,7 @@ bool SHTTPSProxySocket::recv()
                 SData connectionEstablished;
                 connectionEstablished.deserialize(recvBuffer);
                 if (!connectionEstablished.empty()) {
-                    const int statusCode = SHTTPResponseParser::getStatusCode(connectionEstablished.methodLine);
-                    if (statusCode >= 200 && statusCode < 300) {
+                    if (SHTTPResponseParser::getStatusCode(connectionEstablished.methodLine) == 200) {
                         recvBuffer.clear();
 
                         // We create this here, rather than in the constructor or somewhere that seems more reasonable, because

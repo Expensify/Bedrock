@@ -137,7 +137,7 @@ void SData::reserveJSONHeaderPadding()
     // space at the end of the string so that it can run on chunks bigger than a single character, while guaranteeing
     // not to go out-of-bounds on memory.
     for (auto& p: nameValueMap) {
-        if (!p.second.empty() && (p.second.front() == '{' || p.second.front() == '[')) {
+        if (p.second[0] == '{' || p.second[0] == '[') {
             p.second.reserve(p.second.size() + 32);
         }
     }
