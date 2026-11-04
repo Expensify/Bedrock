@@ -748,7 +748,9 @@ void SQLite::rollbackHCTreeJournal()
     }
     SASSERT(_sharedData.hctreeFollowerMode);
     const int rc = sqlite3_hct_journal_rollback(_db);
-    SASSERT(rc == SQLITE_OK);
+    if (rc != SQLITE_OK) {
+        SERROR("Failed to roll back HC-Tree journal: " << rc << " (" << sqlite3_errstr(rc) << ")");
+    }
     _sharedData.discardOutOfOrderCommits();
 }
 
