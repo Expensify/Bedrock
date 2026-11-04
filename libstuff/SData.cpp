@@ -127,17 +127,20 @@ int SData::deserialize(const string& fromString)
 int SData::deserialize(const char* buffer, size_t length)
 {
     auto result = SParseHTTP(buffer, length, methodLine, nameValueMap, content);
+    reserveJSONHeaderPadding();
+    return result;
+}
 
+void SData::reserveJSONHeaderPadding()
+{
     // Why do this? It's to enable these values to be parsed quickly with simdjson, which requires up to 32 bytes of
     // space at the end of the string so that it can run on chunks bigger than a single character, while guaranteeing
     // not to go out-of-bounds on memory.
     for (auto& p: nameValueMap) {
-        if (p.second[0] == '{' || p.second[0] == '[') {
+        if (!p.second.empty() && (p.second.front() == '{' || p.second.front() == '[')) {
             p.second.reserve(p.second.size() + 32);
         }
     }
-
-    return result;
 }
 
 SData SData::create(const string& fromString)

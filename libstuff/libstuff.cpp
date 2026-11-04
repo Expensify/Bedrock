@@ -960,12 +960,19 @@ void _SParseHTTP_GetUpToEnd(const char* start, const char* end, string& out)
 }
 
 // --------------------------------------------------------------------------
-int SParseHTTP(const char* buffer, size_t length, string& methodLine, STable& nameValueMap, string& content)
+void SSetHTTPHeader(STable& headers, const string& name, string_view value)
 {
-    return SParseHTTP(buffer, length, methodLine, nameValueMap, content, false);
+    // SComposeHTTP uses this separator to write each Set-Cookie value as a separate header.
+    auto existing = headers.find(name);
+    if (existing != headers.end() && SIEquals(name, "Set-Cookie")) {
+        existing->second += S_COOKIE_SEPARATOR;
+        existing->second.append(value);
+    } else {
+        headers[name] = SUnescape(string(value));
+    }
 }
 
-int SParseHTTP(const char* buffer, size_t length, string& methodLine, STable& nameValueMap, string& content, const bool shouldParseHeadersOnly)
+int SParseHTTP(const char* buffer, size_t length, string& methodLine, STable& nameValueMap, string& content)
 {
     // Clear the output
     methodLine.clear();
@@ -999,15 +1006,6 @@ int SParseHTTP(const char* buffer, size_t length, string& methodLine, STable& na
             // We want to look this up without inserting it.
             auto it = nameValueMap.find("Transfer-Encoding");
             if (!methodLine.empty()) {
-                if (shouldParseHeadersOnly) {
-                    const char* headerEnd = lineEnd;
-                    int remainingEOLs = 2;
-                    while (headerEnd < inputEnd && (*headerEnd == '\r' || *headerEnd == '\n') && remainingEOLs--) {
-                        ++headerEnd;
-                    }
-                    return static_cast<int>(headerEnd - buffer);
-                }
-
                 // If we are done processing a chunked body.
                 if (isChunked) {
                     // Figure out the end of the message by consuming up to 2 EOL characters,
@@ -1140,24 +1138,7 @@ int SParseHTTP(const char* buffer, size_t length, string& methodLine, STable& na
                         while (*(valueEnd - 1) == ' ') {
                             --valueEnd;
                         }
-                        int valueLength = (int) (valueEnd - valueStart);
-                        string value;
-                        if (valueLength > 0) {
-                            // Copy the value
-                            value.resize(valueLength);
-                            memcpy(&value[0], valueStart, valueLength);
-                        }
-
-                        // Store the result.  If there's something already
-                        // there just override, with the exception of
-                        // Set-Cookie: generate a crappy list with 0xFF
-                        // separation.  (See SComposeHTTP for explanation.)
-                        STable::iterator it = nameValueMap.find(name);
-                        if (it == nameValueMap.end() || !SIEquals(name, "Set-Cookie")) {
-                            nameValueMap[name] = SUnescape(value); // strip any slash-escaping
-                        } else {
-                            nameValueMap[name] = it->second + S_COOKIE_SEPARATOR + value;
-                        }
+                        SSetHTTPHeader(nameValueMap, name, valueStart < valueEnd ? string_view(valueStart, valueEnd - valueStart) : string_view());
                     }
                 }
             }

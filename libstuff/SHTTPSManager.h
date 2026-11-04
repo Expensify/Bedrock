@@ -1,6 +1,7 @@
 #pragma once
 
 #include <libstuff/SData.h>
+#include <libstuff/SHTTPResponseParser.h>
 #include <libstuff/STCPManager.h>
 
 class BedrockPlugin;
@@ -22,11 +23,8 @@ public:
         SData fullResponse;
         int response;
 
-        // Expose decoded body bytes during postPoll while response remains zero until HTTP completion.
+        // Set before polling to expose decoded body bytes while the HTTP response is still pending.
         bool shouldStreamResponse = false;
-
-        // Returns the consumed HTTP size on completion, zero while waiting, or -1 for invalid framing.
-        int readResponse(string_view received, bool isClosed);
 
         SStandaloneHTTPSManager& manager;
         const string requestID;
@@ -41,11 +39,9 @@ public:
         function<void(Transaction&)> startFunc;
 
 private:
-        enum class ResponsePhase { HEADERS, BODY, CHUNK_SIZE, CHUNK_DATA, CHUNK_END, TRAILERS, COMPLETE };
-        ResponsePhase responsePhase = ResponsePhase::HEADERS;
-        size_t responseOffset = 0;
-        size_t responseRemaining = 0;
-        bool hasResponseLength = false;
+        friend class SStandaloneHTTPSManager;
+        SHTTPResponseParser _responseParser;
+        SData _bufferedResponse;
     };
 
     static const string proxyAddressHTTPS;

@@ -6,7 +6,6 @@
 #include <BedrockServer.h>
 #include <libstuff/libstuff.h>
 #include <sqlitecluster/SQLiteNode.h>
-#include <charconv>
 
 const string SStandaloneHTTPSManager::proxyAddressHTTPS = initProxyAddressHTTPS();
 
@@ -84,120 +83,78 @@ void SStandaloneHTTPSManager::postPoll(fd_map& fdm, SStandaloneHTTPSManager::Tra
     // Do the postPoll on the socket
     STCPManager::postPoll(fdm, *transaction.s);
 
-    //See if we got a response.
-    uint64_t now = STimeNow();
-
-    // The API for `deserialize` returns `0` if no response was deserialized (generally, because the response is incomplete), but
-    // there is an unusual case for responses that do not supply a `Content-Length` header. It's impossible to know if these
-    // are complete solely based on the content, so these return the size as if the body thus-far were the entire content.
-    // This means we have to check if we've hit EOF and closed the socket to know for sure that we've received the entire
-    // response in these cases.
-    int size = transaction.shouldStreamResponse
-        ? transaction.readResponse(string_view(transaction.s->recvBuffer.c_str(), transaction.s->recvBuffer.size()), transaction.s->state == Socket::CLOSED)
-        : transaction.fullResponse.deserialize(transaction.s->recvBuffer);
-    if (size < 0) {
-        SHMMM("Invalid or incomplete streaming HTTP response, responding 502");
-        transaction.response = 502;
-        transaction.finished = now;
-        delete transaction.s;
-        transaction.s = nullptr;
-        return;
-    }
-
-    // `204 No Content` is an implicit content length of 0. If we successfully parsed a 204 request, we can always
-    // treat the request as complete, becuase we need to have parsed all of the headers for `deserialize` above to
-    // return anything at all here.
-    int statusCode = 0;
-    if (size) {
-        size_t afterHTTPVersionSpace = transaction.fullResponse.methodLine.find(" ");
-        if (afterHTTPVersionSpace != string::npos) {
-            statusCode = atoi(transaction.fullResponse.methodLine.c_str() + afterHTTPVersionSpace);
+    const uint64_t now = STimeNow();
+    const Socket::State state = transaction.s->state.load();
+    const SFastBuffer& received = transaction.s->recvBuffer;
+    auto result = SHTTPResponseParser::Result::NEED_MORE;
+    if (received.size()) {
+        // The proxy socket uses this buffer for CONNECT until its tunnel opens. A rejected CONNECT
+        // closes the socket and leaves the proxy response available to report to the caller.
+        const auto* proxySocket = dynamic_cast<const SHTTPSProxySocket*>(transaction.s);
+        const bool isTargetResponse = !proxySocket || proxySocket->tunnelEstablished();
+        if (isTargetResponse || state == Socket::CLOSED) {
+            SData& response = transaction.shouldStreamResponse ? transaction.fullResponse : transaction._bufferedResponse;
+            const bool isHeadRequest = isTargetResponse && SStartsWith(transaction.fullRequest.methodLine, "HEAD ");
+            result = transaction._responseParser.parse(string_view(received.c_str(), received.size()), response, state == Socket::CLOSED, isHeadRequest);
+            if (!isTargetResponse && result == SHTTPResponseParser::Result::COMPLETE) {
+                const int proxyStatusCode = SHTTPResponseParser::getStatusCode(response.methodLine);
+                if (proxyStatusCode < 300 || proxyStatusCode >= 600) {
+                    // Only a CONNECT rejection can be reported before a tunnel is established.
+                    response.clear();
+                    result = SHTTPResponseParser::Result::NEED_MORE;
+                }
+            }
         }
     }
 
-    // The streaming reader returns a size only when framing is complete.
-    // Buffered responses without Content-Length need the socket to close.
-    bool hasContentLength = transaction.fullResponse.nameValueMap.contains("Content-Length");
-    bool completeRequest = size && (transaction.shouldStreamResponse || (statusCode == 204) || hasContentLength || (transaction.s->state == STCPManager::Socket::CLOSED));
-    if (completeRequest) {
-        // Consume how much we read.
-        transaction.s->recvBuffer.consumeFront(size);
-        transaction.finished = now;
+    const uint64_t timeoutAt = min(transaction.s->lastSendTime + timeoutMS * 1000, transaction.timeoutAt);
+    if (result == SHTTPResponseParser::Result::NEED_MORE && state <= Socket::CONNECTED && now <= timeoutAt) {
+        nextActivity = min(nextActivity, timeoutAt - now);
+        return;
+    }
 
-        // This is supposed to check for a "200" or "204 No Content"response, which it does very poorly. It also checks for message
-        // content. Why this is the what constitutes a valid response is lost to time. Any well-formed response should
-        // be valid here, and this should get cleaned up. However, this requires testing anything that might rely on
-        // the existing behavior, which is an exercise for later.
+    transaction.finished = now;
+    if (result == SHTTPResponseParser::Result::COMPLETE) {
+        if (!transaction.shouldStreamResponse) {
+            transaction.fullResponse = move(transaction._bufferedResponse);
+        }
+
+        // A receive callback can return the socket to a pool. Consume only this response first.
+        transaction.s->recvBuffer.consumeFront(transaction._responseParser.consumed());
+
+        // Callbacks handle responses with a body and the common empty success responses.
         if (
             SContains(transaction.fullResponse.methodLine, " 200") ||
             SContains(transaction.fullResponse.methodLine, "204") ||
             SContains(transaction.fullResponse.methodLine, "202") ||
             transaction.fullResponse.content.size()
         ) {
-            // Pass the transaction down to the subclass.
             _onRecv(transaction);
         } else {
-            // Coercing anything that's not 200 to 500 makes no sense, and should be abandoned with the above.
             SHMMM("Message failed: '" << transaction.fullResponse.methodLine << "'");
             transaction.response = getHTTPResponseCode(transaction.fullResponse.methodLine, 500);
         }
-
-        // Finished with the socket, free it up.
-        delete transaction.s;
-        transaction.s = nullptr;
+    } else if (
+        result == SHTTPResponseParser::Result::INVALID ||
+        (result == SHTTPResponseParser::Result::TRUNCATED && transaction.shouldStreamResponse)
+    ) {
+        SHMMM("Invalid or incomplete HTTP response, responding 502");
+        transaction.response = 502;
     } else {
-        // If we don't have a response, we need to check for a timeout, or a disconnection.
-        // The disconnection check is straightforward, we just check the socket state.
-        // The timeout is a little less so, because we have two different ways to time out:
-        //
-        // 1. If it's been more than `timeoutMS` since the last time we sent any data on our socket. This number can
-        //    change with each call to this function, because we shorten our timeouts at shutdown to avoid holding up
-        //    the whole server on a single stuck network request.
-        // 2. If the transaction's timeout (which is likely it's associated command's timeout) has passed.
-        if ((transaction.s->state.load() > Socket::CONNECTED) ||
-            (now > transaction.s->lastSendTime + timeoutMS * 1000) ||
-            (now > transaction.timeoutAt)) {
-            // Connection died or timed out. Check if we have any partial response data.
-            // Streaming headers can be present before HTTP framing is complete.
-            const bool canUsePartialResponse = !transaction.shouldStreamResponse && (!transaction.fullResponse.methodLine.empty() || size > 0);
-            if (canUsePartialResponse) {
-                // We received some response data before connection closed. This is expected when
-                // server sends error response and closes (especially through proxies). Use the
-                // partial response we got.
-                SINFO("Connection closed after receiving partial response");
-                transaction.finished = now;
-                if (!transaction.fullResponse.methodLine.empty()) {
-                    _onRecv(transaction);
-                }
-
-                // Clean up the socket
-                delete transaction.s;
-                transaction.s = nullptr;
-            } else {
-                // The response did not complete before its transport deadline.
-                const Socket::State state = transaction.s->state.load();
-                transaction.response = transaction.s->sendBufferEmpty() ? 501 : 500;
-                const string progress = _describeRequestProgress(transaction);
-                const string outcome = (state > Socket::CONNECTED) ? "died prematurely" : "timed out";
-                const string stage = _describeFailureStage(transaction, state, progress == "sent");
-                const string target = transaction.targetHost.empty() ? "an unknown host" : transaction.targetHost;
-                const string via = transaction.proxyHost.empty() ? "" : " via proxy " + transaction.proxyHost;
-                SHMMM("Connection " << outcome << " " << stage << " to " << target << via
-                      << "; request " << progress << ", responding " << transaction.response);
-
-                // Callers can keep polling a transaction after it has a response, so mark it finished to report the
-                // failure only once, and free the socket as the other finished cases do.
-                transaction.finished = now;
-                delete transaction.s;
-                transaction.s = nullptr;
-            }
-        } else {
-            // No timeout yet, set nextActivity short enough that it'll catch the next timeout.
-            uint64_t remainingUntilTimeoutMS = (timeoutMS * 1000) - (now - transaction.s->lastSendTime);
-            uint64_t remainingUntilTimeoutAt = transaction.timeoutAt - now;
-            nextActivity = min(nextActivity, min(remainingUntilTimeoutMS, remainingUntilTimeoutAt));
-        }
+        // Buffered callers use these transport statuses to decide whether resending a request is safe.
+        transaction.response = transaction.s->sendBufferEmpty() ? 501 : 500;
+        const string progress = _describeRequestProgress(transaction);
+        const string outcome = (state > Socket::CONNECTED) ? "died prematurely" : "timed out";
+        const string stage = _describeFailureStage(transaction, state, progress == "sent");
+        const string target = transaction.targetHost.empty() ? "an unknown host" : transaction.targetHost;
+        const string via = transaction.proxyHost.empty() ? "" : " via proxy " + transaction.proxyHost;
+        SHMMM("Connection " << outcome << " " << stage << " to " << target << via
+              << "; request " << progress << ", responding " << transaction.response);
     }
+
+    transaction._bufferedResponse = SData();
+    delete transaction.s;
+    transaction.s = nullptr;
 }
 
 SStandaloneHTTPSManager::Transaction::Transaction(SStandaloneHTTPSManager& manager_, const string& requestID) :
@@ -218,104 +175,6 @@ SStandaloneHTTPSManager::Transaction::Transaction(SStandaloneHTTPSManager& manag
     if (isBlockingCommitThread) {
         STHROW("500 Refused - HTTPS request attempted on blockingCommit thread");
     }
-}
-
-int SStandaloneHTTPSManager::Transaction::readResponse(const string_view received, const bool isClosed)
-{
-    if (received.size() < responseOffset) {
-        return -1;
-    }
-    if (responsePhase == ResponsePhase::HEADERS) {
-        // A CRLF delimiter can itself be split across socket reads.
-        if (received.find("\r\n\r\n") == string_view::npos && received.find("\n\n") == string_view::npos) {
-            return 0;
-        }
-        const int headerSize = SParseHTTP(received.data(), received.size(), fullResponse.methodLine, fullResponse.nameValueMap, fullResponse.content, true);
-        if (!headerSize) {
-            return 0;
-        }
-        responseOffset = static_cast<size_t>(headerSize);
-        if (getHTTPResponseCode(fullResponse.methodLine) == 204 || getHTTPResponseCode(fullResponse.methodLine) == 304) {
-            responsePhase = ResponsePhase::COMPLETE;
-        } else if (SIEquals(fullResponse["Transfer-Encoding"], "chunked")) {
-            responsePhase = ResponsePhase::CHUNK_SIZE;
-        } else if (!fullResponse["Transfer-Encoding"].empty()) {
-            return -1;
-        } else {
-            responsePhase = ResponsePhase::BODY;
-            hasResponseLength = fullResponse.isSet("Content-Length");
-            if (hasResponseLength) {
-                const string& length = fullResponse["Content-Length"];
-                const auto parsed = from_chars(length.data(), length.data() + length.size(), responseRemaining);
-                if (length.empty() || parsed.ec != errc() || parsed.ptr != length.data() + length.size()) {
-                    return -1;
-                }
-            }
-        }
-    }
-
-    while (responsePhase != ResponsePhase::COMPLETE) {
-        if (responsePhase == ResponsePhase::BODY || responsePhase == ResponsePhase::CHUNK_DATA) {
-            const bool isCloseDelimited = responsePhase == ResponsePhase::BODY && !hasResponseLength;
-            const size_t count = isCloseDelimited ? received.size() - responseOffset : min(responseRemaining, received.size() - responseOffset);
-            fullResponse.content.append(received.data() + responseOffset, count);
-            responseOffset += count;
-            if (isCloseDelimited) {
-                if (!isClosed) {
-                    return 0;
-                }
-                responsePhase = ResponsePhase::COMPLETE;
-                break;
-            }
-            responseRemaining -= count;
-            if (responseRemaining) {
-                return isClosed ? -1 : 0;
-            }
-            responsePhase = responsePhase == ResponsePhase::BODY ? ResponsePhase::COMPLETE : ResponsePhase::CHUNK_END;
-        } else if (responsePhase == ResponsePhase::CHUNK_END) {
-            if (received.size() - responseOffset < 2) {
-                return isClosed ? -1 : 0;
-            }
-            if (received.substr(responseOffset, 2) != "\r\n") {
-                return -1;
-            }
-            responseOffset += 2;
-            responsePhase = ResponsePhase::CHUNK_SIZE;
-        } else {
-            const size_t lineEnd = received.find("\r\n", responseOffset);
-            if (lineEnd == string_view::npos) {
-                return isClosed ? -1 : 0;
-            }
-            const string_view line = received.substr(responseOffset, lineEnd - responseOffset);
-            responseOffset = lineEnd + 2;
-            if (responsePhase == ResponsePhase::TRAILERS) {
-                if (line.empty()) {
-                    fullResponse.erase("Transfer-Encoding");
-                    fullResponse["Content-Length"] = to_string(fullResponse.content.size());
-                    responsePhase = ResponsePhase::COMPLETE;
-                } else {
-                    const size_t colon = line.find(':');
-                    if (colon == string_view::npos) {
-                        return -1;
-                    }
-                    const string name = STrim(string(line.substr(0, colon)));
-
-                    // Framing remains determined by the original headers.
-                    if (!SIEquals(name, "Content-Length") && !SIEquals(name, "Transfer-Encoding")) {
-                        fullResponse[name] = STrim(string(line.substr(colon + 1)));
-                    }
-                }
-            } else {
-                const string_view length = line.substr(0, line.find(';'));
-                const auto parsed = from_chars(length.data(), length.data() + length.size(), responseRemaining, 16);
-                if (length.empty() || parsed.ec != errc() || parsed.ptr != length.data() + length.size()) {
-                    return -1;
-                }
-                responsePhase = responseRemaining ? ResponsePhase::CHUNK_DATA : ResponsePhase::TRAILERS;
-            }
-        }
-    }
-    return static_cast<int>(responseOffset);
 }
 
 SStandaloneHTTPSManager::Transaction::~Transaction()

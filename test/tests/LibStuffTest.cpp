@@ -5,6 +5,7 @@
 
 #include <libstuff/libstuff.h>
 #include <libstuff/SData.h>
+#include <libstuff/SHTTPResponseParser.h>
 #include <libstuff/SQResult.h>
 #include <libstuff/SRandom.h>
 #include <sqlitecluster/SQLite.h>
@@ -38,6 +39,9 @@ struct LibStuff : tpunit::TestFixture
                                      TEST(LibStuff::testCollapse),
                                      TEST(LibStuff::testStrip),
                                      TEST(LibStuff::testChunkedEncoding),
+                                     TEST(LibStuff::testIncrementalChunkedResponse),
+                                     TEST(LibStuff::testHTTPResponseBodyFraming),
+                                     TEST(LibStuff::testHTTPResponseWithoutBody),
                                      TEST(LibStuff::testDaysInMonth),
                                      TEST(LibStuff::testGZip),
                                      TEST(LibStuff::testConstantTimeEquals),
@@ -449,6 +453,87 @@ struct LibStuff : tpunit::TestFixture
         ASSERT_EQUAL(SDaysInMonth(2013, 4), 30);
         ASSERT_EQUAL(SDaysInMonth(2014, 1), 31);
         ASSERT_EQUAL(SDaysInMonth(2014, 7), 31);
+    }
+
+    void testIncrementalChunkedResponse()
+    {
+        // Given a chunked HTTP response arriving one byte at a time.
+        SHTTPResponseParser parser;
+        SData response;
+        using Result = SHTTPResponseParser::Result;
+        const string prefix = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5;extension=value\r\nhello\r\n";
+        string received;
+
+        // When a complete chunk arrives before the response terminates.
+        for (const char character : prefix) {
+            received += character;
+            ASSERT_TRUE(parser.parse(received, response, false, false) == Result::NEED_MORE);
+        }
+
+        // Then its body is available before the rest of the response.
+        ASSERT_EQUAL(response.content, "hello");
+
+        // When later chunks and trailers finish the same response and the buffer contains another message.
+        received += "6\r\n world\r\n0\r\nX-Result: done\r\n\r\n";
+        const size_t messageSize = received.size();
+        received += "HTTP/1.1 204 No Content\r\n\r\n";
+        const auto result = parser.parse(received, response, false, false);
+
+        // Then the parser consumes only the first message and preserves its accumulated body and trailers.
+        ASSERT_TRUE(result == Result::COMPLETE);
+        ASSERT_EQUAL(parser.consumed(), messageSize);
+        ASSERT_EQUAL(response.content, "hello world");
+        ASSERT_EQUAL(response["Content-Length"], "11");
+        ASSERT_EQUAL(response["X-Result"], "done");
+        ASSERT_FALSE(response.isSet("Transfer-Encoding"));
+    }
+
+    void testHTTPResponseBodyFraming()
+    {
+        // Given a response with a declared length and a separate close-delimited response.
+        SHTTPResponseParser sized;
+        SHTTPResponseParser closeDelimited;
+        SData sizedResponse;
+        SData closeDelimitedResponse;
+        using Result = SHTTPResponseParser::Result;
+        const string sizedPrefix = "200 OK\r\nContent-Length: 5\r\n\r\nhe";
+        const string closePrefix = "HTTP/1.1 200 OK\r\n\r\nhe";
+
+        // When partial bodies arrive and then finish by their respective delimiters.
+        ASSERT_TRUE(sized.parse(sizedPrefix, sizedResponse, false, false) == Result::NEED_MORE);
+        ASSERT_TRUE(closeDelimited.parse(closePrefix, closeDelimitedResponse, false, false) == Result::NEED_MORE);
+        ASSERT_EQUAL(sizedResponse.content, "he");
+        ASSERT_EQUAL(closeDelimitedResponse.content, "he");
+        ASSERT_TRUE(sized.parse(sizedPrefix + "llo", sizedResponse, false, false) == Result::COMPLETE);
+        ASSERT_TRUE(closeDelimited.parse(closePrefix + "llo", closeDelimitedResponse, false, false) == Result::NEED_MORE);
+        ASSERT_TRUE(closeDelimited.parse(closePrefix + "llo", closeDelimitedResponse, true, false) == Result::COMPLETE);
+
+        // Then both preserve the full body without duplicating prior bytes, and the internal status line is preserved.
+        ASSERT_EQUAL(sizedResponse.content, "hello");
+        ASSERT_EQUAL(closeDelimitedResponse.content, "hello");
+        ASSERT_EQUAL(sizedResponse.methodLine, "200 OK");
+    }
+
+    void testHTTPResponseWithoutBody()
+    {
+        // Given an informational response followed by a final response with a representation length but no body.
+        const string interim = "HTTP/1.1 103 Early Hints\r\nLink: </style.css>; rel=preload\r\n\r\n";
+        const string final = "HTTP/1.1 304 Not Modified\r\nContent-Length: 12\r\n\r\n";
+        SHTTPResponseParser parser;
+        SData response;
+        using Result = SHTTPResponseParser::Result;
+
+        // When the response arrives in two parts on the same connection.
+        ASSERT_TRUE(parser.parse(interim, response, false, false) == Result::NEED_MORE);
+        const auto result = parser.parse(interim + final, response, false, false);
+
+        // Then the final headers complete the response and preserve the representation length.
+        ASSERT_TRUE(result == Result::COMPLETE);
+        ASSERT_EQUAL(parser.consumed(), interim.size() + final.size());
+        ASSERT_EQUAL(response.methodLine, "HTTP/1.1 304 Not Modified");
+        ASSERT_EQUAL(response["Content-Length"], "12");
+        ASSERT_FALSE(response.isSet("Link"));
+        ASSERT_TRUE(response.content.empty());
     }
 
     void testGZip()

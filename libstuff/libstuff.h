@@ -606,10 +606,8 @@ void SAppend(string& lhs, const string& rhs);
 
 // HTTP message management
 int SParseHTTP(const char* buffer, size_t length, string& methodLine, STable& nameValueMap, string& content);
-
-// Stops after the header delimiter when shouldParseHeadersOnly is true, leaving body framing to the incremental reader.
-int SParseHTTP(const char* buffer, size_t length, string& methodLine, STable& nameValueMap, string& content, bool shouldParseHeadersOnly);
 int SParseHTTP(string_view buffer, string& methodLine, STable& nameValueMap, string& content);
+void SSetHTTPHeader(STable& headers, const string& name, string_view value);
 bool SParseRequestMethodLine(const string& methodLine, string& method, string& uri);
 bool SParseResponseMethodLine(const string& methodLine, string& protocol, int& code, string& reason);
 bool SParseURI(const char* buffer, int length, string& host, string& path);
