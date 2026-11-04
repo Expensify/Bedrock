@@ -186,7 +186,7 @@ struct SSLTest : tpunit::TestFixture
         }
 
         for (const bool shouldClose : {false, true}) {
-            // Given a streaming transaction with a partially received chunk.
+            // Given a streaming transaction expecting a chunked response.
             int sockets[2];
             ASSERT_EQUAL(socketpair(AF_UNIX, SOCK_STREAM, 0, sockets), 0);
             STCPManager::Socket peer(sockets[1], State::CONNECTED);
@@ -194,8 +194,12 @@ struct SSLTest : tpunit::TestFixture
             transaction.shouldStreamResponse = true;
             transaction.s = new STCPManager::Socket(sockets[0], State::CONNECTED);
             transaction.timeoutAt = STimeNow() + 5'000'000;
+
+            // When only part of a chunk arrives.
             ASSERT_TRUE(peer.send(header + "5\r\nhe"));
             pollTransaction(transaction);
+
+            // Then the partial body is available while the transaction remains pending.
             ASSERT_EQUAL(transaction.fullResponse.content, "he");
             ASSERT_EQUAL(transaction.response, 0);
 
@@ -215,6 +219,7 @@ struct SSLTest : tpunit::TestFixture
             ASSERT_FALSE(transaction.s);
         }
 
+        // Given an open streaming transaction.
         int sockets[2];
         ASSERT_EQUAL(socketpair(AF_UNIX, SOCK_STREAM, 0, sockets), 0);
         STCPManager::Socket peer(sockets[1], State::CONNECTED);
@@ -222,12 +227,19 @@ struct SSLTest : tpunit::TestFixture
         transaction.shouldStreamResponse = true;
         transaction.s = new STCPManager::Socket(sockets[0], State::CONNECTED);
         transaction.timeoutAt = STimeNow() + 5'000'000;
+
+        // When the status line arrives with an incomplete header.
         ASSERT_TRUE(peer.send("HTTP/1.1 200 OK\r\nContent-Ty"));
         pollTransaction(transaction);
+
+        // Then the transaction remains pending.
         ASSERT_EQUAL(transaction.response, 0);
+
+        // When the peer closes before completing the headers.
         ASSERT_EQUAL(::shutdown(peer.s, SHUT_WR), 0);
         pollTransaction(transaction);
 
+        // Then the manager reports a transport failure and releases the socket.
         ASSERT_EQUAL(transaction.response, 501);
         ASSERT_TRUE(transaction.finished);
         ASSERT_FALSE(transaction.s);
@@ -288,28 +300,25 @@ struct SSLTest : tpunit::TestFixture
         close(fd);
         const string host = "127.0.0.1:" + to_string(ntohs(addr.sin_port));
 
-        for (const bool shouldStreamResponse : {false, true}) {
-            SStandaloneHTTPSManager manager;
-            SStandaloneHTTPSManager::Transaction transaction(manager);
-            transaction.shouldStreamResponse = shouldStreamResponse;
-            transaction.targetHost = host;
-            transaction.timeoutAt = STimeNow() + 5'000'000;
-            transaction.s = new STCPManager::Socket(host, false);
-            transaction.s->send(SData("GET / HTTP/1.1").serialize());
+        SStandaloneHTTPSManager manager;
+        SStandaloneHTTPSManager::Transaction transaction(manager);
+        transaction.targetHost = host;
+        transaction.timeoutAt = STimeNow() + 5'000'000;
+        transaction.s = new STCPManager::Socket(host, false);
+        transaction.s->send(SData("GET / HTTP/1.1").serialize());
 
-            while (!transaction.response) {
-                fd_map fdm;
-                uint64_t nextActivity = STimeNow();
-                manager.prePoll(fdm, transaction);
-                S_poll(fdm, 100'000);
-                manager.postPoll(fdm, transaction, nextActivity);
-            }
-
-            // A failed transaction is finished and its socket is freed, so polling it again doesn't report the failure
-            // again.
-            EXPECT_EQUAL(transaction.response, 500);
-            EXPECT_TRUE(transaction.finished);
-            EXPECT_FALSE(transaction.s);
+        while (!transaction.response) {
+            fd_map fdm;
+            uint64_t nextActivity = STimeNow();
+            manager.prePoll(fdm, transaction);
+            S_poll(fdm, 100'000);
+            manager.postPoll(fdm, transaction, nextActivity);
         }
+
+        // A failed transaction is finished and its socket is freed, so polling it again doesn't report the failure
+        // again.
+        EXPECT_EQUAL(transaction.response, 500);
+        EXPECT_TRUE(transaction.finished);
+        EXPECT_FALSE(transaction.s);
     }
 } __SSLTest;

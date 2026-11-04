@@ -457,17 +457,20 @@ struct LibStuff : tpunit::TestFixture
 
     void testIncrementalChunkedResponse()
     {
-        // Given a chunked HTTP response arriving one byte at a time.
+        // Given a chunked HTTP response with a complete first chunk.
         SHTTPResponseParser parser;
         SData response;
         using Result = SHTTPResponseParser::Result;
         const string prefix = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5;extension=value\r\nhello\r\n";
         string received;
 
-        // When a complete chunk arrives before the response terminates.
+        // When a complete chunk arrives one byte at a time before the response terminates.
         for (const char character : prefix) {
             received += character;
-            ASSERT_TRUE(parser.parse(received, response, false, false) == Result::NEED_MORE);
+            const auto result = parser.parse(received, response, false, false);
+
+            // Then the response stays pending after each byte.
+            ASSERT_TRUE(result == Result::NEED_MORE);
         }
 
         // Then its body is available before the rest of the response.
@@ -499,19 +502,32 @@ struct LibStuff : tpunit::TestFixture
         const string sizedPrefix = "200 OK\r\nContent-Length: 5\r\n\r\nhe";
         const string closePrefix = "HTTP/1.1 200 OK\r\n\r\nhe";
 
-        // When partial bodies arrive and then finish by their respective delimiters.
-        ASSERT_TRUE(sized.parse(sizedPrefix, sizedResponse, false, false) == Result::NEED_MORE);
-        ASSERT_TRUE(closeDelimited.parse(closePrefix, closeDelimitedResponse, false, false) == Result::NEED_MORE);
+        // When the first part of each body arrives.
+        const auto sizedPartial = sized.parse(sizedPrefix, sizedResponse, false, false);
+        const auto closePartial = closeDelimited.parse(closePrefix, closeDelimitedResponse, false, false);
+
+        // Then both responses expose the partial body and remain pending.
+        ASSERT_TRUE(sizedPartial == Result::NEED_MORE);
+        ASSERT_TRUE(closePartial == Result::NEED_MORE);
         ASSERT_EQUAL(sizedResponse.content, "he");
         ASSERT_EQUAL(closeDelimitedResponse.content, "he");
-        ASSERT_TRUE(sized.parse(sizedPrefix + "llo", sizedResponse, false, false) == Result::COMPLETE);
-        ASSERT_TRUE(closeDelimited.parse(closePrefix + "llo", closeDelimitedResponse, false, false) == Result::NEED_MORE);
-        ASSERT_TRUE(closeDelimited.parse(closePrefix + "llo", closeDelimitedResponse, true, false) == Result::COMPLETE);
 
-        // Then both preserve the full body without duplicating prior bytes, and the internal status line is preserved.
+        // When the remaining bytes arrive while both connections are still open.
+        const auto sizedComplete = sized.parse(sizedPrefix + "llo", sizedResponse, false, false);
+        const auto closePending = closeDelimited.parse(closePrefix + "llo", closeDelimitedResponse, false, false);
+
+        // Then only the response with a declared length completes, preserving its body and status line.
+        ASSERT_TRUE(sizedComplete == Result::COMPLETE);
+        ASSERT_TRUE(closePending == Result::NEED_MORE);
         ASSERT_EQUAL(sizedResponse.content, "hello");
-        ASSERT_EQUAL(closeDelimitedResponse.content, "hello");
         ASSERT_EQUAL(sizedResponse.methodLine, "200 OK");
+
+        // When the second connection closes.
+        const auto closeComplete = closeDelimited.parse(closePrefix + "llo", closeDelimitedResponse, true, false);
+
+        // Then the second response completes without duplicating body bytes.
+        ASSERT_TRUE(closeComplete == Result::COMPLETE);
+        ASSERT_EQUAL(closeDelimitedResponse.content, "hello");
     }
 
     void testHTTPResponseWithoutBody()
@@ -523,8 +539,13 @@ struct LibStuff : tpunit::TestFixture
         SData response;
         using Result = SHTTPResponseParser::Result;
 
-        // When the response arrives in two parts on the same connection.
-        ASSERT_TRUE(parser.parse(interim, response, false, false) == Result::NEED_MORE);
+        // When the informational response arrives.
+        const auto pending = parser.parse(interim, response, false, false);
+
+        // Then the parser waits for the final response.
+        ASSERT_TRUE(pending == Result::NEED_MORE);
+
+        // When the final response arrives on the same connection.
         const auto result = parser.parse(interim + final, response, false, false);
 
         // Then the final headers complete the response and preserve the representation length.
