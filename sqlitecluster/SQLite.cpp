@@ -741,6 +741,19 @@ void SQLite::prepareHCTreeLeadership()
     }
 }
 
+void SQLite::rollbackHCTreeJournal()
+{
+    if (!isExperimentalHCTree()) {
+        return;
+    }
+    SASSERT(_sharedData.hctreeFollowerMode);
+    const int rc = sqlite3_hct_journal_rollback(_db);
+    if (rc != SQLITE_OK) {
+        SERROR("Failed to roll back HC-Tree journal: " << rc << " (" << sqlite3_errstr(rc) << ")");
+    }
+    _sharedData.discardOutOfOrderCommits();
+}
+
 SQLite::TRANSACTION_TYPE SQLite::getLastTransactionType()
 {
     return _lastTransactionType;
@@ -2198,6 +2211,12 @@ void SQLite::SharedData::recordReplicationCommit(uint64_t commitID, const string
         _outOfOrderCommits.erase(_outOfOrderCommits.begin());
         commitCount++;
     }
+}
+
+void SQLite::SharedData::discardOutOfOrderCommits()
+{
+    lock_guard<decltype(_internalStateMutex)> lock(_internalStateMutex);
+    _outOfOrderCommits.clear();
 }
 
 SQLite::CommitState SQLite::SharedData::getCommitState() const
