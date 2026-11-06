@@ -42,6 +42,7 @@ struct LibStuff : tpunit::TestFixture
                                      TEST(LibStuff::testIncrementalChunkedResponse),
                                      TEST(LibStuff::testHTTPResponseBodyFraming),
                                      TEST(LibStuff::testHTTPResponseWithoutBody),
+                                     TEST(LibStuff::testInternalResponseBody),
                                      TEST(LibStuff::testDaysInMonth),
                                      TEST(LibStuff::testGZip),
                                      TEST(LibStuff::testConstantTimeEquals),
@@ -555,6 +556,31 @@ struct LibStuff : tpunit::TestFixture
         ASSERT_EQUAL(response["Content-Length"], "12");
         ASSERT_FALSE(response.isSet("Link"));
         ASSERT_TRUE(response.content.empty());
+    }
+
+    void testInternalResponseBody()
+    {
+        // Given an internal Auth response whose status code permits a body.
+        const string body = R"({"ownerAmountOwed":"100"})";
+        const string header = "304 Owner needs to pay up.\r\nContent-Length: " + to_string(body.size()) + "\r\n\r\n";
+        SHTTPResponseParser parser;
+        SData response;
+        using Result = SHTTPResponseParser::Result;
+
+        // When the headers arrive before the body.
+        const auto pending = parser.parse(header, response, false, false);
+
+        // Then the parser waits for the declared body.
+        ASSERT_TRUE(pending == Result::NEED_MORE);
+
+        // When the body arrives on the same connection.
+        const auto result = parser.parse(header + body, response, false, false);
+
+        // Then the response completes with its status line and full body.
+        ASSERT_TRUE(result == Result::COMPLETE);
+        ASSERT_EQUAL(response.methodLine, "304 Owner needs to pay up.");
+        ASSERT_EQUAL(response.content, body);
+        ASSERT_EQUAL(parser.consumed(), header.size() + body.size());
     }
 
     void testGZip()

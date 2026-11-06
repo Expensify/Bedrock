@@ -99,7 +99,8 @@ bool SHTTPResponseParser::_readHeader(string_view line, SData& response)
 
 bool SHTTPResponseParser::_startBody(SData& response, bool isHeadRequest)
 {
-    const int code = getStatusCode(response.methodLine);
+    // Internal Bedrock replies use Content-Length independently of their status codes.
+    const int code = response.methodLine.starts_with("HTTP/") ? getStatusCode(response.methodLine) : 0;
     if (code >= 100 && code < 200 && code != 101) {
         // An informational response is followed by another status line on the same connection.
         response.clear();
