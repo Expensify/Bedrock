@@ -1,6 +1,7 @@
 #pragma once
 
 #include <libstuff/SData.h>
+#include <libstuff/SHTTPResponseParser.h>
 #include <libstuff/STCPManager.h>
 
 class BedrockPlugin;
@@ -21,6 +22,10 @@ public:
         SData fullRequest;
         SData fullResponse;
         int response;
+
+        // Set before polling to expose decoded body bytes while the HTTP response is still pending.
+        bool shouldStreamResponse = false;
+
         SStandaloneHTTPSManager& manager;
         const string requestID;
 
@@ -32,6 +37,11 @@ public:
         // If it is scheduled to start in the future, we will call `startFunc` at the timestamp scheduled.
         uint64_t scheduledStart = 0;
         function<void(Transaction&)> startFunc;
+
+private:
+        friend class SStandaloneHTTPSManager;
+        SHTTPResponseParser _responseParser;
+        SData _bufferedResponse;
     };
 
     static const string proxyAddressHTTPS;

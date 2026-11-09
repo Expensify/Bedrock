@@ -64,6 +64,9 @@ struct SData
     // Erase everything
     void clear();
 
+    // Reserve the extra bytes simdjson needs to read JSON header values.
+    void reserveJSONHeaderPadding();
+
     // Erase one value
     void erase(const string& name);
 
