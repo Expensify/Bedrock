@@ -116,124 +116,100 @@ void SStandaloneHTTPSManager::postPoll(fd_map& fdm, SStandaloneHTTPSManager::Tra
     // Do the postPoll on the socket
     STCPManager::postPoll(fdm, *transaction.s);
 
-    //See if we got a response.
-    uint64_t now = STimeNow();
-
-    // The API for `deserialize` returns `0` if no response was deserialized (generally, because the response is incomplete), but
-    // there is an unusual case for responses that do not supply a `Content-Length` header. It's impossible to know if these
-    // are complete solely based on the content, so these return the size as if the body thus-far were the entire content.
-    // This means we have to check if we've hit EOF and closed the socket to know for sure that we've received the entire
-    // response in these cases.
-    int size = transaction.fullResponse.deserialize(transaction.s->recvBuffer);
-
-    // `204 No Content` is an implicit content length of 0. If we successfully parsed a 204 request, we can always
-    // treat the request as complete, becuase we need to have parsed all of the headers for `deserialize` above to
-    // return anything at all here.
-    int statusCode = 0;
-    if (size) {
-        size_t afterHTTPVersionSpace = transaction.fullResponse.methodLine.find(" ");
-        if (afterHTTPVersionSpace != string::npos) {
-            statusCode = atoi(transaction.fullResponse.methodLine.c_str() + afterHTTPVersionSpace);
+    const uint64_t now = STimeNow();
+    const Socket::State state = transaction.s->state.load();
+    const SFastBuffer& received = transaction.s->recvBuffer;
+    auto result = SHTTPResponseParser::Result::NEED_MORE;
+    if (received.size()) {
+        // The proxy socket uses this buffer for CONNECT until its tunnel opens. A rejected CONNECT
+        // closes the socket and leaves the proxy response available to report to the caller.
+        const auto* proxySocket = dynamic_cast<const SHTTPSProxySocket*>(transaction.s);
+        const bool isTargetResponse = !proxySocket || proxySocket->tunnelEstablished();
+        if (isTargetResponse || state == Socket::CLOSED) {
+            SData& response = transaction.shouldStreamResponse ? transaction.fullResponse : transaction._bufferedResponse;
+            const bool isHeadRequest = isTargetResponse && SStartsWith(transaction.fullRequest.methodLine, "HEAD ");
+            result = transaction._responseParser.parse(string_view(received.c_str(), received.size()), response, state == Socket::CLOSED, isHeadRequest);
+            if (!isTargetResponse && result == SHTTPResponseParser::Result::COMPLETE) {
+                const int proxyStatusCode = SHTTPResponseParser::getStatusCode(response.methodLine);
+                if (proxyStatusCode < 300 || proxyStatusCode >= 600) {
+                    // Only a CONNECT rejection can be reported before a tunnel is established.
+                    response.clear();
+                    result = SHTTPResponseParser::Result::NEED_MORE;
+                }
+            }
         }
     }
 
-    // If there's not a Content-Length, we need to check for the socket being closed.
-    bool hasContentLength = transaction.fullResponse.nameValueMap.contains("Content-Length");
-    bool completeRequest = size && ((statusCode == 204) || hasContentLength || (transaction.s->state == STCPManager::Socket::CLOSED));
-    if (completeRequest) {
-        // Consume how much we read.
-        transaction.s->recvBuffer.consumeFront(size);
-        transaction.finished = now;
+    const uint64_t timeoutAt = min(transaction.s->lastSendTime + timeoutMS * 1000, transaction.timeoutAt);
+    if (result == SHTTPResponseParser::Result::NEED_MORE && state <= Socket::CONNECTED && now <= timeoutAt) {
+        nextActivity = min(nextActivity, timeoutAt - now);
+        return;
+    }
 
-        // This is supposed to check for a "200" or "204 No Content"response, which it does very poorly. It also checks for message
-        // content. Why this is the what constitutes a valid response is lost to time. Any well-formed response should
-        // be valid here, and this should get cleaned up. However, this requires testing anything that might rely on
-        // the existing behavior, which is an exercise for later.
+    // Nothing reached the target host, so it's safe to try again on a new connection: back off 0.5s, 1s, 2s, 4s, ...
+    // unless the transaction would time out first. A proxy that refused the tunnel is retried too, and its reply is
+    // reported once the attempts run out.
+    const string progress = _describeRequestProgress(transaction);
+    const uint64_t retryDelay = RECONNECT_BASE_DELAY_US << transaction.reconnectAttempts;
+    const bool canRetry = progress == "not sent" && transaction.reconnectAttempts < transaction.maxReconnectAttempts &&
+        (!transaction.timeoutAt || now + retryDelay < transaction.timeoutAt);
+    if (canRetry) {
+        const string target = transaction.targetHost.empty() ? "an unknown host" : transaction.targetHost;
+        const string via = transaction.proxyHost.empty() ? "" : " via proxy " + transaction.proxyHost;
+        const SData& response = transaction.shouldStreamResponse ? transaction.fullResponse : transaction._bufferedResponse;
+        const string failure = result == SHTTPResponseParser::Result::COMPLETE
+            ? "Proxy refused the tunnel ('" + response.methodLine + "')"
+            : "Connection " + string(state > Socket::CONNECTED ? "died prematurely" : "timed out") + " " + _describeFailureStage(transaction, state, false);
+        SHMMM(failure << " to " << target << via << "; request not sent, retrying in " << (retryDelay / 1000) << "ms"
+              << " (attempt " << (transaction.reconnectAttempts + 1) << " of " << (transaction.maxReconnectAttempts + 1) << ")");
+        transaction.reconnectAt = now + retryDelay;
+        transaction._responseParser = SHTTPResponseParser();
+        transaction._bufferedResponse = SData();
+        transaction.fullResponse = SData();
+        delete transaction.s;
+        transaction.s = nullptr;
+        nextActivity = min(nextActivity, transaction.reconnectAt);
+        return;
+    }
+
+    transaction.finished = now;
+    if (result == SHTTPResponseParser::Result::COMPLETE) {
+        if (!transaction.shouldStreamResponse) {
+            transaction.fullResponse = move(transaction._bufferedResponse);
+        }
+
+        // A receive callback can return the socket to a pool. Consume only this response first.
+        transaction.s->recvBuffer.consumeFront(transaction._responseParser.consumed());
+
+        // Callbacks handle responses with a body and the common empty success responses.
         if (
             SContains(transaction.fullResponse.methodLine, " 200") ||
             SContains(transaction.fullResponse.methodLine, "204") ||
             SContains(transaction.fullResponse.methodLine, "202") ||
             transaction.fullResponse.content.size()
         ) {
-            // Pass the transaction down to the subclass.
             _onRecv(transaction);
         } else {
-            // Coercing anything that's not 200 to 500 makes no sense, and should be abandoned with the above.
             SHMMM("Message failed: '" << transaction.fullResponse.methodLine << "'");
             transaction.response = getHTTPResponseCode(transaction.fullResponse.methodLine, 500);
         }
-
-        // Finished with the socket, free it up.
-        delete transaction.s;
-        transaction.s = nullptr;
+    } else if (result == SHTTPResponseParser::Result::INVALID) {
+        SHMMM("Invalid HTTP response, responding 502");
+        transaction.response = 502;
     } else {
-        // If we don't have a response, we need to check for a timeout, or a disconnection.
-        // The disconnection check is straightforward, we just check the socket state.
-        // The timeout is a little less so, because we have two different ways to time out:
-        //
-        // 1. If it's been more than `timeoutMS` since the last time we sent any data on our socket. This number can
-        //    change with each call to this function, because we shorten our timeouts at shutdown to avoid holding up
-        //    the whole server on a single stuck network request.
-        // 2. If the transaction's timeout (which is likely it's associated command's timeout) has passed.
-        if ((transaction.s->state.load() > Socket::CONNECTED) ||
-            (now > transaction.s->lastSendTime + timeoutMS * 1000) ||
-            (now > transaction.timeoutAt)) {
-            // Connection died or timed out. Check if we have any partial response data.
-            bool hasPartialResponse = !transaction.fullResponse.methodLine.empty() || size > 0;
-            if (hasPartialResponse) {
-                // We received some response data before connection closed. This is expected when
-                // server sends error response and closes (especially through proxies). Use the
-                // partial response we got.
-                SINFO("Connection closed after receiving partial response");
-                transaction.finished = now;
-                if (!transaction.fullResponse.methodLine.empty()) {
-                    _onRecv(transaction);
-                }
-
-                // Clean up the socket
-                delete transaction.s;
-                transaction.s = nullptr;
-            } else {
-                // No response data at all - this is a genuine failure
-                const Socket::State state = transaction.s->state.load();
-                const string progress = _describeRequestProgress(transaction);
-                const string outcome = (state > Socket::CONNECTED) ? "died prematurely" : "timed out";
-                const string stage = _describeFailureStage(transaction, state, progress == "sent");
-                const string target = transaction.targetHost.empty() ? "an unknown host" : transaction.targetHost;
-                const string via = transaction.proxyHost.empty() ? "" : " via proxy " + transaction.proxyHost;
-
-                // Nothing reached the target host, so it's safe to try again on a new connection: back off 0.5s, 1s,
-                // 2s, 4s, ... unless the transaction would time out first.
-                const uint64_t retryDelay = RECONNECT_BASE_DELAY_US << transaction.reconnectAttempts;
-                const bool canRetry = progress == "not sent" && transaction.reconnectAttempts < transaction.maxReconnectAttempts &&
-                    (!transaction.timeoutAt || now + retryDelay < transaction.timeoutAt);
-                if (canRetry) {
-                    transaction.reconnectAt = now + retryDelay;
-                    SHMMM("Connection " << outcome << " " << stage << " to " << target << via
-                          << "; request not sent, retrying in " << (retryDelay / 1000) << "ms"
-                          << " (attempt " << (transaction.reconnectAttempts + 1) << " of " << (transaction.maxReconnectAttempts + 1) << ")");
-                    delete transaction.s;
-                    transaction.s = nullptr;
-                    nextActivity = min(nextActivity, transaction.reconnectAt);
-                } else {
-                    transaction.response = transaction.s->sendBufferEmpty() ? 501 : 500;
-                    SHMMM("Connection " << outcome << " " << stage << " to " << target << via
-                          << "; request " << progress << ", responding " << transaction.response);
-
-                    // Callers can keep polling a transaction after it has a response, so mark it finished to report
-                    // the failure only once, and free the socket as the other finished cases do.
-                    transaction.finished = now;
-                    delete transaction.s;
-                    transaction.s = nullptr;
-                }
-            }
-        } else {
-            // No timeout yet, set nextActivity short enough that it'll catch the next timeout.
-            uint64_t remainingUntilTimeoutMS = (timeoutMS * 1000) - (now - transaction.s->lastSendTime);
-            uint64_t remainingUntilTimeoutAt = transaction.timeoutAt - now;
-            nextActivity = min(nextActivity, min(remainingUntilTimeoutMS, remainingUntilTimeoutAt));
-        }
+        // Callers use these transport statuses to decide whether and when to retry.
+        transaction.response = transaction.s->sendBufferEmpty() ? 501 : 500;
+        const string outcome = (state > Socket::CONNECTED) ? "died prematurely" : "timed out";
+        const string stage = _describeFailureStage(transaction, state, progress == "sent");
+        const string target = transaction.targetHost.empty() ? "an unknown host" : transaction.targetHost;
+        const string via = transaction.proxyHost.empty() ? "" : " via proxy " + transaction.proxyHost;
+        SHMMM("Connection " << outcome << " " << stage << " to " << target << via
+              << "; request " << progress << ", responding " << transaction.response);
     }
+
+    transaction._bufferedResponse = SData();
+    delete transaction.s;
+    transaction.s = nullptr;
 }
 
 SStandaloneHTTPSManager::Transaction::Transaction(SStandaloneHTTPSManager& manager_, const string& requestID) :

@@ -1,5 +1,6 @@
 #include "SHTTPSProxySocket.h"
 #include "libstuff/SData.h"
+#include "libstuff/SHTTPResponseParser.h"
 #include "libstuff/STCPManager.h"
 #include "libstuff/libstuff.h"
 #include <libstuff/SSSLState.h>
@@ -124,8 +125,7 @@ bool SHTTPSProxySocket::recv()
                 SData connectionEstablished;
                 connectionEstablished.deserialize(recvBuffer);
                 if (!connectionEstablished.empty()) {
-                    // Basic checking that we got back a 200.
-                    if (SContains(connectionEstablished.methodLine, " 200 ")) {
+                    if (SHTTPResponseParser::getStatusCode(connectionEstablished.methodLine) == 200) {
                         recvBuffer.clear();
 
                         // We create this here, rather than in the constructor or somewhere that seems more reasonable, because
@@ -147,10 +147,7 @@ bool SHTTPSProxySocket::recv()
                         }
                         proxyNegotiationComplete = true;
                     } else {
-                        // The proxy's reply is about the tunnel, not the request, so it must not be mistaken for the
-                        // target host's response. The request was never sent, so the caller can retry it.
                         SWARN("Proxy server " << proxyAddress << " returned methodLine: " << connectionEstablished.methodLine);
-                        recvBuffer.clear();
                         close(s);
                         s = -1;
                         state = STCPManager::Socket::CLOSED;
