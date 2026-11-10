@@ -2,6 +2,9 @@
 
 #include <thread>
 #include <future>
+#include <memory>
+#include <pthread.h>
+#include <system_error>
 #include <tuple>
 #include <utility>
 #include <type_traits>
@@ -63,4 +66,38 @@ auto SThread(F&& f, Args&&... args)
     // Now our function has started and we can return to the caller. We pass pack the thread object so that the caller can wait
     // for it to complete, and also the future, so that the caller can check if there were any exceptions.
     return make_pair(move(t), move(fut));
+}
+
+// SDetachedThread starts a thread in the same way as thread, except that the thread is created already detached. Use it
+// instead of thread::detach(): before glibc 2.43, pthread_detach can read the thread's memory after the thread has exited
+// and freed it, crashing the caller (https://sourceware.org/bugzilla/show_bug.cgi?id=19951).
+// Like thread, it throws system_error if the thread can't be started, and an exception escaping `f` calls terminate.
+template<class F, class ... Args>
+void SDetachedThread(F&& f, Args&&... args)
+{
+    // As with thread, the function and its arguments are copied or moved on the calling thread.
+    using DecayedArgsTuple = tuple<decay_t<Args> ...>;
+    using Task = pair<decay_t<F>, DecayedArgsTuple>;
+    auto task = make_unique<Task>(forward<F>(f), DecayedArgsTuple(forward<Args>(args)...));
+
+    pthread_attr_t attributes;
+    int error = pthread_attr_init(&attributes);
+    if (!error) {
+        error = pthread_attr_setdetachstate(&attributes, PTHREAD_CREATE_DETACHED);
+        if (!error) {
+            pthread_t threadID;
+            error = pthread_create(&threadID, &attributes, [](void* taskPointer) -> void* {
+                unique_ptr<Task> threadTask(static_cast<Task*>(taskPointer));
+                apply(move(threadTask->first), move(threadTask->second));
+                return nullptr;
+            }, task.get());
+        }
+        pthread_attr_destroy(&attributes);
+    }
+    if (error) {
+        throw system_error(error, generic_category());
+    }
+
+    // The new thread owns the task now, and may have already finished and deleted it.
+    task.release();
 }
