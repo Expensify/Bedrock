@@ -17,7 +17,9 @@ struct JSONParserTest : tpunit::TestFixture
                                            TEST(JSONParserTest::nestedArray),
                                            TEST(JSONParserTest::simpleObject),
                                            TEST(JSONParserTest::nestedObject),
-                                           TEST(JSONParserTest::badJSON)
+                                           TEST(JSONParserTest::badJSON),
+                                           TEST(JSONParserTest::deepNesting),
+                                           TEST(JSONParserTest::nestingLimit)
     )
     {
     }
@@ -185,5 +187,29 @@ struct JSONParserTest : tpunit::TestFixture
         EXPECT_NO_THROW(JSON::Value::parse("true"));
         EXPECT_NO_THROW(JSON::Value::parse("1.4"));
         EXPECT_NO_THROW(JSON::Value::parse("45"));
+    }
+
+    void deepNesting()
+    {
+        // The parser and the value destructor recurse once per container, so each document nests far deeper than the thread stack can hold.
+        // Arrays and objects go through different handler methods, so each one gets its own document.
+        const size_t levels = 1000000;
+        EXPECT_THROW(JSON::Value::parse(string(levels, '[') + string(levels, ']')), JSON::InvalidArgument);
+
+        string objects;
+        for (size_t i = 0; i < levels; i++) {
+            objects += "{\"a\":";
+        }
+        objects += "1" + string(levels, '}');
+        EXPECT_THROW(JSON::Value::parse(objects), JSON::InvalidArgument);
+    }
+
+    void nestingLimit()
+    {
+        // 512 nested arrays is the deepest document the parser accepts.
+        EXPECT_NO_THROW(JSON::Value::parse(string(512, '[') + string(512, ']')));
+
+        // One more level is past the limit.
+        EXPECT_THROW(JSON::Value::parse(string(513, '[') + string(513, ']')), JSON::InvalidArgument);
     }
 } __JSONParserTest;
