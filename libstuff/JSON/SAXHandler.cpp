@@ -89,6 +89,10 @@ bool SAXHandler::String(const char* str, size_t length, bool copy)
 
 bool SAXHandler::StartObject()
 {
+    if (++nestingDepth > MAX_NESTING_DEPTH) {
+        return false;
+    }
+
     Value* object = contexts.back();
     object->valueType = OBJECT;
     object->objectValue = make_shared<Value::ObjectMap>();
@@ -108,12 +112,17 @@ bool SAXHandler::Key(const char* str, size_t length, bool copy)
 
 bool SAXHandler::EndObject(size_t memberCount)
 {
+    nestingDepth--;
     endContext();
     return true;
 }
 
 bool SAXHandler::StartArray()
 {
+    if (++nestingDepth > MAX_NESTING_DEPTH) {
+        return false;
+    }
+
     // We make the placeholder element an array, but we won't be inserting stuff in it until we are done parsing this array
     Value* array = contexts.back();
     array->valueType = ARRAY;
@@ -134,6 +143,7 @@ bool SAXHandler::StartArray()
 
 bool SAXHandler::EndArray(size_t elementCount)
 {
+    nestingDepth--;
     contexts.pop_back(); // pop unused, empty element
     Value* array = contexts.back();
 

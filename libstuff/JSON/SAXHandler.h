@@ -62,6 +62,10 @@ private:
 
     vector<Value*> contexts;
 
+    // Deeper documents would exhaust the thread stack in the recursive parser and destructor.
+    static constexpr size_t MAX_NESTING_DEPTH = 512;
+    size_t nestingDepth = 0;
+
     /**
      * Temporary lists used to store array content during parsing. Lists are chosen for their efficiency in dynamic
      * insertion when the total number of elements is unknown. Once the array is complete, the list content is moved into the
