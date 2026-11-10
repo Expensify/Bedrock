@@ -2194,9 +2194,9 @@ void BedrockServer::onNodeLogin(SQLitePeer* peer)
         auto _clusterMessengerCopy = atomic_load(&_clusterMessenger);
         auto peerName = peer->name;
         if (_clusterMessengerCopy) {
-            thread([command = move(peerCommand), _clusterMessengerCopy, peerName]() {
+            SDetachedThread([command = move(peerCommand), _clusterMessengerCopy, peerName]() {
                 _clusterMessengerCopy->runOnPeer(*command, peerName);
-            }).detach();
+            });
         }
     }
 
