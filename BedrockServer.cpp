@@ -2353,9 +2353,17 @@ unique_ptr<BedrockCommand> BedrockServer::buildCommandFromRequest(SData&& reques
         request["_source"] = ip;
     }
 
-    // Pull any serialized https requests off the requests object to apply to the command.
-    string serializedHTTPSRequests = request["httpsRequests"];
-    string serializedData = request["serializedData"];
+    // Pull any serialized https requests off the requests object to apply to the command. Only peers escalating a
+    // command over the private command port send these. A command with completed HTTPS requests skips prePeek and peek,
+    // and plugins validate callers there, so we discard them from any other socket.
+    string serializedHTTPSRequests;
+    string serializedData;
+    if (shouldTreatAsLocalhost) {
+        serializedHTTPSRequests = request["httpsRequests"];
+        serializedData = request["serializedData"];
+    } else if (request.isSet("httpsRequests") || request.isSet("serializedData")) {
+        SWARN("Discarding httpsRequests and serializedData sent outside the private command port for " << request.methodLine);
+    }
     request.erase("httpsRequests");
     request.erase("serializedData");
 
