@@ -18,6 +18,7 @@
 #include <libstuff/libstuff.h>
 #include <libstuff/SRandom.h>
 #include <libstuff/AutoTimer.h>
+#include <libstuff/SThread.h>
 #include <ConflictLockGuard.h>
 #include <sqlitecluster/SQLitePeer.h>
 
@@ -2193,9 +2194,9 @@ void BedrockServer::onNodeLogin(SQLitePeer* peer)
         auto _clusterMessengerCopy = atomic_load(&_clusterMessenger);
         auto peerName = peer->name;
         if (_clusterMessengerCopy) {
-            thread([command = move(peerCommand), _clusterMessengerCopy, peerName]() {
+            SDetachedThread([command = move(peerCommand), _clusterMessengerCopy, peerName]() {
                 _clusterMessengerCopy->runOnPeer(*command, peerName);
-            }).detach();
+            });
         }
     }
 
@@ -2266,11 +2267,10 @@ void BedrockServer::_acceptSockets()
 
                 // And start up this socket's thread.
                 _outstandingSocketThreads++;
-                thread t;
                 bool threadStarted = false;
                 while (!threadStarted) {
                     try {
-                        t = thread(&BedrockServer::handleSocket, this, move(socket), port == _controlPort, port == _commandPortPublic, port == _commandPortPrivate);
+                        SDetachedThread(&BedrockServer::handleSocket, this, move(socket), port == _controlPort, port == _commandPortPublic, port == _commandPortPrivate);
                         threadStarted = true;
                     } catch (const system_error& e) {
                         // We don't care about this lock here from a performance perspective, it only happens when we
@@ -2302,12 +2302,6 @@ void BedrockServer::_acceptSockets()
                         SINFO("Waiting 1 more second for socket threads to be available.");
                         sleep(1);
                     }
-                }
-                try {
-                    t.detach();
-                } catch (const system_error& e) {
-                    SALERT("Caught system_error in thread detach: " << e.code() << ", message: " << e.what());
-                    throw;
                 }
             }
         }
