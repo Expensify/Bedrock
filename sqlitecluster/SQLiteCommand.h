@@ -65,7 +65,7 @@ public:
 
     // Move constructor that also passes the request to `preprocessor` before anything else can see it. Derived classes
     // can't change `request` because it's const, so this is how they can adjust it while they're being constructed.
-    SQLiteCommand(SQLiteCommand&& from, void (*preprocessor)(SData&));
+    SQLiteCommand(SQLiteCommand&& from, void(*preprocessor)(SData&));
 
     // Default move assignment operator.
     SQLiteCommand& operator=(SQLiteCommand&& from) noexcept;
