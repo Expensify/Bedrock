@@ -2079,14 +2079,12 @@ void SQLiteNode::_recvSynchronize(SQLitePeer* peer, const SData& message)
     for (auto& transaction : transactions) {
         _enqueueReplication(peer, move(transaction));
     }
+
+    // Wait for the whole batch, even when replay is slow.
     unique_lock<mutex> lock(_replicateMutex);
-    if (!_replicateCV.wait_for(lock, chrono::microseconds(RECV_TIMEOUT), [&]() {
+    _replicateCV.wait(lock, [&]() {
         return !_replicationError.empty() || (_replicateQueue.empty() && _inFlightCommitIDs.empty());
-    })) {
-        _replicateAbort = true;
-        _replicateCV.notify_all();
-        STHROW("timed out applying synchronization batch");
-    }
+    });
     if (!_replicationError.empty()) {
         STHROW(_replicationError);
     }
