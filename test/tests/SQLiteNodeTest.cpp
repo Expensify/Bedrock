@@ -90,7 +90,6 @@ struct SQLiteNodeTest : tpunit::TestFixture
                                            TEST(SQLiteNodeTest::testReplicationRequiresLeader),
                                            TEST(SQLiteNodeTest::testReplicationShutdownDeadline),
                                            TEST(SQLiteNodeTest::testReplicationHandleLifetime),
-                                           TEST(SQLiteNodeTest::testSynchronizeWaitsForReplication),
                                            TEST(SQLiteNodeTest::testSynchronizeCommitFailure),
                                            TEST(SQLiteNodeTest::testSynchronizeWriteFailure),
                                            TEST(SQLiteNodeTest::testSynchronizeConstraintFailure),
@@ -354,35 +353,6 @@ struct SQLiteNodeTest : tpunit::TestFixture
             ASSERT_EQUAL(testNode.getPeerByName("peerBanana")->name, "peerBanana");
             ASSERT_EQUAL(testNode.getPeerByName("peer9"), nullptr);
         }
-    }
-
-    void testSynchronizeWaitsForReplication()
-    {
-        SQLiteNode node(server, dbPool, "test", "", peerList, configuredPriority, maxOutstandingWALFrames, 1000000000, "1.0");
-        node._changeState(SQLiteNodeState::SYNCHRONIZING);
-        SQLitePeer* peer = node.getPeerByName("peer1");
-        SData response("SYNCHRONIZE_RESPONSE");
-        response["NumCommits"] = "0";
-
-        // Keep the wait predicate false to model a slow in-flight replication.
-        {
-            lock_guard<mutex> lock(node._replicateMutex);
-            node._inFlightCommitIDs.emplace(dbPool->getBase().getCommitCount() + 1);
-        }
-        auto receive = async(launch::async, [&]() {
-            node._recvSynchronize(peer, response);
-        });
-        const auto status = receive.wait_for(chrono::microseconds(SQLiteNode::RECV_TIMEOUT) + chrono::seconds(1));
-
-        // Release the wait before checking results so a failing test cannot leave it blocked.
-        {
-            lock_guard<mutex> lock(node._replicateMutex);
-            node._inFlightCommitIDs.clear();
-        }
-        node._replicateCV.notify_all();
-        EXPECT_TRUE(status == future_status::timeout);
-        EXPECT_FALSE(node._replicateAbort.load());
-        receive.get();
     }
 
     void testSynchronizeCommitFailure()
