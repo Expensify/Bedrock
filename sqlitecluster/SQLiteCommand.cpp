@@ -53,6 +53,12 @@ SQLiteCommand::SQLiteCommand(SQLiteCommand&& from) :
 {
 }
 
+SQLiteCommand::SQLiteCommand(SQLiteCommand&& from, void(*preprocessor)(SData&)) :
+    SQLiteCommand(move(from))
+{
+    preprocessor(privateRequest);
+}
+
 SQLiteCommand& SQLiteCommand::operator=(SQLiteCommand&& from) noexcept
 {
     privateRequest = move(from.privateRequest);
