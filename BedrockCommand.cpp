@@ -176,6 +176,11 @@ void BedrockCommand::_waitForHTTPSRequests()
                     maxWaitUs = min(maxWaitUs, transaction->scheduledStart - now);
                 }
             }
+
+            // Likewise, don't sleep past a pending reconnect. `postPoll` opens the new connection when it's due.
+            if (transaction->reconnectAt) {
+                maxWaitUs = min(maxWaitUs, transaction->reconnectAt > now ? transaction->reconnectAt - now : 0);
+            }
             requestIt++;
         }
 

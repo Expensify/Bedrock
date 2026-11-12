@@ -68,6 +68,39 @@ void SStandaloneHTTPSManager::prePoll(fd_map& fdm, SStandaloneHTTPSManager::Tran
 
 void SStandaloneHTTPSManager::postPoll(fd_map& fdm, SStandaloneHTTPSManager::Transaction& transaction, uint64_t& nextActivity, uint64_t timeoutMS)
 {
+    // A request that failed before reaching its target is waiting for a new connection. This is handled here rather
+    // than with `scheduledStart` so that every loop that polls transactions retries it, not just the command loop.
+    if (!transaction.s && transaction.reconnectAt && !transaction.finished) {
+        SAUTOPREFIX(transaction.requestID);
+        const uint64_t now = STimeNow();
+        if (now < transaction.reconnectAt) {
+            nextActivity = min(nextActivity, transaction.reconnectAt);
+            return;
+        }
+        transaction.reconnectAt = 0;
+
+        // Polling can resume after the transaction's deadline, and a request sent then could reach the target after
+        // the caller has already given up on it.
+        if (transaction.timeoutAt && now >= transaction.timeoutAt) {
+            transaction.response = 500;
+            transaction.finished = now;
+            SHMMM("Reconnect to " << transaction.targetHost << " skipped, transaction timed out; request not sent, responding 500");
+            return;
+        }
+        transaction.reconnectAttempts++;
+        transaction.s = _openSocket(transaction);
+        if (!transaction.s) {
+            transaction.response = 500;
+            transaction.finished = now;
+            return;
+        }
+        SINFO("Reconnecting to " << transaction.targetHost
+              << (transaction.proxyHost.empty() ? "" : " via proxy " + transaction.proxyHost)
+              << " (attempt " << (transaction.reconnectAttempts + 1) << " of " << (transaction.maxReconnectAttempts + 1) << ")");
+        transaction.s->send(transaction.fullRequest.serialize());
+        return;
+    }
+
     if (!transaction.s || transaction.finished) {
         // If there's no socket, or we're done, skip. Because we call poll on commands, we may poll transactions that
         // have finished (because commands may finish one transaction but not another), or transactions that have not
@@ -113,6 +146,32 @@ void SStandaloneHTTPSManager::postPoll(fd_map& fdm, SStandaloneHTTPSManager::Tra
         return;
     }
 
+    // Nothing reached the target host, so it's safe to try again on a new connection: back off 0.5s, 1s, 2s, 4s, ...
+    // unless the transaction would time out first. A proxy that refused the tunnel is retried too, and its reply is
+    // reported once the attempts run out.
+    const string progress = _describeRequestProgress(transaction);
+    const uint64_t retryDelay = RECONNECT_BASE_DELAY_US << transaction.reconnectAttempts;
+    const bool canRetry = progress == "not sent" && transaction.reconnectAttempts < transaction.maxReconnectAttempts &&
+        (!transaction.timeoutAt || now + retryDelay < transaction.timeoutAt);
+    if (canRetry) {
+        const string target = transaction.targetHost.empty() ? "an unknown host" : transaction.targetHost;
+        const string via = transaction.proxyHost.empty() ? "" : " via proxy " + transaction.proxyHost;
+        const SData& response = transaction.shouldStreamResponse ? transaction.fullResponse : transaction._bufferedResponse;
+        const string failure = result == SHTTPResponseParser::Result::COMPLETE
+            ? "Proxy refused the tunnel ('" + response.methodLine + "')"
+            : "Connection " + string(state > Socket::CONNECTED ? "died prematurely" : "timed out") + " " + _describeFailureStage(transaction, state, false);
+        SHMMM(failure << " to " << target << via << "; request not sent, retrying in " << (retryDelay / 1000) << "ms"
+              << " (attempt " << (transaction.reconnectAttempts + 1) << " of " << (transaction.maxReconnectAttempts + 1) << ")");
+        transaction.reconnectAt = now + retryDelay;
+        transaction._responseParser = SHTTPResponseParser();
+        transaction._bufferedResponse = SData();
+        transaction.fullResponse = SData();
+        delete transaction.s;
+        transaction.s = nullptr;
+        nextActivity = min(nextActivity, transaction.reconnectAt);
+        return;
+    }
+
     transaction.finished = now;
     if (result == SHTTPResponseParser::Result::COMPLETE) {
         if (!transaction.shouldStreamResponse) {
@@ -140,7 +199,6 @@ void SStandaloneHTTPSManager::postPoll(fd_map& fdm, SStandaloneHTTPSManager::Tra
     } else {
         // Callers use these transport statuses to decide whether and when to retry.
         transaction.response = transaction.s->sendBufferEmpty() ? 501 : 500;
-        const string progress = _describeRequestProgress(transaction);
         const string outcome = (state > Socket::CONNECTED) ? "died prematurely" : "timed out";
         const string stage = _describeFailureStage(transaction, state, progress == "sent");
         const string target = transaction.targetHost.empty() ? "an unknown host" : transaction.targetHost;
@@ -190,12 +248,12 @@ unique_ptr<SStandaloneHTTPSManager::Transaction> SStandaloneHTTPSManager::_creat
     return transaction;
 }
 
-unique_ptr<SStandaloneHTTPSManager::Transaction> SStandaloneHTTPSManager::_httpsSend(const string& url, const SData& request, bool allowProxy)
+unique_ptr<SStandaloneHTTPSManager::Transaction> SStandaloneHTTPSManager::_httpsSend(const string& url, const SData& request, bool allowProxy, int maxReconnectAttempts)
 {
-    return _httpsSend(url, request, nullptr, allowProxy);
+    return _httpsSend(url, request, nullptr, allowProxy, maxReconnectAttempts);
 }
 
-unique_ptr<SStandaloneHTTPSManager::Transaction> SStandaloneHTTPSManager::_httpsSend(const string& url, const SData& request, shared_ptr<const MTLSConnection> connection, bool allowProxy)
+unique_ptr<SStandaloneHTTPSManager::Transaction> SStandaloneHTTPSManager::_httpsSend(const string& url, const SData& request, shared_ptr<const MTLSConnection> connection, bool allowProxy, int maxReconnectAttempts)
 {
     // Open a connection, optionally using SSL (if the URL is HTTPS). If that doesn't work, then just return a
     // completed transaction with an error response.
@@ -215,27 +273,24 @@ unique_ptr<SStandaloneHTTPSManager::Transaction> SStandaloneHTTPSManager::_https
 
     unique_ptr<Transaction> transaction = make_unique<Transaction>(*this);
     transaction->targetHost = host;
+    transaction->isHttps = isHttps;
+    transaction->mtlsConnection = move(connection);
+
+    // If a proxy is set, and it's allowed to use it, go through the proxy.
+    const bool useProxy = isHttps && allowProxy && proxyAddressHTTPS.size();
+    if (useProxy) {
+        string proxyHost, proxyPath;
+        SParseURI(proxyAddressHTTPS, proxyHost, proxyPath);
+        SINFO("Proxying " << url << " through " << proxyHost);
+        transaction->proxyHost = proxyHost;
+    }
 
     // Open a socket, optionally using a client certificate.
-    Socket* s = nullptr;
-    bool usingProxy = false;
-    try {
-        // If a proxy is set, and it's allowed to use it, go through the proxy.
-        if (isHttps && allowProxy && proxyAddressHTTPS.size()) {
-            string proxyHost, path;
-            SParseURI(proxyAddressHTTPS, proxyHost, path);
-            SINFO("Proxying " << url << " through " << proxyHost);
-            transaction->proxyHost = proxyHost;
-            s = connection
-                ? new SHTTPSProxySocket(proxyHost, move(connection), transaction->requestID)
-                : new SHTTPSProxySocket(proxyHost, host, transaction->requestID);
-            usingProxy = true;
-        } else {
-            s = connection ? new Socket(move(connection)) : new Socket(host, isHttps);
-        }
-    } catch (const SException& exception) {
+    Socket* s = _openSocket(*transaction);
+    if (!s) {
         return _createErrorTransaction();
     }
+    transaction->maxReconnectAttempts = maxReconnectAttempts;
 
     // When using a proxy with CONNECT tunnels, remove "Connection: close" header to prevent
     // premature connection termination during TLS data transfer, which causes SSL EOF errors.
@@ -243,7 +298,7 @@ unique_ptr<SStandaloneHTTPSManager::Transaction> SStandaloneHTTPSManager::_https
     // HTTP/1.1 uses persistent connections by default, and letting the client/server negotiate
     // keep-alive naturally is more robust.
     SData modifiedRequest = request;
-    if (usingProxy) {
+    if (useProxy) {
         modifiedRequest.nameValueMap.erase("Connection");
     }
     transaction->s = s;
@@ -286,6 +341,25 @@ string SStandaloneHTTPSManager::_describeRequestProgress(const Transaction& tran
         return "not sent";
     }
     return transaction.s->sendBufferEmpty() ? "sent" : "not fully sent";
+}
+
+STCPManager::Socket* SStandaloneHTTPSManager::_openSocket(Transaction& transaction)
+{
+    try {
+        if (!transaction.proxyHost.empty()) {
+            if (transaction.mtlsConnection) {
+                return new SHTTPSProxySocket(transaction.proxyHost, transaction.mtlsConnection, transaction.requestID);
+            }
+            return new SHTTPSProxySocket(transaction.proxyHost, transaction.targetHost, transaction.requestID);
+        }
+        if (transaction.mtlsConnection) {
+            return new Socket(transaction.mtlsConnection);
+        }
+        return new Socket(transaction.targetHost, transaction.isHttps);
+    } catch (const SException& exception) {
+        SWARN("Couldn't open a socket to " << transaction.targetHost << ": " << exception.what());
+        return nullptr;
+    }
 }
 
 bool SStandaloneHTTPSManager::_onRecv(Transaction& transaction)
