@@ -1,6 +1,5 @@
 #include "STCPManager.h"
 
-#include <fcntl.h>
 #include <unistd.h>
 
 #include <libstuff/libstuff.h>
@@ -385,18 +384,6 @@ bool STCPManager::Socket::send(const string& buffer, size_t* bytesSentCount)
 
     // Send anything we've got.
     return send(bytesSentCount);
-}
-
-bool STCPManager::Socket::sendAll(const string& buffer)
-{
-    const int flags = fcntl(s, F_GETFL);
-    SASSERT(flags >= 0 && !(flags & O_NONBLOCK));
-
-    bool sendSucceeded = send(buffer);
-    while (sendSucceeded && !sendBufferEmpty()) {
-        sendSucceeded = send();
-    }
-    return sendSucceeded;
 }
 
 bool STCPManager::Socket::sendNonBlocking()

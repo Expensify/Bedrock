@@ -62,10 +62,6 @@ public:
         virtual bool send(size_t* bytesSentCount = nullptr);
         virtual bool send(const string& buffer, size_t* bytesSentCount = nullptr);
 
-        // Appends the response once and drains pending bytes until empty or a send fails. Only valid on blocking
-        // sockets: retrying a non-blocking socket without waiting for readiness can busy-spin.
-        bool sendAll(const string& buffer);
-
         virtual bool recv();
 
         // Flushes pending plaintext bytes without waiting for kernel buffer space or changing the fd's blocking mode.

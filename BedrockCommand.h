@@ -327,6 +327,10 @@ private:
     // If someone is waiting for this command to complete, this will be called in the destructor.
     function<void()>* destructionCallback;
 
+    // Transfers a prepared standard reply to its connection thread after command execution releases its DB scopes.
+    function<void(unique_ptr<BedrockCommand>)> responseCallback;
+    bool responseReady = false;
+
     // The socket that this command was read from. Can be null if the command didn't come from a client socket (i.e.,
     // it was escalated to leader or generated internally) or if it was a `fire and forget` command for which no client
     // is awaiting a reply.

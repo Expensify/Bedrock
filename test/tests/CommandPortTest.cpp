@@ -21,7 +21,11 @@ struct CommandPortTest : tpunit::TestFixture
                               TEST(CommandPortTest::testReplyAfterTemporaryNoProgress),
                               TEST(CommandPortTest::testFailedReplyAfterPartialWrite),
                               TEST(CommandPortTest::testFailedReplyAfterClientReset),
-                              TEST(CommandPortTest::testNonBlockingFlushLeavesRemainder))
+                              TEST(CommandPortTest::testNonBlockingFlushLeavesRemainder),
+                              TEST(CommandPortTest::testResponseHandoffRetainsCommand),
+                              TEST(CommandPortTest::testShutdownDeadlineStopsDelivery),
+                              TEST(CommandPortTest::testReadHalfCloseAllowsDelivery),
+                              TEST(CommandPortTest::testSlowReaderDoesNotBlockSynchronousCommands))
     {
     }
 
@@ -33,9 +37,7 @@ public:
         {
         }
 
-        using Socket::send;
-
-        bool send(size_t* bytesSentCount = nullptr) override
+        bool sendNonBlocking() override
         {
             lock_guard<decltype(sendRecvMutex)> lock(sendRecvMutex);
             sendCalls++;
@@ -43,14 +45,11 @@ public:
             // Inject a successful short write without depending on kernel buffer sizes or signal delivery.
             if (sendCalls == 1) {
                 const size_t size = min(firstWriteLimit, sendBuffer.size());
-                const ssize_t sent = ::send(s, sendBuffer.c_str(), size, MSG_NOSIGNAL);
+                const ssize_t sent = ::send(s, sendBuffer.c_str(), size, MSG_NOSIGNAL | MSG_DONTWAIT);
                 if (sent < 0) {
                     return false;
                 }
                 sendBuffer.consumeFront(static_cast<size_t>(sent));
-                if (bytesSentCount) {
-                    *bytesSentCount = static_cast<size_t>(sent);
-                }
                 return true;
             }
 
@@ -60,13 +59,10 @@ public:
 
             // Socket::send() also reports true for recoverable errors that leave the entire buffer pending.
             if (sendCalls == 2 && pauseAfterFirstWrite) {
-                if (bytesSentCount) {
-                    *bytesSentCount = 0;
-                }
                 return true;
             }
 
-            return Socket::send(bytesSentCount);
+            return Socket::sendNonBlocking();
         }
 
         size_t sendCalls = 0;
@@ -87,6 +83,19 @@ public:
             failedReplies++;
         }
 
+        ~ReplyCommand() override
+        {
+            if (onDestroy) {
+                onDestroy();
+            }
+        }
+
+        bool shouldSuppressTimeoutWarnings() override
+        {
+            return true;
+        }
+
+        function<void()> onDestroy;
         size_t& failedReplies;
     };
 
@@ -150,10 +159,11 @@ public:
         command->initiatingClientID = static_cast<int64_t>(sender.id);
         command->response.methodLine = "200 OK";
         command->response.content = string(4 * 1024 * 1024, 'x');
+        server._reply(command);
 
         thread sendingThread([&]() {
             SInitialize("reset-reply-test");
-            server._reply(command);
+            server._deliverReply(command);
         });
 
         // Read readiness proves some response bytes have arrived. Reset without consuming them, so the kernel
@@ -209,6 +219,152 @@ public:
         EXPECT_EQUAL(fcntl(sender.s, F_GETFL), flags);
     }
 
+    void testResponseHandoffRetainsCommand()
+    {
+        int fds[2];
+        ASSERT_EQUAL(socketpair(AF_UNIX, SOCK_STREAM, 0, fds), 0);
+        PartialSendSocket sender(fds[0], 64, false, true);
+        STCPManager::Socket receiver(fds[1], STCPManager::Socket::CONNECTED);
+        SData args;
+        BedrockServer server(SQLiteNodeState::LEADING, args);
+        server._shutdownState = BedrockServer::RUNNING;
+        server._outstandingSocketThreads = 0;
+        SData request("Query");
+        request["timeout"] = "-1";
+        size_t failedReplies = 0;
+        size_t destroyed = 0;
+        size_t destructionNotifications = 0;
+        auto observed = make_unique<ReplyCommand>(move(request), failedReplies);
+        observed->onDestroy = [&]() {
+            destroyed++;
+        };
+        unique_ptr<BedrockCommand> response;
+        observed->responseCallback = [&](unique_ptr<BedrockCommand> ready) {
+            response = move(ready);
+        };
+        function<void()> notification = [&]() {
+            destructionNotifications++;
+        };
+        observed->destructionCallback = &notification;
+        observed->socket = &sender;
+        observed->initiatingClientID = static_cast<int64_t>(sender.id);
+        unique_ptr<BedrockCommand> command = move(observed);
+
+        server.runCommand(move(command));
+        ASSERT_TRUE(response);
+        EXPECT_FALSE(command);
+        EXPECT_TRUE(response->responseReady);
+        EXPECT_EQUAL(destroyed, 0U);
+        EXPECT_EQUAL(destructionNotifications, 0U);
+        EXPECT_EQUAL(sender.sendCalls, 0U);
+        EXPECT_TRUE(response->destructionCallback == nullptr);
+        EXPECT_FALSE(server._deliverReply(response));
+        EXPECT_EQUAL(failedReplies, 1U);
+        response.reset();
+        EXPECT_EQUAL(destroyed, 1U);
+        EXPECT_EQUAL(destructionNotifications, 0U);
+    }
+
+    void testShutdownDeadlineStopsDelivery()
+    {
+        int fds[2];
+        ASSERT_EQUAL(socketpair(AF_UNIX, SOCK_STREAM, 0, fds), 0);
+        PartialSendSocket sender(fds[0], 64, false, false);
+        STCPManager::Socket receiver(fds[1], STCPManager::Socket::CONNECTED);
+        SData args;
+        BedrockServer server(SQLiteNodeState::LEADING, args);
+        server._shutdownState = BedrockServer::START_SHUTDOWN;
+        server._shutdownTime = chrono::steady_clock::now() - chrono::seconds(1);
+        server._outstandingSocketThreads = 0;
+        size_t failedReplies = 0;
+        unique_ptr<BedrockCommand> command = make_unique<ReplyCommand>(SData("Query"), failedReplies);
+        command->socket = &sender;
+        command->initiatingClientID = static_cast<int64_t>(sender.id);
+        command->response.methodLine = "200 OK";
+        server._reply(command);
+        EXPECT_FALSE(server._deliverReply(command));
+        EXPECT_EQUAL(failedReplies, 1U);
+        EXPECT_EQUAL(sender.sendCalls, 0U);
+        EXPECT_EQUAL(sender.state.load(), STCPManager::Socket::CLOSED);
+    }
+
+    void testSlowReaderDoesNotBlockSynchronousCommands()
+    {
+        BedrockTester tester({{"-synchronousCommands", "Query"}}, {});
+        STCPManager::Socket client(::socket(AF_INET, SOCK_STREAM, 0), STCPManager::Socket::CONNECTED);
+        ASSERT_TRUE(client.s >= 0);
+        const int bufferSize = 4096;
+        ASSERT_EQUAL(setsockopt(client.s, SOL_SOCKET, SO_RCVBUF, &bufferSize, sizeof(bufferSize)), 0);
+        sockaddr_in address{};
+        address.sin_family = AF_INET;
+        address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        const string host = tester.getArg("-serverHost");
+        address.sin_port = htons(static_cast<uint16_t>(SToInt(host.substr(host.rfind(':') + 1))));
+        ASSERT_EQUAL(connect(client.s, reinterpret_cast<sockaddr*>(&address), sizeof(address)), 0);
+        SData large("Query");
+        large["query"] = "SELECT hex(zeroblob(8388608)) AS payload;";
+        large["Connection"] = "close";
+        ASSERT_TRUE(client.send(large.serialize()));
+        ASSERT_TRUE(client.sendBufferEmpty());
+        pollfd readable = {client.s, POLLIN, 0};
+        ASSERT_EQUAL(poll(&readable, 1, 5000), 1);
+        ASSERT_TRUE(readable.revents & POLLIN);
+
+        // Both Queries use the single blocking-commit worker. The second must finish while the first client
+        // still isn't reading; releasing the first connection before checking would hide worker-thread writes.
+        promise<bool> result;
+        auto completed = result.get_future();
+        thread anotherCommand([&]() {
+            SInitialize("slow-reader-second-query");
+            try {
+                SData small("Query");
+                small["query"] = "SELECT 1 AS ready;";
+                tester.executeWaitVerifyContent(small);
+                result.set_value(true);
+            } catch (...) {
+                result.set_exception(current_exception());
+            }
+        });
+        const bool ready = completed.wait_for(chrono::seconds(5)) == future_status::ready;
+        const linger reset = {1, 0};
+        const int lingerResult = setsockopt(client.s, SOL_SOCKET, SO_LINGER, &reset, sizeof(reset));
+        const int closeResult = close(client.s);
+        client.s = -1;
+        anotherCommand.join();
+        ASSERT_TRUE(ready);
+        EXPECT_TRUE(completed.get());
+        EXPECT_EQUAL(lingerResult, 0);
+        EXPECT_EQUAL(closeResult, 0);
+    }
+
+    void testReadHalfCloseAllowsDelivery()
+    {
+        int fds[2];
+        ASSERT_EQUAL(socketpair(AF_UNIX, SOCK_STREAM, 0, fds), 0);
+        STCPManager::Socket sender(fds[0], STCPManager::Socket::CONNECTED);
+        STCPManager::Socket receiver(fds[1], STCPManager::Socket::CONNECTED);
+        ASSERT_EQUAL(shutdown(receiver.s, SHUT_WR), 0);
+        SData args;
+        BedrockServer server(SQLiteNodeState::LEADING, args);
+        server._shutdownState = BedrockServer::RUNNING;
+        server._outstandingSocketThreads = 0;
+        SData request("Query");
+        request["Connection"] = "close";
+        size_t failedReplies = 0;
+        unique_ptr<BedrockCommand> command = make_unique<ReplyCommand>(move(request), failedReplies);
+        command->socket = &sender;
+        command->initiatingClientID = static_cast<int64_t>(sender.id);
+        command->response.methodLine = "200 OK";
+        command->response.content = "complete";
+        server._reply(command);
+        EXPECT_TRUE(server._deliverReply(command));
+        char received[1024];
+        const ssize_t count = recv(receiver.s, received, sizeof(received), MSG_DONTWAIT);
+        ASSERT_TRUE(count > 0);
+        EXPECT_EQUAL(string(received, static_cast<size_t>(count)), command->response.serialize());
+        EXPECT_EQUAL(failedReplies, 0U);
+    }
+
     void verifyReply(const string& connection, size_t firstWriteLimit, bool pauseAfterFirstWrite, bool failAfterFirstWrite = false)
     {
         int fds[2];
@@ -233,6 +389,11 @@ public:
         command->response.content = string(8192, 'x');
 
         server._reply(command);
+        EXPECT_TRUE(command->responseReady);
+        EXPECT_EQUAL(sender.sendCalls, 0U);
+        EXPECT_TRUE(sender.sendBufferEmpty());
+        EXPECT_EQUAL(sender.state.load(), STCPManager::Socket::CONNECTED);
+        EXPECT_EQUAL(server._deliverReply(command), !failAfterFirstWrite);
 
         string received;
         char buffer[16384];
