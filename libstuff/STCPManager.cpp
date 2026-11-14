@@ -14,6 +14,12 @@ void STCPManager::prePoll(fd_map& fdm, Socket& socket)
 {
     // Make sure it's not closed
     if (socket.state.load() != Socket::CLOSED) {
+        // There's no socket fd yet while we're waiting on DNS, so poll the resolution object's pipe instead.
+        if (socket.state.load() == Socket::RESOLVING) {
+            SFDset(fdm, socket.dnsResolution->getFD(), SREADEVTS);
+            return;
+        }
+
         // Check and see if it looks like we're still valid.
         if (socket.s < 0) {
             SWARN("Invalid FD number("
@@ -64,6 +70,21 @@ void STCPManager::postPoll(fd_map& fdm, Socket& socket)
 {
     // Update this socket
     switch (socket.state.load()) {
+        case Socket::RESOLVING: {
+            if (!SFDAnySet(fdm, socket.dnsResolution->getFD(), SREADEVTS)) {
+                // Lookup still running, nothing to do.
+                break;
+            }
+
+            // The lookup finished. Open the fd and set up SSL now that we have an address.
+            //
+            // Deliberately no fall-through: the fd we just opened isn't in this fd_map, and its number
+            // could belong to a socket closed earlier in this same pass, whose stale revents would read
+            // as a completed connection.
+            socket._connectAfterDNSResolution();
+            break;
+        }
+
         case Socket::CONNECTING: {
             // See if it connected or failed
             if (!SFDAnySet(fdm, socket.s, SWRITEEVTS | POLLHUP | POLLERR)) {
@@ -185,7 +206,19 @@ void STCPManager::postPoll(fd_map& fdm, Socket& socket)
 void STCPManager::Socket::shutdown(Socket::State toState)
 {
     SDEBUG("Shutting down socket '" << addr << "'");
-    ::shutdown(s, SHUT_RDWR);
+
+    // There's no fd to shut down and no way to flush what's buffered while we're still waiting on
+    // DNS, so there's nothing a graceful shutdown could do. Close instead of leaving the socket in
+    // a state that prePoll would try to register a missing fd for.
+    if (state.load() == State::RESOLVING) {
+        state.store(State::CLOSED);
+        return;
+    }
+
+    // There may still be no fd: opening one can fail after the address is known.
+    if (s > 0) {
+        ::shutdown(s, SHUT_RDWR);
+    }
     state.store(toState);
 }
 
@@ -195,21 +228,90 @@ STCPManager::Socket::Socket(int sock, STCPManager::Socket::State state_, bool ht
 {
 }
 
-STCPManager::Socket::Socket(const string& host, bool https)
-    : s(0), addr{}, state(State::CONNECTING), connectFailure(false), openTime(STimeNow()), lastSendTime(openTime),
-    lastRecvTime(openTime), ssl(nullptr), data(nullptr), id(STCPManager::Socket::socketCount++), https(https)
+shared_ptr<SResolution> STCPManager::Socket::_startResolution(const string& host)
 {
     SASSERT(SHostIsValid(host));
-    s = S_socket(host, true, false, false);
-    if (https) {
-        ssl = new SSSLState(host, s);
+    return SResolve(host);
+}
+
+STCPManager::Socket::Socket(const string& host, bool https, int resolveGraceMS)
+    : Socket(host, https, resolveGraceMS, nullptr)
+{
+}
+
+STCPManager::Socket::Socket(shared_ptr<const MTLSConnection> connection, int resolveGraceMS)
+    : Socket(connection ? connection->hostname : "", true, resolveGraceMS, connection)
+{
+}
+
+STCPManager::Socket::Socket(const string& host, bool https, int resolveGraceMS, shared_ptr<const MTLSConnection> connection)
+    : s(-1), addr{}, state(State::CONNECTING), connectFailure(false), openTime(STimeNow()), lastSendTime(openTime),
+    lastRecvTime(openTime), ssl(nullptr), data(nullptr), id(STCPManager::Socket::socketCount++), https(https),
+    dnsResolution(_startResolution(host)), hostToResolve(host), _mtlsConnection(move(connection))
+{
+    // We give DNS a couple milliseconds to resolve. If it succeeds, we'll create a socket.
+    pollfd pfd = {dnsResolution->getFD(), POLLIN, 0};
+    poll(&pfd, 1, resolveGraceMS);
+
+    // If it's not done yet, set it pending and let it get resolved in our poll() loop later.
+    if (dnsResolution->getState() == SResolution::PENDING) {
+        state.store(State::RESOLVING);
     } else {
-        ssl = nullptr;
+        // It's finished, either way. This creates the socket, or closes it if the lookup failed.
+        _connectAfterDNSResolution();
+    }
+}
+
+bool STCPManager::Socket::_openSocket()
+{
+    s = S_socket(addr, true, false, false);
+    if (s < 0) {
+        state.store(State::CLOSED);
+        connectFailure = true;
+        return false;
     }
 
-    if (s < 0) {
-        STHROW("Couldn't open socket to " + host);
+    if (https) {
+        // A supplied fd remains ours to close if SSSLState construction fails.
+        try {
+            ssl = new SSSLState(hostToResolve, s, _mtlsConnection);
+        } catch (const SException& e) {
+            SWARN("Couldn't set up SSL for '" << hostToResolve << "' (" << addr << "): " << e.what());
+            S_close(&s);
+            state.store(State::CLOSED);
+            connectFailure = true;
+            return false;
+        }
     }
+
+    return true;
+}
+
+STCPManager::Socket::Socket(const sockaddr_in& addr, bool https, const string& hostname)
+    : s(-1), addr(addr), state(State::CONNECTING), connectFailure(false), openTime(STimeNow()), lastSendTime(openTime),
+    lastRecvTime(openTime), ssl(nullptr), data(nullptr), id(STCPManager::Socket::socketCount++), https(https),
+    hostToResolve(hostname)
+{
+    if (!_openSocket()) {
+        STHROW("Couldn't open socket to " + SToStr(addr));
+    }
+}
+
+void STCPManager::Socket::_connectAfterDNSResolution()
+{
+    if (dnsResolution->getState() != SResolution::RESOLVED) {
+        SINFO("Failed to resolve '" << hostToResolve << "', closing socket.");
+        state.store(State::CLOSED);
+        connectFailure = true;
+        return;
+    }
+    addr = dnsResolution->getAddr();
+
+    if (!_openSocket()) {
+        return;
+    }
+
+    state.store(State::CONNECTING);
 }
 
 STCPManager::Socket::Socket(Socket&& from)
@@ -223,7 +325,10 @@ STCPManager::Socket::Socket(Socket&& from)
     ssl(from.ssl),
     data(from.data),
     id(from.id),
-    https(from.https)
+    https(from.https),
+    dnsResolution(from.dnsResolution),
+    hostToResolve(move(from.hostToResolve)),
+    _mtlsConnection(move(from._mtlsConnection))
 {
     from.s = -1;
     from.ssl = nullptr;
@@ -242,6 +347,13 @@ STCPManager::Socket::~Socket()
 bool STCPManager::Socket::send(size_t* bytesSentCount)
 {
     lock_guard<decltype(sendRecvMutex)> lock(sendRecvMutex);
+
+    // Still waiting on DNS, so there's nowhere to send it yet. Whatever's buffered stays buffered
+    // and goes out once postPoll finishes the connection.
+    if (state.load() == State::RESOLVING) {
+        return true;
+    }
+
     // Send data
     bool result = false;
     size_t oldSize = sendBuffer.size();
@@ -309,6 +421,11 @@ void STCPManager::Socket::setSendBuffer(const string& buffer)
 bool STCPManager::Socket::recv()
 {
     lock_guard<decltype(sendRecvMutex)> lock(sendRecvMutex);
+
+    // Still waiting on DNS, so there's nothing that could have arrived yet.
+    if (state.load() == State::RESOLVING) {
+        return true;
+    }
 
     // Read data
     bool result = false;

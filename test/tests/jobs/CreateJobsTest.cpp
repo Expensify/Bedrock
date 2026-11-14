@@ -1,3 +1,4 @@
+#include <libstuff/JSON/Value.h>
 #include <libstuff/SData.h>
 #include <libstuff/SQResult.h>
 #include <test/lib/BedrockTester.h>
@@ -10,9 +11,11 @@ struct CreateJobsTest : tpunit::TestFixture
                               TEST(CreateJobsTest::create),
                               TEST(CreateJobsTest::createWithHttp),
                               TEST(CreateJobsTest::createWithInvalidJson),
+                              TEST(CreateJobsTest::preserveDataTypes),
                               TEST(CreateJobsTest::createWithParentIDNotRunning),
                               TEST(CreateJobsTest::createWithParentMocked),
                               TEST(CreateJobsTest::createUniqueChildWithWrongParent),
+                              TEST(CreateJobsTest::rerunIfDataChangedBatch),
                               AFTER(CreateJobsTest::tearDown),
                               AFTER_CLASS(CreateJobsTest::tearDownClass))
     {
@@ -65,10 +68,10 @@ struct CreateJobsTest : tpunit::TestFixture
         SData command("CreateJobs");
         command["jobs"] = _generateCreateJobContentJSON();
         STable response = tester->executeWaitVerifyContentTable(command);
-        list<string> jobIDList = SParseJSONArray(response["jobIDs"]);
+        auto jobIDList = JSON::Value::parse(response["jobIDs"]);
         ASSERT_EQUAL(jobIDList.size(), 2);
-        string jobID1 = jobIDList.front();
-        string jobID2 = jobIDList.back();
+        auto jobID1 = jobIDList[0].getUint();
+        auto jobID2 = jobIDList.back().getUint();
         ASSERT_NOT_EQUAL(jobID1, jobID2);
     }
 
@@ -77,10 +80,10 @@ struct CreateJobsTest : tpunit::TestFixture
         SData command("CreateJobs / HTTP/1.1");
         command["jobs"] = _generateCreateJobContentJSON();
         STable response = tester->executeWaitVerifyContentTable(command);
-        list<string> jobIDList = SParseJSONArray(response["jobIDs"]);
+        auto jobIDList = JSON::Value::parse(response["jobIDs"]);
         ASSERT_EQUAL(jobIDList.size(), 2);
-        string jobID1 = jobIDList.front();
-        string jobID2 = jobIDList.back();
+        auto jobID1 = jobIDList[0].getUint();
+        auto jobID2 = jobIDList.back().getUint();
         ASSERT_NOT_EQUAL(jobID1, jobID2);
     }
 
@@ -89,6 +92,27 @@ struct CreateJobsTest : tpunit::TestFixture
         SData command("CreateJobs");
         command["jobs"] = _generateCreateJobContentJSON() + "}";
         tester->executeWaitVerifyContent(command, "401 Invalid JSON");
+    }
+
+    void preserveDataTypes()
+    {
+        // Mutating mock data and removing the private rerun marker must not convert string values into JSON scalars.
+        SData command("CreateJobs");
+        command["mockRequest"] = "true";
+        command["jobs"] = R"([{"name":"typedData","unique":true,"rerunIfDataChanged":true,"data":{"number":"123","nested":{"enabled":"true"},"_bedrockRerunIfDataChanged":true}}])";
+        const auto created = JSON::Value::parse(tester->executeWaitVerifyContent(command));
+        ASSERT_EQUAL(created["jobIDs"].size(), 1);
+
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "typedData";
+        command["mockRequest"] = "true";
+        const auto job = JSON::Value::parse(tester->executeWaitVerifyContent(command));
+        const auto& data = job["data"];
+        ASSERT_EQUAL(data["number"].getString(), "123");
+        ASSERT_EQUAL(data["nested"]["enabled"].getString(), "true");
+        ASSERT_TRUE(data["mockRequest"].getBool());
+        ASSERT_FALSE(data.hasMember("_bedrockRerunIfDataChanged"));
     }
 
     void createWithParentIDNotRunning()
@@ -130,8 +154,8 @@ struct CreateJobsTest : tpunit::TestFixture
         command["name"] = "createWithParentMocked";
         command["mockRequest"] = "true";
         string response = tester->executeWaitVerifyContent(command);
-        STable responseJSON = SParseJSONObject(response);
-        string parentID = responseJSON["jobID"];
+        JSON::Value responseJSON = JSON::Value::parse(response);
+        string parentID = responseJSON["jobID"].serialize();
 
         // Get the parent (to set it running). mockRequest must be set or we'll get a non-mocked parent.
         command.clear();
@@ -178,8 +202,8 @@ struct CreateJobsTest : tpunit::TestFixture
         command["mockRequest"] = "true";
         STable response2 = tester->executeWaitVerifyContentTable(command);
         int64_t child1ID = stol(response2["jobID"]);
-        responseJSON = SParseJSONObject(response2["data"]);
-        ASSERT_TRUE(responseJSON.find("mockRequest") != responseJSON.end());
+        responseJSON = JSON::Value::parse(response2["data"]);
+        ASSERT_TRUE(responseJSON.hasMember("mockRequest"));
 
         command.clear();
         command.methodLine = "GetJob";
@@ -187,8 +211,8 @@ struct CreateJobsTest : tpunit::TestFixture
         command["mockRequest"] = "true";
         response2 = tester->executeWaitVerifyContentTable(command);
         int64_t child2ID = stol(response2["jobID"]);
-        responseJSON = SParseJSONObject(response2["data"]);
-        ASSERT_TRUE(responseJSON.find("mockRequest") != responseJSON.end());
+        responseJSON = JSON::Value::parse(response2["data"]);
+        ASSERT_TRUE(responseJSON.hasMember("mockRequest"));
 
         // Finish the children.
         command.clear();
@@ -217,14 +241,14 @@ struct CreateJobsTest : tpunit::TestFixture
         SData command("CreateJob");
         command["name"] = "createWithParent1";
         string response = tester->executeWaitVerifyContent(command);
-        STable responseJSON = SParseJSONObject(response);
-        string parentID1 = responseJSON["jobID"];
+        JSON::Value responseJSON = JSON::Value::parse(response);
+        string parentID1 = responseJSON["jobID"].serialize();
         command.clear();
         command.methodLine = "CreateJob";
         command["name"] = "createWithParent2";
         response = tester->executeWaitVerifyContent(command);
-        responseJSON = SParseJSONObject(response);
-        string parentID2 = responseJSON["jobID"];
+        responseJSON = JSON::Value::parse(response);
+        string parentID2 = responseJSON["jobID"].serialize();
 
         // Get the parents (to set it running)
         command.clear();
@@ -262,5 +286,66 @@ struct CreateJobsTest : tpunit::TestFixture
         jobs.push_back(SComposeJSONObject(job1Content));
         command["jobs"] = SComposeJSONArray(jobs);
         tester->executeWaitVerifyContent(command, "404 Trying to create a child that already exists, but it is tied to a different parent");
+    }
+
+    void rerunIfDataChangedBatch()
+    {
+        // Given an opted-in unique job
+        SData command("CreateJob");
+        command["name"] = "batchComparedData";
+        command["data"] = "{\"initial\":0}";
+        command["unique"] = "true";
+        command["rerunIfDataChanged"] = "true";
+        const string jobID = tester->executeWaitVerifyContentTable(command)["jobID"];
+
+        // When one batch contains two updates to that job
+        command.clear();
+        command.methodLine = "CreateJobs";
+        STable firstJob;
+        firstJob["name"] = "batchComparedData";
+        firstJob["data"] = "{\"first\":1}";
+        firstJob["unique"] = "true";
+        firstJob["rerunIfDataChanged"] = "true";
+        STable secondJob = firstJob;
+        secondJob["data"] = "{\"second\":2}";
+        secondJob["jobPriority"] = "750";
+        vector<string> jobs = {SComposeJSONObject(firstJob), SComposeJSONObject(secondJob)};
+        command["jobs"] = SComposeJSONArray(jobs);
+        STable response = tester->executeWaitVerifyContentTable(command);
+        // Then both entries reuse the same row
+        auto jobIDs = JSON::Value::parse(response["jobIDs"]);
+        ASSERT_EQUAL(jobIDs.size(), 2);
+        ASSERT_EQUAL(jobIDs[0].getUint(), stoull(jobID));
+        ASSERT_EQUAL(jobIDs.back().getUint(), stoull(jobID));
+
+        // When the caller replays the batch
+        response = tester->executeWaitVerifyContentTable(command);
+        jobIDs = JSON::Value::parse(response["jobIDs"]);
+        // Then both entries still reuse the same row
+        ASSERT_EQUAL(jobIDs.size(), 2);
+        ASSERT_EQUAL(jobIDs[0].getUint(), stoull(jobID));
+        ASSERT_EQUAL(jobIDs.back().getUint(), stoull(jobID));
+
+        // And the row retains all updates and its opt-in marker
+        SQResult result;
+        tester->readDB("SELECT JSON_TYPE(data, '$._bedrockRerunIfDataChanged'), "
+                       "JSON_REMOVE(data, '$._bedrockRerunIfDataChanged'), priority "
+                       "FROM jobs WHERE jobID=" + jobID + ";", result);
+        ASSERT_EQUAL(result.size(), 1);
+        ASSERT_EQUAL(result[0][0], "true");
+        ASSERT_EQUAL(result[0][1], "{\"initial\":0,\"first\":1,\"second\":2}");
+        ASSERT_EQUAL(result[0][2], "750");
+
+        // When GetJobs dequeues the merged job
+        command.clear();
+        command.methodLine = "GetJobs";
+        command["name"] = "batchComparedData";
+        command["numResults"] = "1";
+        response = tester->executeWaitVerifyContentTable(command);
+        const auto dequeuedJobs = JSON::Value::parse(response["jobs"]);
+        // Then the response hides the private marker
+        ASSERT_EQUAL(dequeuedJobs.size(), 1);
+        const auto& dequeuedJob = dequeuedJobs[0];
+        ASSERT_TRUE(!dequeuedJob["data"].hasMember("_bedrockRerunIfDataChanged"));
     }
 } __CreateJobsTest;

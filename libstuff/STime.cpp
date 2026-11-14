@@ -98,7 +98,7 @@ string SCURRENT_TIMESTAMP_MS()
     return STIMESTAMP_MS(STimeNow());
 }
 
-string SFirstOfMonth(const string& timeStamp, const int64_t& offset)
+string SFirstOfMonth(string_view timeStamp, const int64_t& offset)
 {
     list<string> parts = SParseList(timeStamp, '-');
 

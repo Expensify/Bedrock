@@ -3,24 +3,24 @@
 #include "SQLiteCore.h"
 #include "SQLite.h"
 #include "SQLiteNode.h"
+#include "libstuff/sqlite3.h"
 
 SQLiteCore::SQLiteCore(SQLite& db) : _db(db)
 {
 }
 
-bool SQLiteCore::commit(const SQLiteNode& node, uint64_t& commitID, string& transactionHash, const string& commandName, bool needsPluginNotification, void (*notificationHandler)(SQLite& _db, int64_t tableID), chrono::microseconds commitLockTimeout) noexcept
+SQLiteCore::COMMIT_RESULT SQLiteCore::commit(const SQLiteNode& node, uint64_t& commitID, string& transactionHash, const string& commandName, bool needsPluginNotification, void (*notificationHandler)(SQLite& _db, int64_t tableID), chrono::microseconds commitLockTimeout, atomic<bool>* abortPtr) noexcept
 {
     // This handler only needs to exist in prepare so we scope it here to automatically unset
     // the handler function once we are done with prepare.
     {
         AutoScopeOnPrepare onPrepare(needsPluginNotification, _db, notificationHandler);
 
-        // This will fail only if we can't acquire the commit lock respecting the command timeout, which
-        // likely means our cluster health is not optimal. In this case, we want to roll back and
-        // return false, which will make the caller return the appropriate exception.
-        if (!_db.prepare(&commitID, &transactionHash, commitLockTimeout)) {
+        // This will fail only if we can't acquire the commit lock respecting the command timeout, or the command is aborted while waiting for it.
+        // `prepare` gives up on an abort before it reports a timeout, so an unset abort flag means the lock wait ran out.
+        if (!_db.prepare(&commitID, &transactionHash, commitLockTimeout, abortPtr)) {
             _db.rollback(commandName);
-            return false;
+            return abortPtr && abortPtr->load() ? COMMIT_RESULT::CONFLICT : COMMIT_RESULT::TIMEOUT;
         }
     }
 
@@ -28,27 +28,32 @@ bool SQLiteCore::commit(const SQLiteNode& node, uint64_t& commitID, string& tran
     if (node.getState() != SQLiteNodeState::LEADING) {
         SINFO("No longer leading, rolling back.");
         _db.rollback(commandName);
-        return false;
-    }
-
-    // If there's nothing to commit, we won't bother, but warn, as we should have noticed this already.
-    if (_db.getUncommittedHash().empty()) {
-        SWARN("Commit called with nothing to commit.");
-        return true;
+        return COMMIT_RESULT::CONFLICT;
     }
 
     // Perform the actual commit, rollback if it fails.
-    int errorCode = _db.commit(SQLiteNode::stateName(node.getState()), commandName);
-    if (errorCode == SQLITE_BUSY_SNAPSHOT) {
+    int errorCode = _db.commit(commitID, SQLiteNode::stateName(node.getState()), commandName);
+    if (errorCode) {
+        if (errorCode == SQLITE_BUSY_SNAPSHOT) {
+            // No extra logging needed for expected case.
+        } else if (errorCode == SQLite::COMMIT_DISABLED) {
+            SINFO("Commits currently disabled, rolling back.");
+        } else {
+            SWARN("Unexpected commit error: " << errorCode << ", rolling back.");
+        }
         _db.rollback(commandName);
-        return false;
-    } else if (errorCode == SQLite::COMMIT_DISABLED) {
-        SINFO("Commits currently disabled, rolling back.");
-        _db.rollback(commandName);
-        return false;
+        if (commitID) {
+            // A failed HC-Tree leader commit can still allocate a CID and write
+            // an empty journal entry, which the followers must receive.
+            node.notifyCommit();
+        }
+        return COMMIT_RESULT::CONFLICT;
     }
 
-    return true;
+    if (!commitID) {
+        transactionHash.clear();
+    }
+    return COMMIT_RESULT::OK;
 }
 
 void SQLiteCore::rollback(const string& commandName)

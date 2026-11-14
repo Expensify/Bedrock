@@ -8,6 +8,7 @@
 
 #include <libstuff/SQResult.h>
 #include <libstuff/SThread.h>
+#include <sqlitecluster/SQLitePool.h>
 
 extern int* __pointerToFakeIntArray;
 
@@ -26,8 +27,78 @@ extern "C" BedrockPlugin* BEDROCK_PLUGIN_REGISTER_TESTPLUGIN(BedrockServer& s)
 }
 
 BedrockPlugin_TestPlugin::BedrockPlugin_TestPlugin(BedrockServer& s) :
-    BedrockPlugin(s), httpsManager(new TestHTTPSManager(*this)), _maxID(-1)
+    BedrockPlugin(s, &BedrockPlugin_TestPlugin::afterCommitCallback),
+    httpsManager(new TestHTTPSManager(*this)), _maxID(-1)
 {
+    unreplicatedDeleterThread = make_unique<thread>([this]() {
+        SInitialize("TestUnreplicatedDeleter");
+        while (true) {
+            int64_t id = 0;
+            {
+                unique_lock<mutex> lock(unreplicatedDeleterMutex);
+                unreplicatedDeleterCV.wait(lock, [this]() {
+                    return unreplicatedDeleterStop || !unreplicatedDeleteQueue.empty();
+                });
+                if (unreplicatedDeleterStop) {
+                    return;
+                }
+                id = unreplicatedDeleteQueue.front();
+                unreplicatedDeleteQueue.pop_front();
+            }
+
+            // Work only ever arrives from a command, so the pool exists by the time we get here.
+            shared_ptr<SQLitePool> dbPool = server.getDBPool();
+            if (!dbPool) {
+                SWARN("No DB pool for the unreplicated deleter, dropping id " << id);
+                continue;
+            }
+            SQLiteScopedHandle handle(*dbPool, dbPool->getIndex());
+            if (!handle.db().writeLocalUnreplicated("DELETE FROM test WHERE id = " + SQ(id) + ";")) {
+                SWARN("Unreplicated delete of id " << id << " did not succeed.");
+            }
+        }
+    });
+}
+
+void BedrockPlugin_TestPlugin::afterCommitCallback()
+{
+    afterCommitCount++;
+}
+
+void BedrockPlugin_TestPlugin::waitForBlankCommitGroup()
+{
+    unique_lock<mutex> lock(blankCommitMutex);
+    const uint64_t generation = blankCommitGeneration;
+    if (!blankCommitBarrierFailed && ++blankCommitArrivals == 3) {
+        blankCommitArrivals = 0;
+        ++blankCommitGeneration;
+        blankCommitCV.notify_all();
+        return;
+    }
+    if (!blankCommitCV.wait_for(lock, chrono::seconds(5), [&]() {
+        return blankCommitGeneration != generation || blankCommitBarrierFailed;
+    })) {
+        blankCommitBarrierFailed = true;
+        blankCommitCV.notify_all();
+    }
+    if (blankCommitBarrierFailed) {
+        STHROW("500 Blank commit barrier timed out");
+    }
+}
+
+void BedrockPlugin_TestPlugin::serverStopping()
+{
+    {
+        lock_guard<mutex> lock(unreplicatedDeleterMutex);
+        unreplicatedDeleterStop = true;
+    }
+    unreplicatedDeleterCV.notify_one();
+
+    // Joined outside the lock so the thread can take it on its way out.
+    if (unreplicatedDeleterThread) {
+        unreplicatedDeleterThread->join();
+        unreplicatedDeleterThread = nullptr;
+    }
 }
 
 BedrockPlugin_TestPlugin::~BedrockPlugin_TestPlugin()
@@ -86,6 +157,12 @@ unique_ptr<BedrockCommand> BedrockPlugin_TestPlugin::getCommand(SQLiteCommand&& 
 {
     static set<string> supportedCommands = {
         "testcommand",
+        "getaftercommitcount",
+        "getjournalteststate",
+        "journaltest",
+        "blankcommitconflict",
+        "failcommit",
+        "deletetestrowunreplicated",
         "testescalate",
         "broadcastwithtimeouts",
         "storeboradcasttimeouts",
@@ -94,6 +171,7 @@ unique_ptr<BedrockCommand> BedrockPlugin_TestPlugin::getCommand(SQLiteCommand&& 
         "slowquery",
         "httpstimeout",
         "exceptioninpeek",
+        "controlcharacterexception",
         "generatesegfaultpeek",
         "generateassertpeek",
         "preventattach",
@@ -113,7 +191,9 @@ unique_ptr<BedrockCommand> BedrockPlugin_TestPlugin::getCommand(SQLiteCommand&& 
         "testPostProcessTimeout",
         "EscalateSerializedData",
         "ThreadException",
-        "httpswait"
+        "httpswait",
+        "httpsblockingcommit",
+        "reportcommitthread"
     };
     for (auto& cmdName : supportedCommands) {
         if (SStartsWith(baseCommand.request.methodLine, cmdName)) {
@@ -231,7 +311,36 @@ bool TestPluginCommand::peek(SQLite& db)
         usleep(request.calc("PeekSleep") * 1000);
     }
 
-    if (SStartsWith(request.methodLine, "testcommand")) {
+    if (request.methodLine == "journaltest") {
+        journalTest(db);
+        return true;
+    } else if (SStartsWith(request.methodLine, "deletetestrowunreplicated")) {
+        // Hands the work to the deleter thread rather than doing it here. A command already holds an open transaction
+        // on its own handle, which is not the context writeLocalUnreplicated is meant to be called from.
+        {
+            lock_guard<mutex> lock(plugin().unreplicatedDeleterMutex);
+            plugin().unreplicatedDeleteQueue.push_back(request.calc64("id"));
+        }
+        plugin().unreplicatedDeleterCV.notify_one();
+        response.methodLine = "200 OK";
+        return true;
+    } else if (SStartsWith(request.methodLine, "getaftercommitcount")) {
+        // Peek runs on whichever node received this, so a follower answers for itself instead of escalating.
+        response.content = SComposeJSONObject({{"afterCommitCount", SToStr(plugin().afterCommitCount.load())}});
+        response.methodLine = "200 OK";
+        return true;
+    } else if (request.methodLine == "getjournalteststate") {
+        const auto state = db.getCommitState();
+        response.content = SComposeJSONObject({
+            {"stateChangeCount", to_string(plugin().stateChangeCount.load())},
+            {"synchronizeCount", to_string(plugin().synchronizeCount.load())},
+            {"commitCount", to_string(state.commitCount)},
+            {"hashCommitID", to_string(state.hashCommitID)},
+            {"hash", state.hash},
+        });
+        response.methodLine = "200 OK";
+        return true;
+    } else if (SStartsWith(request.methodLine, "testcommand")) {
         if (!request["response"].empty()) {
             response.methodLine = request["response"];
         } else {
@@ -344,6 +453,9 @@ bool TestPluginCommand::peek(SQLite& db)
         }
     } else if (SStartsWith(request.methodLine, "exceptioninpeek")) {
         throw 1;
+    } else if (SStartsWith(request.methodLine, "controlcharacterexception")) {
+        // Exception messages can contain user input, so they can contain characters that are invalid in a method line.
+        STHROW("402 Control character:" + string(1, '\0') + "suffix");
     } else if (SStartsWith(request.methodLine, "generatesegfaultpeek")) {
         int total = 0;
         for (int i = 0; i < 1000000; i++) {
@@ -385,6 +497,24 @@ bool TestPluginCommand::peek(SQLite& db)
         }
         response.content = httpsRequests.back()->fullResponse.content;
         return true;
+    } else if (SStartsWith(request.methodLine, "httpsblockingcommit")) {
+        // Only queue an HTTPS request when we're running on the serialized blockingCommit thread (worker 0). On the
+        // normal worker threads this command is just a conflicting write (see `process`), which is what escalates it
+        // to the blocking queue. This mirrors commands like SendDataToHubspot, whose peek only queues a request once
+        // it re-runs on the blockingCommit thread. `httpsDontSend` leaves the request pending (no response), so it
+        // exercises the guard without any real network activity.
+        if (isBlockingCommitThread) {
+            SData newRequest("GET / HTTP/1.1");
+            newRequest["Host"] = "127.0.0.1";
+            httpsRequests.push_back(plugin().httpsManager->httpsDontSend("https://127.0.0.1:9999/", newRequest));
+
+            // With `waitInPeek`, wait here so the guard throws from within peek (caught by peekCommand). Otherwise
+            // return without waiting so the worker loop's pre-check refuses the command instead.
+            if (request["waitInPeek"] == "true") {
+                waitForHTTPSRequests(db);
+            }
+        }
+        return false;
     } else if (SStartsWith(request.methodLine, "chainedrequest")) {
         // Let's see what the user wanted to request.
         if (pendingResult) {
@@ -442,6 +572,87 @@ bool TestPluginCommand::peek(SQLite& db)
     }
 
     return false;
+}
+
+static string journalRowsForTest(SQLite& db, uint64_t from, uint64_t to)
+{
+    SQResult result;
+    SASSERT(db.getCompressedCommits(from, to, result) == SQLITE_OK);
+    string rows;
+    for (const auto& row : result) {
+        rows += SToHex(row["query"]) + ":" + row["hash"] + "\n";
+    }
+    return rows;
+}
+
+void TestPluginCommand::journalTest(SQLite& db)
+{
+    // A dedicated handle confines tracing and any held read snapshot to this command.
+    vector<string> statements;
+    SQLite reader(db);
+    const auto trace = [](unsigned int, void* context, void* statement, void*) {
+        static_cast<vector<string>*>(context)->emplace_back(sqlite3_sql(static_cast<sqlite3_stmt*>(statement)));
+        return 0;
+    };
+    sqlite3_trace_v2(reader.getDBHandle(), SQLITE_TRACE_STMT, trace, &statements);
+    const uint64_t from = request.calcU64("from");
+    const uint64_t to = request.calcU64("to");
+    STable output;
+    if (request["op"] == "range") {
+        output["rows"] = journalRowsForTest(reader, from, to);
+    } else if (request["op"] == "commit") {
+        string query, hash;
+        output["found"] = reader.getCommit(from, &query, &hash) ? "true" : "false";
+        output["query"] = query;
+        output["hash"] = hash;
+    } else if (request["op"] == "last") {
+        uint64_t cid;
+        string hash;
+        reader.getLastNonBlankCommit(to, cid, hash);
+        output["id"] = to_string(cid);
+        output["hash"] = hash;
+    } else if (request["op"] == "trim" || request["op"] == "snapshot") {
+        const bool snapshot = request["op"] == "snapshot";
+        if (snapshot) {
+            SASSERT(reader.beginTransaction());
+            output["before"] = journalRowsForTest(reader, from, to);
+        }
+        vector<string> trims;
+        {
+            SQLite trimmer(db);
+            sqlite3_trace_v2(trimmer.getDBHandle(), SQLITE_TRACE_STMT, trace, &trims);
+            output["tablesBefore"] = to_string(trimmer.getJournalTableCount());
+            if (request.isSet("table")) {
+                SASSERT(trimmer.trimJournalTable(request.calcU64("table"), request.calc64("batchSize")));
+            } else {
+                for (int round = 0; round < request.calc("rounds"); ++round) {
+                    const size_t tables = trimmer.getJournalTableCount();
+                    for (size_t table = 0; table < tables; ++table) {
+                        SASSERT(trimmer.trimJournalTable(table, request.calc64("batchSize")));
+                    }
+                }
+            }
+            output["tablesAfter"] = to_string(trimmer.getJournalTableCount());
+        }
+        output["trimQueries"] = SComposeList(trims, "\n");
+        if (snapshot) {
+            output["rows"] = journalRowsForTest(reader, from, to);
+            string query, hash;
+            output["found"] = reader.getCommit(from, &query, &hash) ? "true" : "false";
+            output["query"] = query;
+            uint64_t cid;
+            reader.getLastNonBlankCommit(to, cid, hash);
+            output["id"] = to_string(cid);
+            output["hash"] = hash;
+            reader.rollback();
+            output["afterRollback"] = journalRowsForTest(reader, from, to);
+        }
+    } else {
+        STHROW("400 Unknown journal test operation");
+    }
+    output["queries"] = SComposeList(statements, "\n");
+    response.content = SComposeJSONObject(output);
+    response.methodLine = "200 OK";
 }
 
 void TestPluginCommand::process(SQLite& db)
@@ -528,6 +739,24 @@ void TestPluginCommand::process(SQLite& db)
 
         // Done.
         return;
+    } else if (request.methodLine == "failcommit") {
+        // Reject COMMIT itself, after all SQL has succeeded, to exercise unexpected commit-error handling.
+        SASSERT(db.write("INSERT INTO test VALUES(876570000, 'rejected commit');"));
+        const auto rejectCommit = [](void*) {
+            return 1;
+        };
+        sqlite3_commit_hook(db.getDBHandle(), rejectCommit, nullptr);
+        return;
+    } else if (request.methodLine == "blankcommitconflict") {
+        // End failed attempts without a successful retry, leaving the allocated blank CIDs at the journal's tail.
+        if (processCount > 1) {
+            STHROW("409 Expected read conflict");
+        }
+        SQResult result;
+        SASSERT(db.read("SELECT SUM(value) FROM blankCommitTest;", result));
+        SASSERT(db.write("UPDATE blankCommitTest SET value = value + 1 WHERE id = " + SQ(request.calc("id")) + ";"));
+        plugin().waitForBlankCommitGroup();
+        return;
     } else if (SStartsWith(request.methodLine, "idcollision")) {
         usleep(1001); // for TimingTest to not get 0 values.
         SQResult result;
@@ -542,6 +771,27 @@ void TestPluginCommand::process(SQLite& db)
             response.methodLine = "200 OK";
         }
 
+        return;
+    } else if (SStartsWith(request.methodLine, "reportcommitthread")) {
+        // A plain write that reports which thread committed it, so a test can check where `-synchronousCommands`
+        // routed it.
+        SQResult result;
+        db.read("SELECT MAX(id) FROM test", result);
+        SASSERT(result.size());
+        int nextID = SToInt(result[0][0]) + 1;
+        SASSERT(db.write("INSERT INTO TEST VALUES(" + SQ(nextID) + ", " + SQ(request["value"]) + ");"));
+        response["blockingCommitThread"] = isBlockingCommitThread ? "true" : "false";
+        response.methodLine = "200 OK";
+        return;
+    } else if (SStartsWith(request.methodLine, "httpsblockingcommit")) {
+        // Conflict-generating write (like idcollision) so concurrent copies escalate to the blocking queue. Reaching
+        // `process` at all means peek did not queue an HTTPS request, i.e. we ran on a normal worker thread.
+        SQResult result;
+        db.read("SELECT MAX(id) FROM test", result);
+        SASSERT(result.size());
+        int nextID = SToInt(result[0][0]) + 1;
+        SASSERT(db.write("INSERT INTO TEST VALUES(" + SQ(nextID) + ", " + SQ(request["value"]) + ");"));
+        response.methodLine = "200 OK";
         return;
     } else if (SStartsWith(request.methodLine, "writebound")) {
         // Just like idcollision but uses named bound parameters so we can exercise the
@@ -666,23 +916,36 @@ void BedrockPlugin_TestPlugin::onPrepareHandler(SQLite& db, int64_t tableID)
 
 void BedrockPlugin_TestPlugin::stateChanged(SQLite& db, SQLiteNodeState newState)
 {
+    stateChangeCount++;
+    if (newState == SQLiteNodeState::SYNCHRONIZING) {
+        synchronizeCount++;
+    }
+
     // We spin this up in another thread because `stateChanged` is called from the `sync` thread in bedrock
     // so this function cannot do any sort of waiting or it will block the sync thread. By offloading this,
     // we can let the code wait for a condition to be met before it actually runs. In our case, we want to
     // wait until upgradeDatabase has completed so that we can run a query on a table.
     SINFO("Running stateChanged new state " << SQLiteNode::stateName(newState));
-    thread([&, newState]() {
-        if (newState != SQLiteNodeState::LEADING) {
-            SINFO("Returning early stateChanged new state " << SQLiteNode::stateName(newState));
-            return;
-        }
+    if (newState != SQLiteNodeState::LEADING) {
+        return;
+    }
+    auto pool = server.getDBPool();
+    thread([this, pool]() {
+        SInitialize("TestStateChanged");
         SINFO("Sleeping until the server is done upgrading.");
         while (!server.dbReadyToHandleRequests()) {
+            if (server.isShuttingDown()) {
+                return;
+            }
             usleep(50'000);
         }
+        if (server.isShuttingDown() || server.getState() != SQLiteNodeState::LEADING) {
+            return;
+        }
 
+        SQLiteScopedHandle handle(*pool, pool->getIndex());
         SQResult result;
-        db.read("SELECT count(*) FROM dbupgrade", result);
+        handle.db().read("SELECT count(*) FROM dbupgrade", result);
         // It's possible to fall out of leading and be following again, and if so, we don't want to
         // set _maxID.
         if (server.getState() == SQLiteNodeState::LEADING) {

@@ -1,3 +1,4 @@
+#include <libstuff/JSON/Utils.h>
 #include "BedrockTester.h"
 #include "libstuff/libstuff.h"
 
@@ -72,6 +73,7 @@ BedrockTester::BedrockTester(const map<string, string>& args,
     }
 
     string dbFileName = getTempFileName();
+    string shutdownReasonFileName = getTempFileName("shutdown_reason_");
     map<string, string> defaultArgs = {
         {"-db", dbFileName},
         {"-serverHost", "127.0.0.1:" + to_string(_serverPort)},
@@ -85,17 +87,18 @@ BedrockTester::BedrockTester(const map<string, string>& args,
         {"-mmapSizeGB", "1"},
         {"-maxJournalSize", "25000"},
         {"-extraExceptionLogging", ""},
-        {"-enableMultiWrite", "true"},
         {"-escalateOverHTTP", "true"},
         {"-cacheSize", "1000"},
         {"-parallelReplication", "true"},
         // Currently breaks only in Travis and needs debugging, which has been removed, maybe?
         //{"-logDirectlyToSyslogSocket", ""},
         {"-testName", currentTestName},
+        {"-testShutdownReasonFile", shutdownReasonFileName},
     };
 
     if (ENABLE_HCTREE) {
         defaultArgs["-newDBsUseHctree"] = "";
+        defaultArgs["-hctreeExperimentalMode"] = "";
     }
     if (VERBOSE_LOGGING) {
         defaultArgs["-v"] = "";
@@ -156,6 +159,7 @@ BedrockTester::~BedrockTester()
     SFileExists((_args["-db"] + "-shm").c_str()) && unlink((_args["-db"] + "-shm").c_str());
     SFileExists((_args["-db"] + "-wal").c_str()) && unlink((_args["-db"] + "-wal").c_str());
     SFileExists((_args["-db"] + "-wal2").c_str()) && unlink((_args["-db"] + "-wal2").c_str());
+    SFileDelete(_args["-testShutdownReasonFile"]);
 
     ports.returnPort(_serverPort);
     ports.returnPort(_nodePort);
@@ -190,15 +194,15 @@ void BedrockTester::autoAttachDebugger()
     // Load the configuration and parse it
     string configStr;
     SFileLoad(autoAttachConfigFile, configStr);
-    STable config = SParseJSONObject(configStr);
+    JSON::Value config = JSON::Value::parse(configStr);
 
     // Get the rpc server and inject the current pid
-    string rpcServer = config["rpcServer"];
+    string rpcServer = config["rpcServer"].getString();
     config["pid"] = getpid();
 
     // Create, connect and send the config to the lldb RPC server
     int socket = S_socket(rpcServer, true, false, true);
-    SFastBuffer serialized(SComposeJSONObject(config));
+    SFastBuffer serialized(config.serialize());
     S_sendconsume(socket, serialized);
 
     // Half close the socket (we're no longer writing to it. FIN is sent)
@@ -210,8 +214,9 @@ void BedrockTester::autoAttachDebugger()
     ::close(socket);
 }
 
-string BedrockTester::startServer(bool wait)
+void BedrockTester::startServerInBackground()
 {
+    SFileSave(_args["-testShutdownReasonFile"], "");
     int childPID = fork();
     if (childPID == -1) {
         cout << "Fork failed, acting like server died." << endl;
@@ -284,42 +289,66 @@ string BedrockTester::startServer(bool wait)
     } else {
         // We'll kill this later.
         _serverPID = childPID;
+    }
+}
 
-        // Wait for the server to start up.
-        // TODO: Make this not take so long, particularly in Travis. This probably really requires making the server
-        // come up faster, not a change in how we wait for it, though it would be nice if we could do something
-        // besides this 100ms polling.
-        bool needSocket = true;
-        uint64_t startTime = STimeNow();
-
-        while (1) {
-            // Give up after a minute. This will fail the remainder of the test, but won't hang indefinitely.
-            if (startTime + 60'000'000 < STimeNow()) {
-                cout << "startServer(): ran out of time waiting for server to start" << endl;
-                break;
-            }
-            if (needSocket) {
-                int socket = S_socket(wait ? _args["-serverHost"] : _args["-controlPort"], true, false, true);
-                if (socket == -1) {
-                    usleep(100000); // 0.1 seconds.
-                    continue;
-                }
-                S_close(&socket);
-                needSocket = false;
-            }
-
-            // We've successfully opened a socket, so let's try and send a command.
-            SData status("Status");
-            auto result = executeWaitMultipleData({status}, 1, !wait); //NOLINT(clang-analyzer-optin.cplusplus.VirtualCall)
-            if (result[0].methodLine == "200 OK") {
-                return result[0].content;
-            }
-            // This will happen if the server's not up yet. We'll just try again.
-            usleep(50'000); // 0.05 seconds.
-            continue;
+string BedrockTester::startServer(bool wait)
+{
+    startServerInBackground();
+    bool needSocket = true;
+    const uint64_t startTime = STimeNow();
+    while (true) {
+        if (startTime + 60'000'000 < STimeNow()) {
+            cout << "startServer(): ran out of time waiting for server to start" << endl;
+            break;
         }
+        if (needSocket) {
+            int socket = S_socket(wait ? _args["-serverHost"] : _args["-controlPort"], true, false, true);
+            if (socket == -1) {
+                usleep(100'000);
+                continue;
+            }
+            S_close(&socket);
+            needSocket = false;
+        }
+
+        SData status("Status");
+        auto result = executeWaitMultipleData({status}, 1, !wait); //NOLINT(clang-analyzer-optin.cplusplus.VirtualCall)
+        if (result[0].methodLine == "200 OK") {
+            return result[0].content;
+        }
+        usleep(50'000);
     }
     return "";
+}
+
+bool BedrockTester::waitForProcessExit(int pid, int& status, uint64_t timeoutUS)
+{
+    if (pid <= 0) {
+        return false;
+    }
+    const uint64_t deadline = STimeNow() + timeoutUS;
+    while (STimeNow() < deadline) {
+        const pid_t result = waitpid(pid, &status, WNOHANG);
+        if (result == pid) {
+            return true;
+        }
+        if (result < 0 && errno != EINTR) {
+            return false;
+        }
+        usleep(50'000);
+    }
+    kill(pid, SIGKILL);
+    while (waitpid(pid, &status, 0) < 0 && errno == EINTR) {
+    }
+    return false;
+}
+
+bool BedrockTester::waitForExit(int& status, uint64_t timeoutUS)
+{
+    const bool exited = waitForProcessExit(_serverPID, status, timeoutUS);
+    _serverPID = 0;
+    return exited;
 }
 
 void BedrockTester::stopServer(int signal)
@@ -362,8 +391,22 @@ string BedrockTester::executeWaitVerifyContent(const SData& request, const strin
 
 STable BedrockTester::executeWaitVerifyContentTable(const SData& request, const string& expectedResult)
 {
-    string result = executeWaitVerifyContent(request, expectedResult);
-    return SParseJSONObject(result);
+    const string result = executeWaitVerifyContent(request, expectedResult);
+    // Commands may return an empty or non-JSON body, including successful asynchronous requests.
+    // Keep this helper's existing empty-table result for bodies that are not JSON objects.
+    if (result.empty() || result.find('\0') != string::npos) {
+        return {};
+    }
+    JSON::Value json;
+    try {
+        json = JSON::Value::parse(result);
+    } catch (const JSON::Error&) {
+        return {};
+    }
+    if (!json.isObject()) {
+        return {};
+    }
+    return JSON::Utils::toSTable(json);
 }
 
 vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int connections, bool control, bool returnOnDisconnect, int* errorCode)
@@ -390,6 +433,7 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
     for (int i = 0; i < connections; i++) {
         threads.emplace_back([&](){
             int socket = -1;
+            int lastSocketError = 0;
 
             // This continues until there are no more requests to process.
             bool timedOut = false;
@@ -402,7 +446,7 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                 while (true) {
                     // If there's no socket, create a socket.
                     if (socket == -1) {
-                        socket = S_socket((control ? _args["-controlPort"] : _args["-serverHost"]), true, false, true);
+                        socket = S_socket((control ? _args["-controlPort"] : _args["-serverHost"]), true, false, true, &lastSocketError);
                     }
 
                     // If that failed, we'll continue our main loop and try again.
@@ -416,7 +460,39 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                                 *errorCode = 2;
                             }
                             if (timeout) {
-                                cout << "executeWaitMultipleData(): ran out of time waiting for socket" << endl;
+                                lock_guard<recursive_mutex> lock(listLock);
+                                const string& host = control ? _args["-controlPort"] : _args["-serverHost"];
+                                int serverPID = _serverPID;
+                                int serverStatus = 0;
+                                bool serverExited = serverPID && waitpid(serverPID, &serverStatus, WNOHANG) == serverPID;
+                                if (serverExited) {
+                                    _serverPID = 0;
+                                }
+                                bool serverAlive = serverPID && !serverExited && (kill(serverPID, 0) == 0 || errno == EPERM);
+                                string serverState = serverAlive ? "running" : "not running";
+                                if (serverExited) {
+                                    if (WIFEXITED(serverStatus)) {
+                                        serverState = "exited with code " + to_string(WEXITSTATUS(serverStatus));
+                                    } else if (WIFSIGNALED(serverStatus)) {
+                                        serverState = "terminated by signal " + to_string(WTERMSIG(serverStatus));
+                                    }
+                                }
+                                int controlSocketError = lastSocketError;
+                                int controlSocket = -1;
+                                bool controlPortReachable = false;
+                                if (!control) {
+                                    controlSocketError = 0;
+                                    controlSocket = S_socket(_args["-controlPort"], true, false, true, &controlSocketError);
+                                    controlPortReachable = controlSocket != -1;
+                                }
+                                S_close(&controlSocket);
+                                string shutdownReason = SFileLoad(_args["-testShutdownReasonFile"]);
+                                cout << "executeWaitMultipleData(): ran out of time waiting for socket on '" << host
+                                << "' after error " << lastSocketError << " ('" << strerror(lastSocketError)
+                                << "'), server PID " << serverPID << " is " << serverState
+                                << ", control port is " << (controlPortReachable ? "reachable" : "unreachable")
+                                << " (error " << controlSocketError << " '" << strerror(controlSocketError)
+                                << "'), shutdown reason: '" << shutdownReason << "'" << endl;
                             }
                             return;
                         }
@@ -647,7 +723,9 @@ bool BedrockTester::waitForStatusTerm(const string& term, const string& testValu
     uint64_t start = STimeNow();
     while (STimeNow() < start + timeoutUS) {
         try {
-            string result = SParseJSONObject(BedrockTester::executeWaitVerifyContent(SData("Status"), "200", true))[term];
+            // Status callers use the same case-insensitive field names as SData.
+            auto status = JSON::Utils::toSTable(JSON::Value::parse(BedrockTester::executeWaitVerifyContent(SData("Status"), "200", true)));
+            const string result = status[term];
 
             // if the value matches, return, otherwise wait
             if (result == testValue) {
@@ -666,7 +744,7 @@ bool BedrockTester::waitForLeadingFollowing(uint64_t timeoutUS)
     uint64_t start = STimeNow();
     while (STimeNow() < start + timeoutUS) {
         try {
-            string result = SParseJSONObject(BedrockTester::executeWaitVerifyContent(SData("Status"), "200", true))["state"];
+            string result = JSON::Value::parse(BedrockTester::executeWaitVerifyContent(SData("Status"), "200", true))["state"].getString();
 
             // if the value matches, return, otherwise wait
             if (result == "LEADING" || result == "FOLLOWING") {

@@ -5,8 +5,11 @@
 
 class SHTTPSProxySocket : public STCPManager::Socket {
 public:
-    // Implement all the same constructors as the base class.
+    // Establishes a plaintext CONNECT tunnel before starting TLS to the target host.
     SHTTPSProxySocket(const string& proxyAddress, const string& host, const string& requestID);
+
+    // `connection` cannot be null.
+    SHTTPSProxySocket(const string& proxyAddress, shared_ptr<const STCPManager::MTLSConnection> connection, const string& requestID);
     SHTTPSProxySocket(SHTTPSProxySocket&& from);
 
     ~SHTTPSProxySocket();
@@ -15,6 +18,10 @@ public:
     virtual bool send(size_t* bytesSentCount = nullptr) override;
     virtual bool send(const string& buffer, size_t* bytesSentCount = nullptr) override;
     virtual bool recv() override;
+
+    // True once the proxy has accepted the CONNECT and the tunnel to the target host is open. Until then, nothing has
+    // been sent to the target host.
+    bool tunnelEstablished() const;
 
 private:
 

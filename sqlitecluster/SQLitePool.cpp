@@ -1,6 +1,14 @@
 #include <libstuff/libstuff.h>
+#include <sqlitecluster/SQLiteNode.h>
 #include "SQLite.h"
 #include "SQLitePool.h"
+
+SQLitePool::SharedDataCleanup::~SharedDataCleanup()
+{
+    if (!filename.empty()) {
+        SQLite::clearSharedData(filename);
+    }
+}
 
 SQLitePool::SQLitePool(size_t maxDBs,
                        const string& filename,
@@ -9,11 +17,13 @@ SQLitePool::SQLitePool(size_t maxDBs,
                        int minJournalTables,
                        int64_t mmapSizeGB,
                        bool hctree,
-                       const string& checkpointMode)
-    : _maxDBs(max(maxDBs, 1ul)),
-    _baseDB(filename, cacheSize, maxJournalSize, minJournalTables, mmapSizeGB, hctree, checkpointMode),
+                       const string& checkpointMode,
+                       vector<function<void()>> afterCommitCallbacks)
+    : _maxDBs(max(maxDBs, SQLiteNode::PARALLEL_REPLICATION_THREADS + 3)),
+    _baseDB(filename, cacheSize, maxJournalSize, minJournalTables, mmapSizeGB, hctree, checkpointMode, afterCommitCallbacks),
     _objects(_maxDBs, nullptr)
 {
+    _sharedDataCleanup.filename = _baseDB.getFilename();
 }
 
 SQLitePool::~SQLitePool()

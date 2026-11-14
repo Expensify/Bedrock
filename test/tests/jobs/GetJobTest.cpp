@@ -1,6 +1,7 @@
 #include <iostream>
 #include <unistd.h>
 
+#include <libstuff/JSON/Value.h>
 #include <libstuff/SData.h>
 #include <libstuff/SQResult.h>
 #include <test/lib/BedrockTester.h>
@@ -33,6 +34,7 @@ struct GetJobTest : tpunit::TestFixture
                               BEFORE_CLASS(GetJobTest::setupClass),
                               TEST(GetJobTest::getJob),
                               TEST(GetJobTest::getJobWithHttp),
+                              TEST(GetJobTest::testJobDataKeysWithNul),
                               TEST(GetJobTest::withNumResults),
                               TEST(GetJobTest::noJobFound),
                               TEST(GetJobTest::testPriorities),
@@ -44,6 +46,8 @@ struct GetJobTest : tpunit::TestFixture
                               TEST(GetJobTest::testInvalidJobPriority),
                               TEST(GetJobTest::testRetryableParentJobs),
                               TEST(GetJobTest::testInvalidNextRun),
+                              TEST(GetJobTest::testCrashBedrockJobBlacklist),
+                              TEST(GetJobTest::testCrashBedrockJobBlacklistDrainsAcrossCalls),
                               AFTER(GetJobTest::tearDown),
                               AFTER_CLASS(GetJobTest::tearDownClass))
     {
@@ -62,6 +66,10 @@ struct GetJobTest : tpunit::TestFixture
         SData command("Query");
         command["query"] = "DELETE FROM jobs WHERE jobID > 0;";
         tester->executeWaitVerifyContent(command);
+
+        // Clear any job blacklist a test may have set so it doesn't leak into later tests.
+        SData clearCommand("ClearCrashedBedrockJobs");
+        tester->executeWaitVerifyContent(clearCommand);
     }
 
     void tearDownClass()
@@ -90,7 +98,7 @@ struct GetJobTest : tpunit::TestFixture
         response = tester->executeWaitVerifyContentTable(command);
         uint64_t end = STimeNow();
 
-        ASSERT_EQUAL(response.size(), 9);
+        ASSERT_EQUAL(response.size(), 10);
         ASSERT_EQUAL(response["jobID"], jobID);
         ASSERT_EQUAL(response["name"], jobName);
         ASSERT_EQUAL(response["data"], "{}");
@@ -118,6 +126,27 @@ struct GetJobTest : tpunit::TestFixture
         ASSERT_EQUAL(currentJob[0][9], originalJob[0][9]);
     }
 
+    void testJobDataKeysWithNul()
+    {
+        SData command("CreateJob");
+        command["name"] = "nul-metadata";
+        command["retryAfter"] = "+1 HOUR";
+        command["data"] = R"({"retryAfterCount\u0000caller":"10","_bedrockRerunIfDataChanged\u0000caller":true})";
+        const string jobID = tester->executeWaitVerifyContentTable(command)["jobID"];
+
+        // A caller-owned key must not be removed as Bedrock's private marker when creating the job.
+        const JSON::Value storedData = JSON::Value::parse(tester->readDB("SELECT data FROM jobs WHERE jobID = " + jobID + ";"));
+        ASSERT_TRUE(storedData["_bedrockRerunIfDataChanged\0caller"s].getBool());
+
+        command = SData("GetJob");
+        command["name"] = "nul-metadata";
+        const JSON::Value job = JSON::Value::parse(tester->executeWaitVerifyContent(command));
+        ASSERT_EQUAL(job["jobID"].getInt(), SToInt64(jobID));
+
+        // A caller-owned key must not trigger the retry limit.
+        ASSERT_EQUAL(job["data"]["retryAfterCount\0caller"s].getString(), "10");
+    }
+
     // Simple GetJob with Http
     void getJobWithHttp()
     {
@@ -126,8 +155,9 @@ struct GetJobTest : tpunit::TestFixture
         SData command("CreateJob");
         string jobName = "job";
         command["name"] = jobName;
-        STable response = tester->executeWaitVerifyContentTable(command);
-        string jobID = response["jobID"];
+        const string data = R"({"object":{},"array":[],"nested":{"items":[{},[],null]},"bigint":18446744073709551615,"float":1.0,"text":"日本語 \u00e9 \" \\ \/ \n"})";
+        command["data"] = data;
+        string jobID = tester->executeWaitVerifyContentTable(command)["jobID"];
         ASSERT_GREATER_THAN(stol(jobID), 0);
         SQResult originalJob;
         tester->readDB("SELECT created, jobID, state, name, nextRun, lastRun, repeat, data, priority, parentJobID FROM jobs WHERE jobID = " + jobID + ";", originalJob);
@@ -136,15 +166,16 @@ struct GetJobTest : tpunit::TestFixture
         command.clear();
         command.methodLine = "GetJob / HTTP/1.1";
         command["name"] = jobName;
-        response = tester->executeWaitVerifyContentTable(command);
+        const JSON::Value response = JSON::Value::parse(tester->executeWaitVerifyContent(command));
 
         uint64_t end = STimeNow();
 
-        ASSERT_EQUAL(response.size(), 9);
-        ASSERT_EQUAL(response["jobID"], jobID);
-        ASSERT_EQUAL(response["name"], jobName);
-        ASSERT_EQUAL(response["data"], "{}");
-        SASSERT(!response["created"].empty());
+        ASSERT_EQUAL(response.size(), 10);
+        ASSERT_EQUAL(response["jobID"].getInt(), stoll(jobID));
+        ASSERT_EQUAL(response["name"].getString(), jobName);
+        ASSERT_EQUAL(response["data"], JSON::Value::parse(data));
+        ASSERT_EQUAL(response["expectedData"].getString(), data);
+        SASSERT(!response["created"].getString().empty());
 
         // Check that nothing changed after we created the job except for the state and lastRun value
         SQResult currentJob;
@@ -428,7 +459,7 @@ struct GetJobTest : tpunit::TestFixture
         tester->executeWaitVerifyContent(command);
 
         // Confirm the child has data about the parent in the response
-        ASSERT_EQUAL(response.size(), 11);
+        ASSERT_EQUAL(response.size(), 12);
         ASSERT_EQUAL(response["jobID"], finishedChildID);
         ASSERT_EQUAL(response["name"], "child_finished");
         ASSERT_EQUAL(response["data"], finishedChildData);
@@ -459,7 +490,7 @@ struct GetJobTest : tpunit::TestFixture
         response = tester->executeWaitVerifyContentTable(command);
 
         // Confirm data on the children are in the response
-        ASSERT_EQUAL(response.size(), 11);
+        ASSERT_EQUAL(response.size(), 12);
         ASSERT_EQUAL(response["jobID"], parentID);
         ASSERT_EQUAL(response["name"], "parent");
         ASSERT_EQUAL(response["data"], parentData);
@@ -467,18 +498,18 @@ struct GetJobTest : tpunit::TestFixture
         ASSERT_FALSE(response["cancelledChildJobs"].empty());
 
         // Checking the finished job
-        list<string> finishedChildJobs = SParseJSONArray(response["finishedChildJobs"]);
+        auto finishedChildJobs = JSON::Value::parse(response["finishedChildJobs"]);
         ASSERT_EQUAL(finishedChildJobs.size(), 1);
-        STable childJob = SParseJSONObject(finishedChildJobs.front());
-        ASSERT_EQUAL(childJob["jobID"], finishedChildID);
-        ASSERT_EQUAL(childJob["data"], finishedChildData);
+        JSON::Value childJob = finishedChildJobs[0];
+        ASSERT_EQUAL(childJob["jobID"].serialize(), finishedChildID);
+        ASSERT_EQUAL(childJob["data"].serialize(), finishedChildData);
 
         // Checking the cancelled job
-        list<string> cancelledChildJobs = SParseJSONArray(response["cancelledChildJobs"]);
+        auto cancelledChildJobs = JSON::Value::parse(response["cancelledChildJobs"]);
         ASSERT_EQUAL(cancelledChildJobs.size(), 1);
-        childJob = SParseJSONObject(cancelledChildJobs.front());
-        ASSERT_EQUAL(childJob["jobID"], cancelledChildID);
-        ASSERT_EQUAL(childJob["data"], cancelledChildData);
+        childJob = cancelledChildJobs[0];
+        ASSERT_EQUAL(childJob["jobID"].serialize(), cancelledChildID);
+        ASSERT_EQUAL(childJob["data"].serialize(), cancelledChildData);
     }
 
     // This is the same as testPriorities but some of the states are set to RUNQUEUED
@@ -641,7 +672,7 @@ struct GetJobTest : tpunit::TestFixture
 
         tester->readDB("SELECT COUNT(1) FROM jobs WHERE name = 'medium' AND state = 'RUNNING' AND JSON_EXTRACT(data, '$.mockRequest') IS NULL;", result);
         STable response = tester->executeWaitVerifyContentTable(command);
-        list<string> jobList = SParseJSONArray(response["jobs"]);
+        auto jobList = JSON::Value::parse(response["jobs"]);
         ASSERT_EQUAL(jobList.size(), 2);
     }
 
@@ -696,29 +727,29 @@ struct GetJobTest : tpunit::TestFixture
         // Get jobPriority 0
         command["jobPriority"] = "0";
         response = tester->executeWaitVerifyContentTable(command);
-        list<string> jobList = SParseJSONArray(response["jobs"]);
+        auto jobList = JSON::Value::parse(response["jobs"]);
         ASSERT_EQUAL(jobList.size(), 1);
-        ASSERT_EQUAL(SParseJSONObject(jobList.front())["name"], "low_5");
+        ASSERT_EQUAL(jobList[0]["name"].getString(), "low_5");
 
         // Get jobPriority 500
         // nextRun is the same for all the jobs, so we just want to confirm that a medium job was returned
         command["jobPriority"] = "500";
         response = tester->executeWaitVerifyContentTable(command);
-        jobList = SParseJSONArray(response["jobs"]);
+        jobList = JSON::Value::parse(response["jobs"]);
         ASSERT_EQUAL(jobList.size(), 2);
-        ASSERT_NOT_EQUAL(SParseJSONObject(jobList.front())["name"].find("medium"), string::npos);
-        jobList.pop_front();
-        ASSERT_NOT_EQUAL(SParseJSONObject(jobList.front())["name"].find("medium"), string::npos);
+        ASSERT_NOT_EQUAL(jobList[0]["name"].getString().find("medium"), string::npos);
+        jobList.erase(jobList.arrayBegin());
+        ASSERT_NOT_EQUAL(jobList[0]["name"].getString().find("medium"), string::npos);
 
         // Get jobPriority 1000
         // nextRun is the same for all the jobs, so we just want to confirm that a high job was returned
         command["jobPriority"] = "1000";
         response = tester->executeWaitVerifyContentTable(command);
-        jobList = SParseJSONArray(response["jobs"]);
+        jobList = JSON::Value::parse(response["jobs"]);
         ASSERT_EQUAL(jobList.size(), 2);
-        ASSERT_NOT_EQUAL(SParseJSONObject(jobList.front())["name"].find("high"), string::npos);
-        jobList.pop_front();
-        ASSERT_NOT_EQUAL(SParseJSONObject(jobList.front())["name"].find("high"), string::npos);
+        ASSERT_NOT_EQUAL(jobList[0]["name"].getString().find("high"), string::npos);
+        jobList.erase(jobList.arrayBegin());
+        ASSERT_NOT_EQUAL(jobList[0]["name"].getString().find("high"), string::npos);
     }
 
     void testInvalidJobPriority()
@@ -857,5 +888,109 @@ struct GetJobTest : tpunit::TestFixture
         SQResult jobData;
         tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID + ";", jobData);
         ASSERT_EQUAL(jobData[0][0], "FAILED");
+    }
+
+    // A job whose name matches a CrashBedrockJob GLOB pattern is failed at GetJob time instead of running.
+    void testCrashBedrockJobBlacklist()
+    {
+        // Create two jobs under the blacklisted prefix (one with a param suffix, one a "V2" sibling) and one
+        // unrelated job that must still run.
+        SData command("CreateJob");
+        command["name"] = "www-prod/UserActivityEvaluator?accountID=856";
+        string paramJobID = tester->executeWaitVerifyContentTable(command)["jobID"];
+
+        command.clear();
+        command.methodLine = "CreateJob";
+        command["name"] = "www-prod/UserActivityEvaluatorV2";
+        string siblingJobID = tester->executeWaitVerifyContentTable(command)["jobID"];
+
+        command.clear();
+        command.methodLine = "CreateJob";
+        command["name"] = "www-prod/SomeOtherJob";
+        string otherJobID = tester->executeWaitVerifyContentTable(command)["jobID"];
+
+        // A blacklisted job scheduled in the future must not be failed until it's due.
+        command.clear();
+        command.methodLine = "CreateJob";
+        command["name"] = "www-prod/UserActivityEvaluatorFuture";
+        command["firstRun"] = SComposeTime("%Y-%m-%d %H:%M:%S", STimeNow() + 3600ull * 1'000'000);
+        string futureJobID = tester->executeWaitVerifyContentTable(command)["jobID"];
+
+        // Blacklist the prefix with a GLOB wildcard.
+        command.clear();
+        command.methodLine = "CrashBedrockJob";
+        command["names"] = "www-prod/UserActivityEvaluator*";
+        tester->executeWaitVerifyContent(command);
+
+        // A single GetJobs across the whole www-prod/* space fails both matching jobs (the ?param form and the V2
+        // sibling) and still backfills the unrelated job, so workers aren't starved of runnable work.
+        command.clear();
+        command.methodLine = "GetJobs";
+        command["name"] = "www-prod/*";
+        command["numResults"] = "10";
+        STable response = tester->executeWaitVerifyContentTable(command);
+        auto returnedJobs = JSON::Value::parse(response["jobs"]);
+        ASSERT_EQUAL(returnedJobs.size(), 1);
+        ASSERT_EQUAL(returnedJobs[0]["jobID"].serialize(), otherJobID);
+        ASSERT_EQUAL(tester->readDB("SELECT state FROM jobs WHERE jobID = " + paramJobID + ";"), "FAILED");
+        ASSERT_EQUAL(tester->readDB("SELECT state FROM jobs WHERE jobID = " + siblingJobID + ";"), "FAILED");
+        ASSERT_EQUAL(tester->readDB("SELECT state FROM jobs WHERE jobID = " + otherJobID + ";"), "RUNNING");
+
+        // The future-scheduled blacklisted job is untouched -- neither failed nor run.
+        ASSERT_EQUAL(tester->readDB("SELECT state FROM jobs WHERE jobID = " + futureJobID + ";"), "QUEUED");
+
+        // After clearing the blacklist, a freshly created matching job runs again.
+        command.clear();
+        command.methodLine = "ClearCrashedBedrockJobs";
+        tester->executeWaitVerifyContent(command);
+
+        command.clear();
+        command.methodLine = "CreateJob";
+        command["name"] = "www-prod/UserActivityEvaluator?accountID=857";
+        string afterClearJobID = tester->executeWaitVerifyContentTable(command)["jobID"];
+
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "www-prod/UserActivityEvaluator?accountID=857";
+        response = tester->executeWaitVerifyContentTable(command);
+        ASSERT_EQUAL(response["jobID"], afterClearJobID);
+        ASSERT_EQUAL(tester->readDB("SELECT state FROM jobs WHERE jobID = " + afterClearJobID + ";"), "RUNNING");
+    }
+
+    // Each GetJob(s) only fails the candidates it actually selected (bounded by numResults); the still-QUEUED
+    // blacklisted jobs behind them are never returned/run and get failed on later calls as they surface.
+    void testCrashBedrockJobBlacklistDrainsAcrossCalls()
+    {
+        // Create 15 jobs under one blacklisted prefix, more than the numResults=10 we'll request per call.
+        vector<string> jobs;
+        for (int i = 0; i < 15; i++) {
+            STable job;
+            job["name"] = "www-prod/BatchBad?n=" + to_string(i);
+            jobs.push_back(SComposeJSONObject(job));
+        }
+        SData command("CreateJobs");
+        command["jobs"] = SComposeJSONArray(jobs);
+        tester->executeWaitVerifyContent(command);
+
+        command.clear();
+        command.methodLine = "CrashBedrockJob";
+        command["names"] = "www-prod/BatchBad*";
+        tester->executeWaitVerifyContent(command);
+
+        // One GetJobs fails only its 10 candidates and returns none; the other 5 stay QUEUED and are not run.
+        command.clear();
+        command.methodLine = "GetJobs";
+        command["name"] = "www-prod/BatchBad*";
+        command["numResults"] = "10";
+        STable response = tester->executeWaitVerifyContentTable(command);
+        ASSERT_EQUAL(JSON::Value::parse(response["jobs"]).size(), 0);
+        ASSERT_EQUAL(tester->readDB("SELECT COUNT(*) FROM jobs WHERE name GLOB 'www-prod/BatchBad*' AND state='FAILED' AND JSON_EXTRACT(data, '$.mockRequest') IS NULL;"), "10");
+        ASSERT_EQUAL(tester->readDB("SELECT COUNT(*) FROM jobs WHERE name GLOB 'www-prod/BatchBad*' AND state='QUEUED' AND JSON_EXTRACT(data, '$.mockRequest') IS NULL;"), "5");
+
+        // A second GetJobs drains the remaining jobs.
+        response = tester->executeWaitVerifyContentTable(command);
+        ASSERT_EQUAL(JSON::Value::parse(response["jobs"]).size(), 0);
+        ASSERT_EQUAL(tester->readDB("SELECT COUNT(*) FROM jobs WHERE name GLOB 'www-prod/BatchBad*' AND state='FAILED' AND JSON_EXTRACT(data, '$.mockRequest') IS NULL;"), "15");
+        ASSERT_EQUAL(tester->readDB("SELECT COUNT(*) FROM jobs WHERE name GLOB 'www-prod/BatchBad*' AND state='QUEUED' AND JSON_EXTRACT(data, '$.mockRequest') IS NULL;"), "0");
     }
 } __GetJobTest;

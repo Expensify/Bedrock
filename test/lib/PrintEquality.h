@@ -6,10 +6,11 @@
 #include <map>
 #include <list>
 #include <optional>
+#include <sstream>
 
 using namespace std;
 
-namespace tpunit {void tpunit_break_check_line();}
+namespace tpunit {void tpunit_report_comparison(const string& lhs, const string& rhs, bool isEqual);}
 
 template<typename T>
 ostream& operator<<(ostream& output, const list<T>& val)
@@ -48,7 +49,9 @@ public:
     template<typename U, typename V>
     PrintEquality(const U& a, const V& b, bool isEqual)
     {
-        tpunit::tpunit_break_check_line();
-        cout << a << " " << (isEqual ? "=" : "!") << "= " << b << "\n";
+        ostringstream lhs, rhs;
+        lhs << a;
+        rhs << b;
+        tpunit::tpunit_report_comparison(lhs.str(), rhs.str(), isEqual);
     }
 };

@@ -16,69 +16,44 @@ BedrockBlockingCommandQueue::BedrockBlockingCommandQueue() :
 {
 }
 
-void BedrockBlockingCommandQueue::push(unique_ptr<BedrockCommand>&& command)
+uint64_t BedrockBlockingCommandQueue::_now() const
 {
-    const string identifier = command->blockingQueueRateLimitIdentifier;
-    const size_t maxPerIdentifier = _maxPerIdentifier.load();
-    const bool shouldCheck = maxPerIdentifier > 0 && !identifier.empty();
-
-    if (shouldCheck) {
-        lock_guard<decltype(_rateLimitMutex)> lock(_rateLimitMutex);
-
-        // Clear counts if the blocking queue has been empty for 30 seconds.
-        uint64_t emptyTime = _emptyTime.load();
-        if (emptyTime > 0 && STimeNow() - emptyTime >= 30'000'000) {
-            _identifierCounts.clear();
-        }
-
-        size_t& count = _identifierCounts[identifier];
-        count++;
-
-        if (count > maxPerIdentifier) {
-            SINFO("Blocking queue rate limit: rejecting '" << command->request.methodLine
-                  << "' for identifier '" << identifier << "' (count=" << count
-                  << ", threshold=" << maxPerIdentifier << ")");
-            // TODO: enable enforcement after monitoring confirms thresholds are correct in production.
-            // count--;
-            // STHROW("503 Blocking queue rate limited");
-        }
-    }
-
-    // A command is entering the queue, so it is no longer empty. Clear the empty timestamp so
-    // the 30-second auto-reset window doesn't fire until the queue drains again.
-    uint64_t previousEmptyTime = _emptyTime.exchange(0);
-
-    try {
-        // Base class acquires its own (non-recursive) `_queueMutex`.
-        BedrockCommandQueue::push(move(command));
-    } catch (...) {
-        // The command never entered the queue. Roll back the count increment and restore the
-        // empty timestamp so the 30-second auto-reset timer isn't lost.
-        _emptyTime.store(previousEmptyTime);
-        if (shouldCheck) {
-            lock_guard<decltype(_rateLimitMutex)> lock(_rateLimitMutex);
-            _decrementIdentifierCount(identifier);
-        }
-        throw;
-    }
+    return STimeNow();
 }
 
-/**
- * Dequeues command and inspects _queue to update rate limit counts and _emptyTime
- * Called by `BedrockCommandQueue::get()` with the base `_queueMutex` held. Calling any base method that reacquires `_queueMutex` would deadlock.
- */
+void BedrockBlockingCommandQueue::push(unique_ptr<BedrockCommand>&& command)
+{
+    const string dimension = getBlockingDimension(command->blockingQueueRateLimitIdentifier, command->request.methodLine);
+    if (!dimension.empty()) {
+        SINFO("Blocking queue rate limited command rejected", {
+            {"dimension", dimension},
+            {"identifier", command->blockingQueueRateLimitIdentifier},
+            {"command", command->request.methodLine}
+        });
+        STHROW("503 Blocking queue rate limited (" + dimension + ")");
+    }
+
+    // Base class acquires its own `_queueMutex`.
+    BedrockCommandQueue::push(move(command));
+}
+
 unique_ptr<BedrockCommand> BedrockBlockingCommandQueue::_dequeue()
 {
     auto command = BedrockCommandQueue::_dequeue();
 
-    // Decrement rate limit count when a command leaves the queue.
-    if (!command->blockingQueueRateLimitIdentifier.empty() && _maxPerIdentifier.load() > 0) {
-        lock_guard<decltype(_rateLimitMutex)> lock(_rateLimitMutex);
-        _decrementIdentifierCount(command->blockingQueueRateLimitIdentifier);
-    }
-
-    if (_queue.empty() && _emptyTime.load() == 0) {
-        _emptyTime.store(STimeNow());
+    // Marking it complete skips processing in `BedrockServer::runCommand`, which replies to already-complete commands.
+    const string dimension = getBlockingDimension(command->blockingQueueRateLimitIdentifier, command->request.methodLine);
+    if (!dimension.empty()) {
+        // The blocking worker sets its own prefix after `get()` returns, so without this the rejection logs the
+        // thread-local defaults instead of the request that got the 503.
+        SAUTOPREFIX(command->request);
+        SINFO("Blocking queue rate limited command rejected", {
+            {"dimension", dimension},
+            {"identifier", command->blockingQueueRateLimitIdentifier},
+            {"command", command->request.methodLine}
+        });
+        command->response.methodLine = "503 Blocking queue rate limited (" + dimension + ")";
+        command->complete = true;
     }
 
     return command;
@@ -92,59 +67,215 @@ void BedrockBlockingCommandQueue::clear()
 
 size_t BedrockBlockingCommandQueue::clearRateLimits()
 {
-    lock_guard<decltype(_rateLimitMutex)> lock(_rateLimitMutex);
-    size_t size = _identifierCounts.size();
-    _identifierCounts.clear();
-    _emptyTime.store(0);
+    size_t size = 0;
+    {
+        lock_guard<decltype(_identifierStates.mapMutex)> lock(_identifierStates.mapMutex);
+        size += _identifierStates.states.size();
+        _identifierStates.states.clear();
+    }
+    {
+        lock_guard<decltype(_commandStates.mapMutex)> lock(_commandStates.mapMutex);
+        size += _commandStates.states.size();
+        _commandStates.states.clear();
+    }
+    {
+        // The global rate limiter has no key, so it isn't part of the count.
+        lock_guard<decltype(_globalState.m)> lock(_globalState.m);
+        _globalState.commands.clear();
+        _globalState.blockedUntil = 0;
+    }
     return size;
 }
 
 STable BedrockBlockingCommandQueue::getState()
 {
-    map<string, size_t> countsCopy;
-    {
-        lock_guard<decltype(_rateLimitMutex)> lock(_rateLimitMutex);
+    const uint64_t now = _now();
 
-        uint64_t emptyTime = _emptyTime.load();
-        if (emptyTime > 0 && STimeNow() - emptyTime >= 30'000'000) {
-            _identifierCounts.clear();
+    // Collect the tracked count and the currently-blocked identifiers in a map. Holds the map mutex while briefly
+    // locking each entry to read `blockedUntil`; no code path takes an entry lock before the map mutex, so this
+    // can't deadlock.
+    auto inspect = [now](StateMap& map, size_t& tracked, list<string>& blocked) {
+        lock_guard<decltype(map.mapMutex)> lock(map.mapMutex);
+        tracked = map.states.size();
+        for (const auto& p : map.states) {
+            lock_guard<decltype(p.second->m)> stateLock(p.second->m);
+            if (p.second->blockedUntil > now) {
+                blocked.push_back(p.first);
+            }
         }
+    };
 
-        countsCopy = _identifierCounts;
-    }
-
-    size_t maxPerIdentifier = _maxPerIdentifier.load();
-    size_t blockedCount = 0;
-    STable countsTable;
-    for (const auto& p : countsCopy) {
-        countsTable[p.first] = to_string(p.second);
-        if (p.second > maxPerIdentifier) {
-            blockedCount++;
-        }
-    }
+    size_t trackedIdentifiers = 0, trackedCommands = 0;
+    list<string> blockedIdentifiers, blockedCommands;
+    inspect(_identifierStates, trackedIdentifiers, blockedIdentifiers);
+    inspect(_commandStates, trackedCommands, blockedCommands);
 
     STable content;
-    content["blockingRateLimitThreshold"] = to_string(maxPerIdentifier);
-    content["blockedIdentifiers"] = to_string(blockedCount);
-    if (!countsTable.empty()) {
-        content["blockingQueueIdentifierCounts"] = SComposeJSONObject(countsTable);
-    }
+    content["blockingTimeWindowMS"] = to_string(_identifierLimits.windowUS.load() / 1000);
+    content["blockingIdentifierThresholdMS"] = to_string(_identifierLimits.thresholdUS.load() / 1000);
+    content["blockingCommandThresholdMS"] = to_string(_commandLimits.thresholdUS.load() / 1000);
+    content["blockingBlockDurationMS"] = to_string(_identifierLimits.blockDurationUS.load() / 1000);
+    content["blockingTrackedIdentifiers"] = to_string(trackedIdentifiers);
+    content["blockingBlockedIdentifiers"] = SComposeList(blockedIdentifiers);
+    content["blockingTrackedCommands"] = to_string(trackedCommands);
+    content["blockingBlockedCommands"] = SComposeList(blockedCommands);
+    content["globalRateLimiterWindowMS"] = to_string(_globalLimits.windowUS.load() / 1000);
+    content["globalRateLimiterThresholdMS"] = to_string(_globalLimits.thresholdUS.load() / 1000);
+    content["globalRateLimiterBlockDurationMS"] = to_string(_globalLimits.blockDurationUS.load() / 1000);
+    content["globalRateLimiterTriggered"] = _isBlocked(_globalState, now) ? "true" : "false";
     return content;
 }
 
-size_t BedrockBlockingCommandQueue::setMaxRequestsPerIdentifier(size_t value)
+uint64_t BedrockBlockingCommandQueue::setSharedRateLimiterWindow(const uint64_t windowUS)
 {
-    return _maxPerIdentifier.exchange(value);
+    _commandLimits.windowUS.store(windowUS);
+    return _identifierLimits.windowUS.exchange(windowUS);
 }
 
-void BedrockBlockingCommandQueue::_decrementIdentifierCount(const string& identifier)
+uint64_t BedrockBlockingCommandQueue::setBlockingIdentifierThreshold(const uint64_t thresholdUS)
 {
-    auto it = _identifierCounts.find(identifier);
-    if (it != _identifierCounts.end()) {
-        if (it->second <= 1) {
-            _identifierCounts.erase(it);
-        } else {
-            it->second--;
+    return _identifierLimits.thresholdUS.exchange(thresholdUS);
+}
+
+uint64_t BedrockBlockingCommandQueue::setBlockingCommandThreshold(const uint64_t thresholdUS)
+{
+    return _commandLimits.thresholdUS.exchange(thresholdUS);
+}
+
+uint64_t BedrockBlockingCommandQueue::setSharedRateLimiterBlockDuration(const uint64_t durationUS)
+{
+    _commandLimits.blockDurationUS.store(durationUS);
+    return _identifierLimits.blockDurationUS.exchange(durationUS);
+}
+
+uint64_t BedrockBlockingCommandQueue::setGlobalRateLimiterWindow(const uint64_t windowUS)
+{
+    return _globalLimits.windowUS.exchange(windowUS);
+}
+
+uint64_t BedrockBlockingCommandQueue::setGlobalRateLimiterThreshold(const uint64_t thresholdUS)
+{
+    _globalLimits.logThresholdUS.store(thresholdUS * GLOBAL_LOG_PERCENT / 100);
+    return _globalLimits.thresholdUS.exchange(thresholdUS);
+}
+
+uint64_t BedrockBlockingCommandQueue::setGlobalRateLimiterBlockDuration(const uint64_t durationUS)
+{
+    return _globalLimits.blockDurationUS.exchange(durationUS);
+}
+
+void BedrockBlockingCommandQueue::recordExecutionTime(const string& identifier, const string& commandName, uint64_t elapsedUS)
+{
+    const uint64_t now = _now();
+
+    if (!identifier.empty() && _identifierLimits.thresholdUS.load()) {
+        _recordAndCheck(*_getOrCreateState(_identifierStates, identifier), "identifier", identifier, _identifierLimits, now, elapsedUS);
+    }
+    if (!commandName.empty() && _commandLimits.thresholdUS.load()) {
+        _recordAndCheck(*_getOrCreateState(_commandStates, commandName), "command", commandName, _commandLimits, now, elapsedUS);
+    }
+
+    // Every command counts toward the global rate limiter, whoever sent it.
+    if (_globalLimits.thresholdUS.load()) {
+        _recordAndCheck(_globalState, "global", "", _globalLimits, now, elapsedUS);
+    }
+}
+
+string BedrockBlockingCommandQueue::getBlockingDimension(const string& identifier, const string& commandName)
+{
+    // Hot path: called by push() and by _dequeue() under the base `_queueMutex`. Keep it O(1) by reading only
+    // the precomputed block deadline. The windowed time is summed in recordExecutionTime, off the blocking thread.
+    const uint64_t now = _now();
+    if (_isBlocked(_globalState, now)) {
+        return "global";
+    }
+    if (!identifier.empty()) {
+        auto state = _getState(_identifierStates, identifier);
+        if (state && _isBlocked(*state, now)) {
+            return "identifier";
         }
     }
+    if (!commandName.empty()) {
+        auto state = _getState(_commandStates, commandName);
+        if (state && _isBlocked(*state, now)) {
+            return "command";
+        }
+    }
+    return "";
+}
+
+shared_ptr<BedrockBlockingCommandQueue::BlockingCategoryState> BedrockBlockingCommandQueue::_getOrCreateState(StateMap& map, const string& key)
+{
+    lock_guard<decltype(map.mapMutex)> lock(map.mapMutex);
+    auto [it, inserted] = map.states.try_emplace(key);
+    if (inserted) {
+        it->second = make_shared<BlockingCategoryState>();
+    }
+    return it->second;
+}
+
+shared_ptr<BedrockBlockingCommandQueue::BlockingCategoryState> BedrockBlockingCommandQueue::_getState(StateMap& map, const string& key)
+{
+    lock_guard<decltype(map.mapMutex)> lock(map.mapMutex);
+    auto it = map.states.find(key);
+    return it == map.states.end() ? nullptr : it->second;
+}
+
+void BedrockBlockingCommandQueue::_recordAndCheck(BlockingCategoryState& state, const string& dimension, const string& key, const Limits& limits, uint64_t now, uint64_t elapsedUS)
+{
+    const uint64_t windowUS = limits.windowUS.load();
+    const uint64_t thresholdUS = limits.thresholdUS.load();
+    const uint64_t blockDurationUS = limits.blockDurationUS.load();
+    const uint64_t logThresholdUS = limits.logThresholdUS.load();
+
+    lock_guard<decltype(state.m)> lock(state.m);
+
+    // Already inside an active block: a block lasts a fixed duration and is not extended by further hits, so
+    // there's nothing to record or recompute until it expires.
+    if (state.blockedUntil > now) {
+        return;
+    }
+
+    state.commands.push_back({now, elapsedUS});
+
+    // Drop samples that finished before the current window and sum the ones that are still valid.
+    uint64_t total = 0;
+    for (auto it = state.commands.begin(); it != state.commands.end();) {
+        const uint64_t timeSinceFinishedUS = now > it->finishTime ? now - it->finishTime : 0;
+        if (timeSinceFinishedUS >= windowUS) {
+            it = state.commands.erase(it);
+            continue;
+        }
+
+        // Doing the line below will allow us to count for partial timings spent in a command. Let's say the window is 100s,
+        // and we had a command that took 50s and finished 80s ago. We should only count 20s of that command, since the other
+        // 30s are outside the window. So the result would be min(50s, 100 - 80) = min(50, 20) = 20s.
+        total += min(it->elapsedTime, windowUS - timeSinceFinishedUS);
+        ++it;
+    }
+
+    if (total > thresholdUS) {
+        state.blockedUntil = now + blockDurationUS;
+        SINFO("Blocking queue rate limit reached, blocking", {
+            {"dimension", dimension},
+            {"identifier", key},
+            {"timeMS", to_string(total / 1000)},
+            {"thresholdMS", to_string(thresholdUS / 1000)},
+            {"blockDurationMS", to_string(blockDurationUS / 1000)}
+        });
+    } else if (logThresholdUS && total > logThresholdUS) {
+        // Heavy, but still under its block threshold.
+        SINFO("Blocking queue rate limit above logging threshold", {
+            {"dimension", dimension},
+            {"identifier", key},
+            {"timeMS", to_string(total / 1000)},
+            {"thresholdMS", to_string(logThresholdUS / 1000)}
+        });
+    }
+}
+
+bool BedrockBlockingCommandQueue::_isBlocked(BlockingCategoryState& state, uint64_t now)
+{
+    lock_guard<decltype(state.m)> lock(state.m);
+    return state.blockedUntil > now;
 }

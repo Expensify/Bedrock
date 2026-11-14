@@ -30,6 +30,11 @@ struct DoubleDetachTest : tpunit::TestFixture
         // Test a control command
         BedrockTester& follower = tester->getTester(1);
 
+        SData setPriorityCommand("SetPriority");
+        setPriorityCommand["priority"] = "85";
+        follower.executeWaitVerifyContent(setPriorityCommand, "200", true);
+        ASSERT_TRUE(follower.waitForStatusTerm("priority", "85"));
+
         // Detach
         SData detachCommand("Detach");
         follower.executeWaitVerifyContent(detachCommand, "203 DETACHING", true);
@@ -42,5 +47,6 @@ struct DoubleDetachTest : tpunit::TestFixture
         // Re-attach to make shutdown clean.
         SData attachCommand("Attach");
         follower.executeWaitVerifyContent(attachCommand, "204 ATTACHING", true);
+        ASSERT_TRUE(follower.waitForStatusTerm("priority", "85"));
     }
 } __DoubleDetachTest;

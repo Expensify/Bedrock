@@ -1,3 +1,4 @@
+#include <libstuff/JSON/Value.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -64,8 +65,8 @@ struct GetJobsTest : tpunit::TestFixture
         // And save their IDs in the same order we created them.
         vector<uint64_t> jobIDs;
         for (auto& result : createResults) {
-            auto jsonResponse = SParseJSONObject(result.content);
-            jobIDs.push_back(stoull(jsonResponse["jobID"]));
+            auto jsonResponse = JSON::Value::parse(result.content);
+            jobIDs.push_back(jsonResponse["jobID"].getUint());
         }
 
         // Now we sleep for a couple seconds to verify that "scheduled" and "started" are different times.
@@ -76,8 +77,8 @@ struct GetJobsTest : tpunit::TestFixture
         request["name"] = jobName;
         request["numResults"] = "5";
         auto runResult = tester.executeWaitMultipleData({request});
-        auto jsonResponse = SParseJSONObject(runResult[0].content);
-        auto jsonJobs = SParseJSONArray(jsonResponse["jobs"]);
+        auto jsonResponse = JSON::Value::parse(runResult[0].content);
+        auto jsonJobs = jsonResponse["jobs"];
         ASSERT_EQUAL(jsonJobs.size(), 3);
 
         // Now we should have three jobs that are "running".

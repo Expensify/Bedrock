@@ -8,6 +8,7 @@
 
 #include <libstuff/libstuff.h>
 #include <libstuff/SFastBuffer.h>
+#include <libstuff/SResolver.h>
 
 class SSSLState;
 
@@ -17,11 +18,33 @@ using namespace std;
 // buffers, completing connections, performing graceful shutdowns, etc.
 struct STCPManager
 {
+    struct MTLSConnection
+    {
+        const string hostname;
+        const string certificate;
+        const string privateKey;
+
+        // Temporary testing bypass: disables all server certificate verification, including hostname and expiry checks.
+        // An attacker could impersonate the server and read or modify transmitted data, including bearer tokens.
+        const bool allowUntrustedCA = false;
+    };
+
     // Captures all the state for a single socket
     class Socket {
 public:
-        enum State { CONNECTING, CONNECTED, SHUTTINGDOWN, CLOSED };
-        Socket(const string& host, bool https = false);
+        enum State { RESOLVING, CONNECTING, CONNECTED, SHUTTINGDOWN, CLOSED };
+
+        // How long the constructor waits for its lookup before giving up and deferring.
+        static const int DEFAULT_RESOLVE_GRACE_MS = 5;
+
+        // Resolves `host` off-thread, which may leave the socket in the RESOLVING state.
+        Socket(const string& host, bool https = false, int resolveGraceMS = DEFAULT_RESOLVE_GRACE_MS);
+
+        // `connection` cannot be null.
+        Socket(shared_ptr<const MTLSConnection> connection, int resolveGraceMS = DEFAULT_RESOLVE_GRACE_MS);
+
+        // Connects to an already-resolved address, so no DNS resolution is required.
+        Socket(const sockaddr_in& addr, bool https = false, const string& hostname = "");
         Socket(int sock = 0, State state_ = CONNECTING, bool https = false);
         Socket(Socket&& from);
         virtual ~Socket();
@@ -56,6 +79,19 @@ public:
         void setSendBuffer(const string& buffer);
 
 protected:
+        friend struct STCPManager;
+
+        // Run after DNS resolution completes to create the socket (or fail, as appropriate).
+        void _connectAfterDNSResolution();
+
+        // Opens the fd for `addr` and, for HTTPS sockets, its SSL state. Returns false and marks the socket
+        // closed and failed if the fd can't be opened or the SSL state can't be set up.
+        bool _openSocket();
+
+        // Validates `host` and starts its lookup. `dnsResolution` is const, so it has to be built in
+        // the member initializer list, and this is what lets the assertion still run first.
+        static shared_ptr<SResolution> _startResolution(const string& host);
+
         static atomic<uint64_t> socketCount;
         recursive_mutex sendRecvMutex;
 
@@ -65,6 +101,17 @@ protected:
         SFastBuffer sendBuffer;
 
         bool https;
+
+        // Will be null only if this socket was initialized from an address or an existing fd. A literal
+        // IP string still gets one, already resolved.
+        // Shared ownership allows the resolver thread to continue even if the socket is destroyed during
+        // a slow DNS lookup.
+        const shared_ptr<SResolution> dnsResolution;
+        string hostToResolve;
+
+        Socket(const string& host, bool https, int resolveGraceMS, shared_ptr<const MTLSConnection> connection);
+
+        shared_ptr<const MTLSConnection> _mtlsConnection;
     };
 
     class Port {

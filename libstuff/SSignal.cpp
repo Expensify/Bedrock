@@ -10,6 +10,14 @@
 #include <format>
 
 thread_local function<string()> SSignalHandlerDieFunc;
+static atomic<void (*)(SFatalSignalPhase) noexcept> fatalSignalHook{nullptr};
+
+void SSetFatalSignalHook(void (*hook)(SFatalSignalPhase) noexcept) noexcept
+{
+    static_assert(decltype(fatalSignalHook)::is_always_lock_free);
+    fatalSignalHook.store(hook);
+}
+
 void SSetSignalHandlerDieFunc(function<string()>&& func)
 {
     SSignalHandlerDieFunc = move(func);
@@ -172,6 +180,10 @@ void _SSignal_signalHandlerThreadFunc()
         int signum = siginfo.si_signo;
 
         if (result > 0) {
+            if (signum == SIGWINCH) {
+                continue;
+            }
+
             // Do the same handling for these functions here as any other thread.
             if (signum == SIGSEGV || signum == SIGABRT || signum == SIGFPE || signum == SIGILL || signum == SIGBUS) {
                 _SSignal_StackTrace(signum, nullptr, nullptr);
@@ -210,6 +222,10 @@ void _SSignal_StackTrace(int signum, siginfo_t* info, void* ucontext)
         // second ABORT signal, and we don't want that to overwrite this value, so we only set it if unset.
         if (!_SSignal_threadCaughtSignalNumber) {
             _SSignal_threadCaughtSignalNumber = signum;
+
+            if (const auto hook = fatalSignalHook.load()) {
+                hook(SFatalSignalPhase::DIAGNOSTICS);
+            }
 
             SWARN("Signal " << strsignal(_SSignal_threadCaughtSignalNumber) << "(" << _SSignal_threadCaughtSignalNumber << ") caused crash, logging stack trace.");
 
@@ -297,9 +313,16 @@ void _SSignal_StackTrace(int signum, siginfo_t* info, void* ucontext)
         // If we weren't already in ABORT, we'll call that. The second call will skip the above callstack generation.
         if (signum != SIGABRT) {
             SWARN("Aborting.");
-            abort();
         } else {
             SWARN("Already in ABORT.");
+        }
+
+        // Notify only after diagnostic handling completes; it can throw before reaching this point.
+        if (const auto hook = fatalSignalHook.load()) {
+            hook(SFatalSignalPhase::TERMINATION);
+        }
+        if (signum != SIGABRT) {
+            abort();
         }
     } else {
         SALERT("Non-signal thread got signal " << strsignal(signum) << "(" << signum << "), which wasn't expected");

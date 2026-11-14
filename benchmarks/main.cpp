@@ -5,6 +5,7 @@
 #include <iomanip>
 #include <algorithm>
 #include <test/lib/tpunit++.hpp>
+#include <test/lib/ConsoleOutputWriter.h>
 #include <libstuff/libstuff.h>
 #include "BenchmarkBase.h"
 
@@ -21,10 +22,12 @@ const string BOLD = "\033[1m";
 
 const double SIGNIFICANT_CHANGE_THRESHOLD = 5.0;
 
-bool runBenchmarks(const set<string>& include, const set<string>& exclude)
+bool runBenchmarks(const set<string>& include, const set<string>& exclude, tpunit::OutputWriter& writer)
 {
     g_benchmarkResults.clear();
-    int result = tpunit::Tests::run(include, exclude, {}, {}, 1);
+    auto initThread = []() {
+    };
+    int result = tpunit::Tests::run(include, exclude, {}, {}, 1, initThread, &tpunit::_TestFixture::sorter, &writer);
     return result == 0;
 }
 
@@ -131,13 +134,11 @@ int main(int argc, char* argv[])
         exclude.insert(args["-except"]);
     }
 
-    if (args.contains("-v") || args.contains("--verbose")) {
-        tpunit::_TestFixture::_verboseOutput = true;
-    }
+    tpunit::ConsoleOutputWriter outputWriter(args.contains("-v") || args.contains("--verbose"));
 
     if (baselineRef.empty()) {
         // Normal benchmark run
-        return runBenchmarks(include, exclude) ? 0 : 1;
+        return runBenchmarks(include, exclude, outputWriter) ? 0 : 1;
     }
 
     // Baseline comparison mode
@@ -197,7 +198,7 @@ int main(int argc, char* argv[])
 
     // Run baseline benchmarks
     cout << "\nRunning baseline benchmarks...\n";
-    if (!runBenchmarks(include, exclude)) {
+    if (!runBenchmarks(include, exclude, outputWriter)) {
         cerr << "Baseline benchmarks failed\n";
         SExecShell("git checkout " + currentRef, nullptr);
         if (hasUncommitted) {
@@ -232,7 +233,7 @@ int main(int argc, char* argv[])
 
     // Run current benchmarks
     cout << "\nRunning current benchmarks...\n";
-    if (!runBenchmarks(include, exclude)) {
+    if (!runBenchmarks(include, exclude, outputWriter)) {
         cerr << "Current benchmarks failed\n";
         return 1;
     }

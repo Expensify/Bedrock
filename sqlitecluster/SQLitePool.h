@@ -7,7 +7,8 @@ class SQLitePool {
 public:
     // Create a pool of DB handles.
     SQLitePool(size_t maxDBs, const string& filename, int cacheSize, int maxJournalSize, int minJournalTables,
-               int64_t mmapSizeGB = 0, bool hctree = false, const string& checkpointMode = "PASSIVE");
+               int64_t mmapSizeGB = 0, bool hctree = false, const string& checkpointMode = "PASSIVE",
+               vector<function<void()>> afterCommitCallbacks = {});
     ~SQLitePool();
 
     // Get the base object (the first one created, which uses the `journal` table). Note that if called by multiple
@@ -36,6 +37,18 @@ private:
     // Internal limit on the number of handles we'll allow. This exists to make sure we don't go over any
     // system-imposed limits on FDs.
     size_t _maxDBs;
+
+    // RAII scope management class that calls clearSharedData() for the given filename when this pool is destroyed.
+    class SharedDataCleanup
+    {
+public:
+        string filename;
+        ~SharedDataCleanup();
+    };
+
+    // Declared before _baseDB so cached state is removed after the final connection closes.
+    // TODO: Move SharedData ownership into the pool so cleanup follows its lifetime directly.
+    SharedDataCleanup _sharedDataCleanup;
 
     // Our base object that all others are based upon.
     SQLite _baseDB;

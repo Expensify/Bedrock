@@ -1,4 +1,5 @@
 #pragma once
+#include <libstuff/qrf.h>
 #include <libstuff/SQliteParameter.h>
 #include <libstuff/libstuff.h>
 #include "../BedrockPlugin.h"

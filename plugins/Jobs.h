@@ -10,6 +10,16 @@ public:
     virtual const string& getName() const;
     virtual void upgradeDatabase(SQLite& db);
 
+    // Surfaces the job blacklist (crashedBedrockJobs / crashedBedrockJobList) under this plugin's entry in Status.
+    virtual STable getInfo();
+
+    // On peer login, send the current job blacklist to the peer so it enforces the same patterns after a failover.
+    virtual void onNodeLogin(SQLitePeer* peer);
+
+    // Returns a copy of the GLOB patterns for jobs blacklisted via CrashBedrockJob, used to fail matching jobs at
+    // GetJob time instead of running them.
+    set<string> getCrashedBedrockJobPatterns();
+
     // We were using MAX_SIZE_SMALL in GetJob to check the job name, but now GetJobs accepts more than one job name,
     // because of that, we need to increase the size of the param to be able to accept around 50 job names.
     static constexpr int64_t MAX_SIZE_NAME = 255 * 50;
@@ -22,6 +32,11 @@ public:
 private:
     static const string name;
     static const int64_t JOBS_DEFAULT_PRIORITY;
+
+    // GLOB patterns for jobs blacklisted via CrashBedrockJob, guarded by its mutex. A job whose name matches any
+    // pattern is failed at GetJob time instead of run. In-memory only; cleared on a full cluster restart.
+    shared_timed_mutex _crashedBedrockJobPatternMutex;
+    set<string> _crashedBedrockJobPatterns;
 };
 
 class BedrockJobsCommand : public BedrockCommand {

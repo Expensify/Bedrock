@@ -100,10 +100,6 @@ void BedrockCore::prePeekCommand(unique_ptr<BedrockCommand>& command, bool isBlo
             _db.setTimeout(getRemainingTime(command, false));
             _db.setAbortRef(command->shouldAbort);
 
-            if (!_db.beginTransaction(SQLite::TRANSACTION_TYPE::SHARED)) {
-                STHROW("501 Failed to begin shared transaction");
-            }
-
             // Make sure no writes happen while in prePeek command
             _db.setQueryOnly(true);
 
@@ -143,7 +139,6 @@ void BedrockCore::prePeekCommand(unique_ptr<BedrockCommand>& command, bool isBlo
         command->complete = true;
         command->_inDBReadOperation = false;
     }
-    _db.rollback(command->getMethodName());
     _db.clearTimeout();
     _db.clearAbortRef();
 
@@ -172,8 +167,9 @@ BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command
                 STHROW("501 Failed to begin " + (exclusive ? "exclusive"s : "shared"s) + " transaction");
             }
 
-            if (exclusive && command->writeConsistency != SQLiteNode::QUORUM) {
-                decreaseCommandTimeout(command, BedrockCommand::DEFAULT_PROCESS_TIMEOUT);
+            if (exclusive) {
+                decreaseCommandTimeout(command, command->isSynchronous ? BedrockCommand::SYNCHRONOUS_COMMAND_TIMEOUT
+                                                                       : BedrockCommand::DEFAULT_PROCESS_TIMEOUT);
             }
 
             // We start the timer here to avoid including the time spent acquiring the lock _sharedData.commitLock
@@ -274,8 +270,9 @@ BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& comm
                 STHROW("501 Failed to begin " + (exclusive ? "exclusive"s : "shared"s) + " transaction");
             }
 
-            if (exclusive && command->writeConsistency != SQLiteNode::QUORUM) {
-                decreaseCommandTimeout(command, BedrockCommand::DEFAULT_PROCESS_TIMEOUT);
+            if (exclusive) {
+                decreaseCommandTimeout(command, command->isSynchronous ? BedrockCommand::SYNCHRONOUS_COMMAND_TIMEOUT
+                                                                       : BedrockCommand::DEFAULT_PROCESS_TIMEOUT);
             }
         }
 
@@ -337,7 +334,19 @@ BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& comm
         needsCommit = false;
         command->_inDBWriteOperation = false;
     } catch (const SQLite::constraint_error& e) {
-        SWARN("Unique Constraints Violation, command: " << request.methodLine);
+        // For whitelisted commands, include the client-reported origin (e.g. '/api.php',
+        // '/partners/mailgun/api.php') so log alerting can group these violations into separate issues per
+        // entry point.
+        static const set<string> commandsLoggingOrigin = {"TrackExpense"};
+        string originSuffix;
+        if (commandsLoggingOrigin.count(command->getMethodName())) {
+            const string& requestOrigin = request["requestOrigin"];
+            originSuffix = ", origin: " + (requestOrigin.empty() ? "unknown"s : requestOrigin);
+        }
+        SWARN("Constraint Violation, command: " << request.methodLine << originSuffix
+              << ", extended result code: " << e.getExtendedResultCode() << ", error: " << e.getMessage());
+
+        // Callers match this exact response for constraint errors, regardless of the constraint type.
         command->response.methodLine = "400 Unique Constraints Violation";
         _db.rollback(command->getMethodName());
         needsCommit = false;
@@ -381,10 +390,6 @@ void BedrockCore::postProcessCommand(unique_ptr<BedrockCommand>& command, bool i
             _db.setTimeout(getRemainingTime(command, false));
             _db.setAbortRef(command->shouldAbort);
 
-            if (!_db.beginTransaction(SQLite::TRANSACTION_TYPE::SHARED)) {
-                STHROW("501 Failed to begin shared transaction");
-            }
-
             // Make sure no writes happen while in postProcess command
             _db.setQueryOnly(true);
 
@@ -426,7 +431,6 @@ void BedrockCore::postProcessCommand(unique_ptr<BedrockCommand>& command, bool i
 
     // The command is complete.
     command->complete = true;
-    _db.rollback(command->getMethodName());
     _db.clearTimeout();
     _db.clearAbortRef();
 

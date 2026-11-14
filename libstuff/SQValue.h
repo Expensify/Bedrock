@@ -1,5 +1,6 @@
 #pragma once
 #include <string>
+#include <string_view>
 using namespace std;
 
 class SQValue {
@@ -30,6 +31,10 @@ public:
 
     // Cast to string (essentially, serializes to existing legacy format)
     operator string() const;
+
+    // Borrow TEXT/BLOB directly; other types use scratch for their string representation.
+    // The returned view lives as long as this value or scratch, whichever it refers to.
+    string_view asStringView(string& scratch) const;
 
     // Support concatenation with strings.
     friend string operator+(string lhs, const SQValue& rhs);

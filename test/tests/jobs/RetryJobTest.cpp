@@ -1,4 +1,5 @@
 #include <libstuff/SData.h>
+#include <libstuff/JSON/Value.h>
 #include <libstuff/SQResult.h>
 #include <test/lib/BedrockTester.h>
 #include <test/tests/jobs/JobTestHelper.h>
@@ -13,12 +14,17 @@ struct RetryJobTest : tpunit::TestFixture
                               TEST(RetryJobTest::parentIsNotPaused),
                               TEST(RetryJobTest::removeFinishedAndCancelledChildren),
                               TEST(RetryJobTest::updateData),
+                              TEST(RetryJobTest::rerunIfDataChangedThreeWayMerge),
                               TEST(RetryJobTest::negativeDelay),
                               TEST(RetryJobTest::positiveDelay),
                               TEST(RetryJobTest::delayError),
                               TEST(RetryJobTest::hasRepeat),
                               TEST(RetryJobTest::hasRepeatStartOfHour),
                               TEST(RetryJobTest::hasRepeatStartOfHourNotLast),
+                              TEST(RetryJobTest::hasRepeatScheduledMissedWindowReanchors),
+                              TEST(RetryJobTest::hasRepeatScheduledLongIntervalNotReanchored),
+                              TEST(RetryJobTest::hasRepeatScheduledSnappingModifierNotReanchored),
+                              TEST(RetryJobTest::hasRetryAfterScheduledMissedWindowReanchors),
                               TEST(RetryJobTest::inRunqueuedState),
                               TEST(RetryJobTest::simplyRetryWithNextRun),
                               TEST(RetryJobTest::changeNameAndPriority),
@@ -225,6 +231,76 @@ struct RetryJobTest : tpunit::TestFixture
         ASSERT_EQUAL(result[0][0], SComposeJSONObject(data));
     }
 
+    void rerunIfDataChangedThreeWayMerge()
+    {
+        // Given a worker running an opted-in unique job
+        const string initialData =
+            "{\"conflict\":10.5,\"emptyObject\":{},"
+            "\"uint64\":18446744073709551615,\"workerChange\":\"old\",\"workerDelete\":true,"
+            "\"workerNull\":1,\"enqueueDelete\":true,\"enqueueChange\":\"old\","
+            "\"nested\":{\"a\":1,\"b\":2}}";
+        SData command("CreateJob");
+        command["name"] = "retry-merge";
+        command["data"] = initialData;
+        command["repeat"] = "FINISHED, +1 DAY";
+        command["unique"] = "true";
+        command["rerunIfDataChanged"] = "true";
+        const string jobID = tester->executeWaitVerifyContentTable(command)["jobID"];
+
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "retry-merge";
+        const STable runningJob = tester->executeWaitVerifyContentTable(command);
+        const string expectedData = runningJob.at("data");
+        ASSERT_TRUE(JSON::Value::parse(initialData) == JSON::Value::parse(expectedData));
+
+        // And a duplicate enqueue changes the stored data and priority
+        command.clear();
+        command.methodLine = "CreateJob";
+        command["name"] = "retry-merge";
+        command["data"] = "{\"conflict\":11.5,\"enqueueDelete\":null,"
+            "\"enqueueChange\":\"new\",\"enqueueAdd\":true}";
+        command["repeat"] = "FINISHED, +1 DAY";
+        command["jobPriority"] = "750";
+        command["unique"] = "true";
+        command["rerunIfDataChanged"] = "true";
+        tester->executeWaitVerifyContent(command);
+
+        // When the worker retries with edits to its original data
+        const string workerData =
+            "{\"conflict\":10.5,\"emptyObject\":{},"
+            "\"uint64\":18446744073709551615,\"workerChange\":\"new\",\"workerNull\":null,"
+            "\"enqueueDelete\":true,\"enqueueChange\":\"old\",\"workerAdd\":true,"
+            "\"nested\":{\"a\":1,\"b\":2}}";
+
+        command.clear();
+        command.methodLine = "RetryJob";
+        command["jobID"] = jobID;
+        command["expectedData"] = expectedData;
+        command["data"] = workerData;
+        command["nextRun"] = "2042-04-02 00:42:42";
+        command["ignoreRepeat"] = "true";
+        command["name"] = "stale-name";
+        command["jobPriority"] = "1000";
+        tester->executeWaitVerifyContent(command);
+
+        // Then Bedrock honors the retry time and preserves the current name and priority
+        SQResult result;
+        tester->readDB("SELECT state, name, nextRun, priority, data FROM jobs WHERE jobID = " + jobID + ";", result);
+        ASSERT_EQUAL(result[0][0], "QUEUED");
+        ASSERT_EQUAL(result[0][1], "retry-merge");
+        ASSERT_EQUAL(result[0][2], "2042-04-02 00:42:42");
+        ASSERT_EQUAL(result[0][3], "750");
+
+        // And enqueue changes take precedence over worker changes to the same fields
+        const string expectedMergedData =
+            "{\"_bedrockRerunIfDataChanged\":true,\"conflict\":11.5,"
+            "\"emptyObject\":{},\"uint64\":18446744073709551615,\"workerChange\":\"new\","
+            "\"workerNull\":null,\"enqueueChange\":\"new\",\"enqueueAdd\":true,\"workerAdd\":true,"
+            "\"nested\":{\"a\":1,\"b\":2}}";
+        ASSERT_TRUE(JSON::Value::parse(result[0][4]) == JSON::Value::parse(expectedMergedData));
+    }
+
     // Cannot retry with a negative delay
     void negativeDelay()
     {
@@ -417,6 +493,170 @@ struct RetryJobTest : tpunit::TestFixture
         tester->readDB("SELECT nextRun FROM jobs WHERE jobID = " + jobID + ";", result);
         ASSERT_EQUAL(result.size(), 1);
         ASSERT_EQUAL(result[0][0], SComposeTime("%Y-%m-%d 00:05:00", now));
+    }
+
+    // A short-interval SCHEDULED repeat whose window was missed (eg, after an outage) skips the missed cycles
+    // and re-anchors to the next slot on its own phase, not to a single bunched-up "now".
+    void hasRepeatScheduledMissedWindowReanchors()
+    {
+        uint64_t now = STimeNow();
+        const string firstRun = SComposeTime("%Y-%m-%d %H:%M:%S", now - 3600 * STIME_US_PER_S);
+
+        // Create the job scheduled an hour in the past.
+        SData command("CreateJob");
+        command["name"] = "job";
+        command["repeat"] = "SCHEDULED, +30 SECONDS";
+        command["firstRun"] = firstRun;
+        STable response = tester->executeWaitVerifyContentTable(command);
+        string jobID = response["jobID"];
+
+        // Get a timestamp from before we reschedule.
+        SQResult result;
+        tester->readDB("SELECT DATETIME();", result);
+        time_t minimumTime = JobTestHelper::getTimestampForDateTimeString(result[0][0]);
+
+        // Get the job
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "job";
+        tester->executeWaitVerifyContent(command);
+
+        // Retry it
+        command.clear();
+        command.methodLine = "RetryJob";
+        command["jobID"] = jobID;
+        tester->executeWaitVerifyContent(command);
+
+        // Get a timestamp from after we reschedule.
+        tester->readDB("SELECT DATETIME();", result);
+        time_t maximumTime = JobTestHelper::getTimestampForDateTimeString(result[0][0]);
+
+        // nextRun is the first future slot (in (now, now + 30]) and stays on firstRun's 30-second phase,
+        // rather than being left in the past or bunched onto a single second.
+        tester->readDB("SELECT nextRun FROM jobs WHERE jobID = " + jobID + ";", result);
+        time_t actualNextRun = JobTestHelper::getTimestampForDateTimeString(result[0][0]);
+        time_t firstRunTime = JobTestHelper::getTimestampForDateTimeString(firstRun);
+        ASSERT_TRUE(difftime(actualNextRun, minimumTime) > 0);
+        ASSERT_TRUE(difftime(actualNextRun, maximumTime) <= 30);
+        ASSERT_EQUAL(static_cast<int64_t>(difftime(actualNextRun, firstRunTime)) % 30, 0);
+    }
+
+    // A SCHEDULED repeat longer than the re-anchor threshold keeps its scheduled time even when missed,
+    // since long-interval jobs may need to run on a specific calendar date.
+    void hasRepeatScheduledLongIntervalNotReanchored()
+    {
+        uint64_t now = STimeNow();
+        const string firstRun = SComposeTime("%Y-%m-%d %H:%M:%S", now - 10 * 3600 * STIME_US_PER_S);
+
+        // Create the job scheduled ten hours in the past.
+        SData command("CreateJob");
+        command["name"] = "job";
+        command["repeat"] = "SCHEDULED, +5 HOURS";
+        command["firstRun"] = firstRun;
+        STable response = tester->executeWaitVerifyContentTable(command);
+        string jobID = response["jobID"];
+
+        // Get the job
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "job";
+        tester->executeWaitVerifyContent(command);
+
+        // Retry it
+        command.clear();
+        command.methodLine = "RetryJob";
+        command["jobID"] = jobID;
+        tester->executeWaitVerifyContent(command);
+
+        // nextRun stays at firstRun + 5 hours (still in the past), not re-anchored to now.
+        SQResult result;
+        tester->readDB("SELECT nextRun FROM jobs WHERE jobID = " + jobID + ";", result);
+        time_t firstRunTime = JobTestHelper::getTimestampForDateTimeString(firstRun);
+        time_t actualNextRun = JobTestHelper::getTimestampForDateTimeString(result[0][0]);
+        ASSERT_EQUAL(difftime(actualNextRun, firstRunTime), 5 * 3600);
+    }
+
+    // A SCHEDULED repeat with a snapping modifier (eg START OF HOUR) keeps its rounded cadence; arithmetic
+    // re-anchoring would shift it off the hour, so it is left to catch up on its own.
+    void hasRepeatScheduledSnappingModifierNotReanchored()
+    {
+        uint64_t now = STimeNow();
+        // Pin the minutes to :30 so the snapped scheduled run differs from any arithmetic re-anchor.
+        const string firstRun = SComposeTime("%Y-%m-%d %H", now - 2 * 3600 * STIME_US_PER_S) + ":30:00";
+
+        // Create the job scheduled in the past.
+        SData command("CreateJob");
+        command["name"] = "job";
+        command["repeat"] = "SCHEDULED, +1 HOUR, START OF HOUR";
+        command["firstRun"] = firstRun;
+        STable response = tester->executeWaitVerifyContentTable(command);
+        string jobID = response["jobID"];
+
+        // Get the job
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "job";
+        tester->executeWaitVerifyContent(command);
+
+        // Retry it
+        command.clear();
+        command.methodLine = "RetryJob";
+        command["jobID"] = jobID;
+        tester->executeWaitVerifyContent(command);
+
+        // nextRun is the snapped scheduled time (top of the hour after firstRun), not an off-hour arithmetic slot.
+        SQResult result;
+        tester->readDB("SELECT STRFTIME('%Y-%m-%d %H:00:00', DATETIME('" + firstRun + "', '+1 HOUR'));", result);
+        const string expectedNextRun = result[0][0];
+        tester->readDB("SELECT nextRun FROM jobs WHERE jobID = " + jobID + ";", result);
+        ASSERT_EQUAL(result[0][0], expectedNextRun);
+    }
+
+    // A ReceiptScan-shaped job (retryAfter + a short SCHEDULED repeat) re-anchors off its original scheduled
+    // time. GetJob stashes the original (past) nextRun in data, so the missed window must be detected against
+    // that rather than the failure-check time GetJob wrote to nextRun.
+    void hasRetryAfterScheduledMissedWindowReanchors()
+    {
+        uint64_t now = STimeNow();
+        const string firstRun = SComposeTime("%Y-%m-%d %H:%M:%S", now - 3600 * STIME_US_PER_S);
+
+        // Create the job scheduled an hour in the past.
+        SData command("CreateJob");
+        command["name"] = "job";
+        command["repeat"] = "SCHEDULED, +30 SECONDS";
+        command["retryAfter"] = "+10 MINUTES";
+        command["firstRun"] = firstRun;
+        STable response = tester->executeWaitVerifyContentTable(command);
+        string jobID = response["jobID"];
+
+        // Get the job; for retryAfter + SCHEDULED this stores the original (past) nextRun in data.
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "job";
+        tester->executeWaitVerifyContent(command);
+
+        // Get a timestamp from before we reschedule.
+        SQResult result;
+        tester->readDB("SELECT DATETIME();", result);
+        time_t minimumTime = JobTestHelper::getTimestampForDateTimeString(result[0][0]);
+
+        // Retry it
+        command.clear();
+        command.methodLine = "RetryJob";
+        command["jobID"] = jobID;
+        tester->executeWaitVerifyContent(command);
+
+        // Get a timestamp from after we reschedule.
+        tester->readDB("SELECT DATETIME();", result);
+        time_t maximumTime = JobTestHelper::getTimestampForDateTimeString(result[0][0]);
+
+        // nextRun is the first future slot on the original nextRun's phase, not left in the past or bunched on now.
+        tester->readDB("SELECT nextRun FROM jobs WHERE jobID = " + jobID + ";", result);
+        time_t actualNextRun = JobTestHelper::getTimestampForDateTimeString(result[0][0]);
+        time_t firstRunTime = JobTestHelper::getTimestampForDateTimeString(firstRun);
+        ASSERT_TRUE(difftime(actualNextRun, minimumTime) > 0);
+        ASSERT_TRUE(difftime(actualNextRun, maximumTime) <= 30);
+        ASSERT_EQUAL(static_cast<int64_t>(difftime(actualNextRun, firstRunTime)) % 30, 0);
     }
 
     // Retry job in RUNQUEUED state

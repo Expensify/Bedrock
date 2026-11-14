@@ -3,6 +3,19 @@ set -e
 
 source ./ci_utils.sh
 
+dump_crash_logs() {
+  local status=$?
+  if [[ $status -ne 0 ]]; then
+    for log in /tmp/bedrock_crash_*.log; do
+      if [[ -f "$log" ]]; then
+        printf '\nCrash log: %s\n' "$log"
+        cat "$log"
+      fi
+    done
+  fi
+}
+trap dump_crash_logs EXIT
+
 # If ENABLE_HCTREE is set, add a flag to the test called -enableHctree
 if [ "$ENABLE_HCTREE" == "true" ]; then
   ENABLE_HCTREE_FLAG="-enableHctree"

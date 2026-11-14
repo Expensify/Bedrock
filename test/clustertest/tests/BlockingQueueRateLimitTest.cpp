@@ -1,3 +1,4 @@
+#include <libstuff/JSON/Value.h>
 #include <libstuff/SData.h>
 #include <test/clustertest/BedrockClusterTester.h>
 
@@ -6,8 +7,10 @@ struct BlockingQueueRateLimitTest : tpunit::TestFixture
     BlockingQueueRateLimitTest()
         : tpunit::TestFixture("BlockingQueueRateLimit",
                               BEFORE_CLASS(BlockingQueueRateLimitTest::setup),
+                              BEFORE(BlockingQueueRateLimitTest::before),
                               TEST(BlockingQueueRateLimitTest::testControlCommands),
-                              TEST(BlockingQueueRateLimitTest::testRateLimiting),
+                              TEST(BlockingQueueRateLimitTest::testTimeRateLimiting),
+                              TEST(BlockingQueueRateLimitTest::testGlobalRateLimiting),
                               AFTER_CLASS(BlockingQueueRateLimitTest::teardown))
     {
     }
@@ -24,108 +27,93 @@ struct BlockingQueueRateLimitTest : tpunit::TestFixture
         delete tester;
     }
 
-    void testControlCommands()
+    void before()
     {
         BedrockTester& leader = tester->getTester(0);
 
-        // Set the blocking rate limit threshold and verify it shows up in Status.
-        SData setLimit("SetBlockingQueueRateLimit");
-        setLimit["MaxRequestsPerIdentifier"] = "5";
-        leader.executeWaitVerifyContent(setLimit, "200", true);
-
-        SData status("Status");
-        STable json = SParseJSONObject(leader.executeWaitVerifyContent(status, "200", true));
-        ASSERT_EQUAL(json["blockingRateLimitThreshold"], "5");
-
-        // Force conflicts to push commands into the blocking queue and trigger rate limiting.
-        // Only the leader processes writes (followers escalate), so only the leader needs these settings.
-        SData setConflict("SetConflictParams");
-        setConflict["MaxConflictRetries"] = "1";
-        leader.executeWaitVerifyContent(setConflict, "200", true);
-
-        SData setLimitLow("SetBlockingQueueRateLimit");
-        setLimitLow["MaxRequestsPerIdentifier"] = "1";
-        leader.executeWaitVerifyContent(setLimitLow, "200", true);
-
-        // Send commands from multiple threads to all nodes. Cross-node escalation generates
-        // enough concurrent writes to reliably pile up 2+ commands in the blocking queue.
-        atomic<int> count503(0);
-        list<thread> threads;
-        for (int i : {0, 1, 2}) {
-            threads.emplace_back([this, i, &count503]() {
-                BedrockTester& node = tester->getTester(i);
-                vector<SData> requests;
-                for (int j = 0; j < 200; j++) {
-                    SData cmd("idcollision");
-                    cmd["blockingQueueRateLimitIdentifier"] = "controltest";
-                    cmd["value"] = to_string(i * 200 + j);
-                    requests.push_back(cmd);
-                }
-                auto results = node.executeWaitMultipleData(requests);
-                for (auto& result : results) {
-                    if (SToInt(result.methodLine) == 503) {
-                        count503.fetch_add(1);
-                    }
-                }
-            });
-        }
-        for (thread& t : threads) {
-            t.join();
-        }
-
-        // Rate limiting should have rejected at least one command with 503.
-        ASSERT_TRUE(count503.load() >= 1);
-
-        // ClearBlocks should reset all identifier counts.
-        SData clearBlocks("SetBlockingQueueRateLimit");
-        clearBlocks["ClearBlocks"] = "true";
-        leader.executeWaitVerifyContent(clearBlocks, "200", true);
-
-        json = SParseJSONObject(leader.executeWaitVerifyContent(status, "200", true));
-        ASSERT_EQUAL(json["blockedIdentifiers"], "0");
+        // ClearBlocks should reset all rate limit state.
+        SData resetBlockingQueue("SetBlockingQueueTimeRateLimit");
+        resetBlockingQueue["ClearBlocks"] = "true";
+        leader.executeWaitVerifyContent(resetBlockingQueue, "200", true);
 
         // Reset state on leader.
         SData resetConflict("SetConflictParams");
         resetConflict["MaxConflictRetries"] = "3";
         leader.executeWaitVerifyContent(resetConflict, "200", true);
 
-        SData resetLimit("SetBlockingQueueRateLimit");
-        resetLimit["MaxRequestsPerIdentifier"] = "0";
-        leader.executeWaitVerifyContent(resetLimit, "200", true);
+        // The global rate limiter is on by default, so we disable it for tests unrelated to it.
+        SData disableGlobal("SetBlockingQueueTimeRateLimit");
+        disableGlobal["globalRateLimiterThresholdMS"] = "0";
+        leader.executeWaitVerifyContent(disableGlobal, "200", true);
+
+        SData status("Status");
+        JSON::Value json = JSON::Value::parse(leader.executeWaitVerifyContent(status, "200", true));
+        ASSERT_EQUAL(json["blockingBlockedIdentifiers"].getString(), "");
+        ASSERT_EQUAL(json["globalRateLimiterTriggered"].getBool(), false);
     }
 
-    void testRateLimiting()
+    void testControlCommands()
     {
-        // Only the leader processes writes (followers escalate), so only the leader needs these settings.
         BedrockTester& leader = tester->getTester(0);
 
+        // Set the window and thresholds and verify they show up in Status.
+        SData setLimits("SetBlockingQueueTimeRateLimit");
+        setLimits["windowMS"] = "180000";
+        setLimits["identifierThresholdMS"] = "20000";
+        setLimits["commandThresholdMS"] = "40000";
+        setLimits["blockDurationMS"] = "60000";
+        setLimits["globalRateLimiterWindowMS"] = "60000";
+        setLimits["globalRateLimiterThresholdMS"] = "55000";
+        setLimits["globalRateLimiterBlockDurationMS"] = "60000";
+        leader.executeWaitVerifyContent(setLimits, "200", true);
+
+        SData status("Status");
+        JSON::Value json = JSON::Value::parse(leader.executeWaitVerifyContent(status, "200", true));
+        ASSERT_EQUAL(json["blockingTimeWindowMS"].getUint(), 180000);
+        ASSERT_EQUAL(json["blockingIdentifierThresholdMS"].getUint(), 20000);
+        ASSERT_EQUAL(json["blockingCommandThresholdMS"].getUint(), 40000);
+        ASSERT_EQUAL(json["blockingBlockDurationMS"].getUint(), 60000);
+        ASSERT_EQUAL(json["globalRateLimiterWindowMS"].getUint(), 60000);
+        ASSERT_EQUAL(json["globalRateLimiterThresholdMS"].getUint(), 55000);
+        ASSERT_EQUAL(json["globalRateLimiterBlockDurationMS"].getUint(), 60000);
+    }
+
+    void testTimeRateLimiting()
+    {
+        BedrockTester& leader = tester->getTester(0);
+
+        // Small identifier threshold so a burst of conflicting commands trips it. The command dimension is
+        // disabled so this isolates the identifier dimension.
+        SData setLimits("SetBlockingQueueTimeRateLimit");
+        setLimits["windowMS"] = "180000";
+        setLimits["identifierThresholdMS"] = "10";
+        setLimits["commandThresholdMS"] = "0";
+        setLimits["blockDurationMS"] = "60000";
+        leader.executeWaitVerifyContent(setLimits, "200", true);
+
+        // Force conflicts so commands escalate to the blocking queue and run on worker 0, which is what
+        // accumulates per-identifier time.
         SData setConflict("SetConflictParams");
         setConflict["MaxConflictRetries"] = "1";
         leader.executeWaitVerifyContent(setConflict, "200", true);
 
-        SData setLimit("SetBlockingQueueRateLimit");
-        setLimit["MaxRequestsPerIdentifier"] = "2";
-        leader.executeWaitVerifyContent(setLimit, "200", true);
+        SData status("Status");
+        JSON::Value json = JSON::Value::parse(leader.executeWaitVerifyContent(status, "200", true));
+        ASSERT_EQUAL(json["blockingIdentifierThresholdMS"].getUint(), 10);
 
-        // Spawn 3 threads, each sending 200 idcollision commands to a different node,
-        // all with the same blockingQueueRateLimitIdentifier. This generates write conflicts that push
-        // commands into the blocking queue, triggering rate limiting.
         atomic<int> count503(0);
         atomic<int> count200(0);
         list<thread> threads;
-
         for (int i : {0, 1, 2}) {
             threads.emplace_back([this, i, &count503, &count200]() {
                 BedrockTester& node = tester->getTester(i);
-
                 vector<SData> requests;
                 for (int j = 0; j < 200; j++) {
-                    SData cmd("idcollision");
-                    cmd["blockingQueueRateLimitIdentifier"] = "testuser";
+                    SData cmd("idcollision b4");
+                    cmd["blockingQueueRateLimitIdentifier"] = "timeuser";
                     cmd["value"] = "node" + to_string(i) + "-" + to_string(j);
                     requests.push_back(cmd);
                 }
-
                 auto results = node.executeWaitMultipleData(requests);
                 for (auto& result : results) {
                     int status = SToInt(result.methodLine);
@@ -137,29 +125,110 @@ struct BlockingQueueRateLimitTest : tpunit::TestFixture
                 }
             });
         }
-
         for (thread& t : threads) {
             t.join();
         }
 
         ASSERT_EQUAL(count200.load() + count503.load(), 600);
-        ASSERT_TRUE(count503.load() >= 1);
 
-        // Clear blocks and reset on leader.
-        SData clearBlocks("SetBlockingQueueRateLimit");
+        // Enforcement is happening, so we should see some 503s.
+        ASSERT_TRUE(count503.load() > 0);
+
+        // The identifier must register as blocked in Status.
+        json = JSON::Value::parse(leader.executeWaitVerifyContent(status, "200", true));
+        ASSERT_TRUE(SContains(json["blockingBlockedIdentifiers"].getString(), "timeuser"));
+
+        SData clearBlocks("SetBlockingQueueTimeRateLimit");
         clearBlocks["ClearBlocks"] = "true";
         leader.executeWaitVerifyContent(clearBlocks, "200", true);
 
+        json = JSON::Value::parse(leader.executeWaitVerifyContent(status, "200", true));
+        ASSERT_EQUAL(json["blockingBlockedIdentifiers"].getString(), "");
+
+        // Reset leader state.
         SData resetConflict("SetConflictParams");
         resetConflict["MaxConflictRetries"] = "3";
         leader.executeWaitVerifyContent(resetConflict, "200", true);
 
-        // Verify the previously blocked user can send commands again.
-        SData cmd("idcollision");
-        cmd["blockingQueueRateLimitIdentifier"] = "testuser";
-        leader.executeWaitVerifyContent(cmd, "200");
+        SData resetLimit("SetBlockingQueueTimeRateLimit");
+        resetLimit["identifierThresholdMS"] = "0";
+        leader.executeWaitVerifyContent(resetLimit, "200", true);
     }
-};
-// Disabled while rate limiting is log-only. Re-enable enforcement (the STHROW in
-// BedrockBlockingCommandQueue::push) and uncomment below to run these tests.
-// } __BlockingQueueRateLimitTest;
+
+    void testGlobalRateLimiting()
+    {
+        BedrockTester& leader = tester->getTester(0);
+
+        // Disable the identifier and command dimensions so only the global rate limiter can reject
+        // anything, with a tiny threshold so a small burst trips it.
+        SData setLimits("SetBlockingQueueTimeRateLimit");
+        setLimits["identifierThresholdMS"] = "0";
+        setLimits["commandThresholdMS"] = "0";
+        setLimits["globalRateLimiterWindowMS"] = "180000";
+        setLimits["globalRateLimiterThresholdMS"] = "10";
+        setLimits["globalRateLimiterBlockDurationMS"] = "60000";
+        leader.executeWaitVerifyContent(setLimits, "200", true);
+
+        // Force conflicts so these run on worker 0, which is what accumulates the time.
+        SData setConflict("SetConflictParams");
+        setConflict["MaxConflictRetries"] = "1";
+        leader.executeWaitVerifyContent(setConflict, "200", true);
+
+        // Every command uses its own identifier, so only the global rate limiter can reject these.
+        atomic<int> count503(0);
+        atomic<int> count200(0);
+        list<thread> threads;
+        for (int i : {0, 1, 2}) {
+            threads.emplace_back([this, i, &count503, &count200]() {
+                BedrockTester& node = tester->getTester(i);
+                vector<SData> requests;
+                for (int j = 0; j < 200; j++) {
+                    SData cmd("idcollision b4");
+                    cmd["blockingQueueRateLimitIdentifier"] = "globaluser" + to_string(i) + "-" + to_string(j);
+                    cmd["value"] = "node" + to_string(i) + "-" + to_string(j);
+                    requests.push_back(cmd);
+                }
+                auto results = node.executeWaitMultipleData(requests);
+                for (auto& result : results) {
+                    int status = SToInt(result.methodLine);
+                    if (status == 503) {
+                        count503.fetch_add(1);
+                    } else if (status == 200) {
+                        count200.fetch_add(1);
+                    }
+                }
+            });
+        }
+        for (thread& t : threads) {
+            t.join();
+        }
+
+        ASSERT_EQUAL(count200.load() + count503.load(), 600);
+
+        // Enforcement is happening, so we should see some 503s.
+        ASSERT_TRUE(count503.load() > 0);
+
+        // The global rate limiter did all the rejecting, so no identifier or command is blocked.
+        SData status("Status");
+        JSON::Value json = JSON::Value::parse(leader.executeWaitVerifyContent(status, "200", true));
+        ASSERT_EQUAL(json["globalRateLimiterTriggered"].getBool(), true);
+        ASSERT_EQUAL(json["blockingBlockedIdentifiers"].getString(), "");
+        ASSERT_EQUAL(json["blockingBlockedCommands"].getString(), "");
+
+        SData clearBlocks("SetBlockingQueueTimeRateLimit");
+        clearBlocks["ClearBlocks"] = "true";
+        leader.executeWaitVerifyContent(clearBlocks, "200", true);
+
+        json = JSON::Value::parse(leader.executeWaitVerifyContent(status, "200", true));
+        ASSERT_EQUAL(json["globalRateLimiterTriggered"].getBool(), false);
+
+        // Reset leader state.
+        SData resetConflict("SetConflictParams");
+        resetConflict["MaxConflictRetries"] = "3";
+        leader.executeWaitVerifyContent(resetConflict, "200", true);
+
+        SData resetLimit("SetBlockingQueueTimeRateLimit");
+        resetLimit["globalRateLimiterThresholdMS"] = "0";
+        leader.executeWaitVerifyContent(resetLimit, "200", true);
+    }
+} __BlockingQueueRateLimitTest;

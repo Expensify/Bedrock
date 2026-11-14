@@ -247,17 +247,19 @@ string MySQLPacket::serializeHandshake()
 
 string MySQLPacket::serializeQueryResponse(int sequenceID, const SQResult& result)
 {
+    const auto& headers = result.getHeaders();
+
     // Add the response
     string sendBuffer;
 
     // First the column count
     MySQLPacket columnCount;
     columnCount.sequenceID = ++sequenceID;
-    columnCount.payload = lenEncInt(result.headers.size());
+    columnCount.payload = lenEncInt(headers.size());
     sendBuffer += columnCount.serialize();
 
     // Add all the columns
-    for (const auto& header : result.headers) {
+    for (const auto& header : headers) {
         // Now a column description
         MySQLPacket column;
         column.sequenceID = ++sequenceID;
@@ -697,7 +699,10 @@ void BedrockPlugin_MySQL::onPortRequestComplete(const BedrockCommand& command, S
         } else {
             // Convert the JSON response from Bedrock::DB into MySQL protocol
             SQResult result;
-            SASSERT(command.response.content.empty() || result.deserialize(command.response.content));
+            if (!result.deserialize(command.response.content)) {
+                s->send(MySQLPacket::serializeERR(command.request.calc("sequenceID"), 500, "Failed to deserialize query result"));
+                return;
+            }
             s->send(MySQLPacket::serializeQueryResponse(command.request.calc("sequenceID"), result));
         }
     } else {

@@ -1,6 +1,7 @@
 #pragma once
 #include "BedrockCommand.h"
 class BedrockServer;
+class SQLitePeer;
 
 // Simple plugin system to add functionality to a node at runtime.
 class BedrockPlugin {
@@ -22,7 +23,7 @@ public:
     static void verifyAttributeBool(const SData& request, const string& name, bool require = true);
     static void verifyAttributeDate(const SData& request, const char* key, bool require);
 
-    BedrockPlugin(BedrockServer& s);
+    BedrockPlugin(BedrockServer& s, function<void()> afterCommitCallback = {});
     virtual ~BedrockPlugin();
 
     // Returns a version string indicating the version of this plugin. This needs to be implemented in a thread-safe
@@ -94,6 +95,12 @@ public:
     {
     }
 
+    // Called when a peer node logs in, so a plugin can send it any state it needs to replicate (e.g. in-memory data
+    // that isn't stored in the database).
+    virtual void onNodeLogin(SQLitePeer* peer)
+    {
+    }
+
     // Called when the sync thread is finishing, before destroying DB handles.
     virtual void serverStopping()
     {
@@ -107,4 +114,8 @@ public:
 
     // Reference to the BedrockServer object that owns this plugin.
     BedrockServer& server;
+
+    // This will be called every time a commit is successfully finished, both in leader and
+    // follower nodes.
+    const function<void()> afterCommitCallback;
 };

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <libstuff/SData.h>
+#include <libstuff/SHTTPResponseParser.h>
 #include <libstuff/STCPManager.h>
 
 class BedrockPlugin;
@@ -21,13 +22,26 @@ public:
         SData fullRequest;
         SData fullResponse;
         int response;
+
+        // Set before polling to expose decoded body bytes while the HTTP response is still pending.
+        bool shouldStreamResponse = false;
+
         SStandaloneHTTPSManager& manager;
         const string requestID;
+
+        // Where the request is going (host:port), and the proxy it goes through, if any. Used to describe failures in logs.
+        string targetHost;
+        string proxyHost;
 
         // Allow a transaction to be scheduled to start in the future.
         // If it is scheduled to start in the future, we will call `startFunc` at the timestamp scheduled.
         uint64_t scheduledStart = 0;
         function<void(Transaction&)> startFunc;
+
+private:
+        friend class SStandaloneHTTPSManager;
+        SHTTPResponseParser _responseParser;
+        SData _bufferedResponse;
     };
 
     static const string proxyAddressHTTPS;
@@ -55,7 +69,18 @@ protected:   // Child API
 
     // Methods
     unique_ptr<Transaction> _httpsSend(const string& url, const SData& request, bool allowProxy = false);
+
+    // A non-null connection requires an HTTPS URL with a matching host:port.
+    unique_ptr<Transaction> _httpsSend(const string& url, const SData& request, shared_ptr<const MTLSConnection> connection, bool allowProxy = false);
+
     unique_ptr<Transaction> _createErrorTransaction();
+
+    // Names the step a failed transaction got to (resolving, connecting, opening the proxy tunnel, sending, or waiting
+    // for a response), so a failure log shows whether the request ever reached the target host.
+    static string _describeFailureStage(const Transaction& transaction, Socket::State state, bool requestSent);
+
+    // Says whether a failed transaction's request reached the target host: "sent", "not fully sent", or "not sent".
+    static string _describeRequestProgress(const Transaction& transaction);
     virtual bool _onRecv(Transaction& transaction);
 
     static string initProxyAddressHTTPS();

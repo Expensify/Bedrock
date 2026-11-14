@@ -1,16 +1,17 @@
 #ifndef LIBSTUFF_H
 #define LIBSTUFF_H
-#include "libstuff/qrf.h"
 #include "libstuff/SQliteParameter.h"
 
 #include <netinet/in.h>
 #include <poll.h>
 #include <libgen.h>
+#include <stdlib.h>
 #include <syslog.h>
 
 #include <algorithm>
 #include <atomic>
 #include <cctype>
+#include <concepts>
 #include <functional>
 #include <iomanip>
 #include <list>
@@ -19,12 +20,14 @@
 #include <set>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <vector>
 
 // Forward declarations of types only used by reference.
 struct sockaddr_in;
 struct pollfd;
 struct sqlite3;
+struct sqlite3_qrf_spec;
 class SQResult;
 class SFastBuffer;
 struct SData;
@@ -210,7 +213,7 @@ string SComposeTime(const string& format, uint64_t when);
 uint64_t STimestampToEpoch(const string& format, const string& timestamp);
 uint64_t STimestampMSToEpoch(const string& format, const string& timestamp);
 timeval SToTimeval(uint64_t when);
-string SFirstOfMonth(const string& timeStamp, const int64_t& offset = 0);
+string SFirstOfMonth(string_view timeStamp, const int64_t& offset = 0);
 
 // Helpful class for timing
 struct SStopwatch
@@ -240,6 +243,17 @@ struct SStopwatch
 // Initializes the signal handling for this thread in particular. The first call to this function will initialize
 // the general-purpose signal handling thread.
 void SInitializeSignals();
+
+enum class SFatalSignalPhase
+{
+    DIAGNOSTICS,
+    TERMINATION,
+};
+
+// Process-wide hook called before diagnostics and again when the handler reaches termination.
+// An exception during diagnostic handling can prevent the TERMINATION notification.
+// The hook runs in the signal handler and must be signal-safe.
+void SSetFatalSignalHook(void (*hook)(SFatalSignalPhase) noexcept) noexcept;
 
 // Returns true if the given signal has been raised. Clears the value of the given signal.
 bool SGetSignal(int signum);
@@ -337,7 +351,16 @@ extern thread_local string SThreadLogPrefix;
 extern thread_local string SThreadLogParam;
 extern thread_local string SThreadLogName;
 
+// The command currently being processed on this thread (methodLine of the request), if any. Read by
+// `addLogParams` so every log line emitted while a command is running automatically gets tagged with it.
+extern thread_local string SThreadLogCommand;
+
 extern thread_local bool isSyncThread;
+
+// True on worker 0, the serialized `blockingCommit` thread. Read by `SStandaloneHTTPSManager::Transaction`'s
+// constructor to refuse starting an HTTPS request there, since blocking that thread on a network round-trip holds the
+// whole blocking queue.
+extern thread_local bool isBlockingCommitThread;
 
 // Thread-local log prefix
 void SLogSetThreadPrefix(const string& logPrefix);
@@ -354,6 +377,7 @@ private:
     // Attributes
     string oldPrefix;
     string oldLogParam;
+    string oldCommand;
 };
 #define SAUTOPREFIX(_PREFIX_) SAutoThreadPrefix __SAUTOPREFIX ## __LINE__(_PREFIX_)
 
@@ -417,10 +441,10 @@ private:
 // Converting between various bases
 string SToHex(uint64_t value, int digits = 16);
 string SToHex(uint32_t value);
-string SToHex(const string& buffer);
-uint64_t SFromHex(const string& value);
+string SToHex(string_view buffer);
+uint64_t SFromHex(string_view value);
 string SStrFromHex(const string& buffer);
-string SBase32HexStringFromBase32(const string& buffer);
+string SBase32HexStringFromBase32(string_view buffer);
 string SHexStringFromBase32(const string& buffer);
 
 // Testing various conditions
@@ -429,6 +453,29 @@ string SHexStringFromBase32(const string& buffer);
 // --------------------------------------------------------------------------
 // String stuff
 // --------------------------------------------------------------------------
+// Concatenate views into an owning string without changing overload resolution for existing string-only expressions.
+template<class L, class R>
+requires((same_as<remove_cvref_t<L>, string_view> || same_as<remove_cvref_t<R>, string_view>) &&
+              convertible_to<L, string_view> && convertible_to<R, string_view>)
+string operator+(L&& lhs, R&& rhs)
+{
+    const string_view left(lhs);
+    const string_view right(rhs);
+    if constexpr (same_as<L, string> ) {
+        lhs.append(right);
+        return move(lhs);
+    } else if constexpr (same_as<R, string> ) {
+        rhs.insert(0, left);
+        return move(rhs);
+    }
+
+    string result;
+    result.reserve(left.size() + right.size());
+    result.append(left);
+    result.append(right);
+    return result;
+}
+
 // General utility to convert non-string input to string output
 // **NOTE: Use 'ostringstream' because 'stringstream' leaks on VS2005
 template<class T> inline string SToStr(const T& t)
@@ -450,7 +497,8 @@ template<class A, class B, class C> inline bool SContains(const map<A, B, C>& na
     return nameValueMap.find(name) != nameValueMap.end();
 }
 
-template<class A> inline bool SContains(const list<A>& valueList, const A& value)
+// Compare directly with the search value, which need not have the list's element type.
+template<class A, class B> inline bool SContains(const list<A>& valueList, const B& value)
 {
     return ::find(valueList.begin(), valueList.end(), value) != valueList.end();
 }
@@ -461,20 +509,47 @@ template<class A> inline bool SContains(const set<A>& valueList, const A& value)
 }
 
 bool SContains(const list<string>& valueList, const char* value);
-bool SContains(const string& haystack, const string& needle);
-bool SContains(const string& haystack, char needle);
+
+// Substring searches respect the view bounds, including embedded NULs.
+bool SContains(string_view haystack, string_view needle);
+bool SContains(string_view haystack, char needle);
 bool SContains(const STable& nameValueMap, const string& name);
 
-bool SIsValidSQLiteDateModifier(const string& modifier);
+bool SIsValidSQLiteDateModifier(string_view modifier);
 
 // General testing functions
-bool SIEquals(const string& lhs, const string& rhs);
+// Case-insensitive comparison, bounded by the views and stopping at the first NUL as strcasecmp does.
+bool SIEquals(string_view lhs, string_view rhs);
 bool SIContains(const string& haystack, const string& needle);
-bool SStartsWith(const string& haystack, const string& needle);
+
+// Prefix comparison retains the length check and strncmp semantics of the buffer overload.
+bool SStartsWith(string_view haystack, string_view needle);
 bool SStartsWith(const char* haystack, size_t haystackSize, const char* needle, size_t needleSize);
-bool SEndsWith(const string& haystack, const string& needle);
-bool SConstantTimeEquals(const string& secret, const string& userInput);
+bool SEndsWith(string_view haystack, string_view needle);
+bool SConstantTimeEquals(string_view secret, string_view userInput);
 bool SConstantTimeIEquals(const string& secret, const string& userInput);
+
+class SRECompiledRegex {
+public:
+    ~SRECompiledRegex();
+    SRECompiledRegex(SRECompiledRegex&& other) noexcept;
+    SRECompiledRegex& operator=(SRECompiledRegex&& other) noexcept;
+
+    SRECompiledRegex(const SRECompiledRegex&) = delete;
+    SRECompiledRegex& operator=(const SRECompiledRegex&) = delete;
+
+private:
+    explicit SRECompiledRegex(void* regex);
+
+    void* regex;
+
+    friend SRECompiledRegex SRECompile(string_view regExp, bool caseSensitive);
+    friend bool SREMatch(const SRECompiledRegex& regExp, string_view input, bool partialMatch, vector<string>* matches, size_t startOffset, size_t* matchOffset);
+    friend string SREReplace(const SRECompiledRegex& regExp, string_view input, string_view replacement);
+};
+
+// Compiles a regular expression for reuse. Case sensitivity is fixed when the expression is compiled.
+SRECompiledRegex SRECompile(string_view regExp, bool caseSensitive = true);
 
 // Unless `partialMatch` is specified, perform a full regex match (the '^' and '$' symbols are implicit).
 //
@@ -485,14 +560,17 @@ bool SConstantTimeIEquals(const string& secret, const string& userInput);
 //
 // If matchOffset is supplied, and a match is found, it will be set to the offset of the first character of the matched substring.
 // To find the end of the matched substring, you can do something like matchOffset + matches[0].size().
-bool SREMatch(const string& regExp, const string& input, bool caseSensitive = true, bool partialMatch = false, vector<string>* matches = nullptr, size_t startOffset = 0, size_t* matchOffset = nullptr);
+bool SREMatch(string_view regExp, string_view input, bool caseSensitive = true, bool partialMatch = false, vector<string>* matches = nullptr, size_t startOffset = 0, size_t* matchOffset = nullptr);
+bool SREMatch(const SRECompiledRegex& regExp, string_view input, bool partialMatch = false, vector<string>* matches = nullptr, size_t startOffset = 0, size_t* matchOffset = nullptr);
 
 // Matches every instance of regExp in the input string. Returns a vector of vectors or strings.
 // The outer vector has one entry for each match found. The inner vectors contain first the entire matched substring, and following that, each match group
-vector<vector<string>> SREMatchAll(const string& regExp, const string& input, bool caseSensitive = true);
+vector<vector<string>> SREMatchAll(string_view regExp, string_view input, bool caseSensitive = true);
+vector<vector<string>> SREMatchAll(const SRECompiledRegex& regExp, string_view input);
 
 // Replaces all instances of the matched `regExp` with `replacement` in `input`.
-string SREReplace(const string& regExp, const string& input, const string& replacement, bool caseSensitive = true);
+string SREReplace(string_view regExp, string_view input, string_view replacement, bool caseSensitive = true);
+string SREReplace(const SRECompiledRegex& regExp, string_view input, string_view replacement);
 
 // Redact values that should not be logged.
 void SRedactSensitiveValues(string& s);
@@ -502,31 +580,34 @@ string SToLower(string value);
 string SToUpper(string value);
 
 // String alteration
-string SCollapse(const string& lhs);
-string STrim(const string& lhs);
-string SStrip(const string& lhs);
-string SStrip(const string& lhs, const string& chars, bool charsAreSafe);
-string SStripAllBut(const string& lhs, const string& chars);
-string SStripNonNum(const string& lhs);
-string SEscape(const char* lhs, const string& unsafe, char escaper);
+string SCollapse(string_view lhs);
+string STrim(string_view lhs);
+string SStrip(string_view lhs);
+string SStrip(string_view lhs, string_view chars, bool charsAreSafe);
+string SStripAllBut(string_view lhs, string_view chars);
+string SStripNonNum(string_view lhs);
+
+// A length of 0 uses legacy strlen-like behavior; otherwise, at most length characters are escaped.
+string SEscape(const char* lhs, const string& unsafe, char escaper, size_t length = 0);
 string SEscape(const string& lhs, const string& unsafe, char escaper = '\\');
 string SUnescape(const char* lhs, char escaper);
 string SUnescape(const string& lhs, char escaper = '\\');
-string SStripTrim(const string& lhs);
-string SBefore(const string& value, const string& needle);
-string SAfter(const string& value, const string& needle);
-string SAfterLastOf(const string& value, const string& needle);
-string SAfterUpTo(const string& value, const string& after, const string& upTo);
-string SReplace(const string& value, const string& find, const string& replace);
-string SReplaceAllBut(const string& value, const string& safeChars, char replaceChar);
-string SReplaceAll(const string& value, const string& unsafeChars, char replaceChar);
-int SStateNameToInt(const char* states[], const string& stateName, unsigned int numStates);
+string SStripTrim(string_view lhs);
+string SBefore(string_view value, string_view needle);
+string SAfter(string_view value, string_view needle);
+string SAfterLastOf(string_view value, string_view needle);
+string SAfterUpTo(string_view value, string_view after, string_view upTo);
+string SReplace(string_view value, string_view find, string_view replace);
+string SReplaceAllBut(string_view value, string_view safeChars, char replaceChar);
+string SReplaceAll(string_view value, string_view unsafeChars, char replaceChar);
+int SStateNameToInt(const char* states[], string_view stateName, unsigned int numStates);
 void SAppend(string& lhs, const void* rhs, int num);
 void SAppend(string& lhs, const string& rhs);
 
 // HTTP message management
 int SParseHTTP(const char* buffer, size_t length, string& methodLine, STable& nameValueMap, string& content);
-int SParseHTTP(const string& buffer, string& methodLine, STable& nameValueMap, string& content);
+int SParseHTTP(string_view buffer, string& methodLine, STable& nameValueMap, string& content);
+void SSetHTTPHeader(STable& headers, const string& name, string_view value);
 bool SParseRequestMethodLine(const string& methodLine, string& method, string& uri);
 bool SParseResponseMethodLine(const string& methodLine, string& protocol, int& code, string& reason);
 bool SParseURI(const char* buffer, int length, string& host, string& path);
@@ -536,25 +617,28 @@ bool SParseURIPath(const string& uri, string& path, STable& nameValueMap);
 void SComposeHTTP(string& buffer, const string& methodLine, const STable& nameValueMap, const string& content);
 string SComposeHTTP(const string& methodLine, const STable& nameValueMap, const string& content);
 string SComposePOST(const STable& nameValueMap);
-string SComposeHost(const string& host, int port);
-bool SParseHost(const string& host, string& domain, uint16_t& port);
-bool SHostIsValid(const string& host);
-string SGetDomain(const string& host);
+string SComposeHost(string_view host, int port);
+bool SParseHost(string_view host, string& domain, uint16_t& port);
+bool SHostIsValid(string_view host);
+string SGetDomain(string_view host);
 string SDecodeURIComponent(const char* buffer, int length);
-string SDecodeURIComponent(const string& value);
-string SEncodeURIComponent(const string& value);
+string SDecodeURIComponent(string_view value);
+string SEncodeURIComponent(string_view value, bool keepSpaces = false);
 
 // --------------------------------------------------------------------------
 // List stuff
 // --------------------------------------------------------------------------
 // List management
-list<int64_t> SParseIntegerList(const string& value, char separator = ',');
-set<int64_t> SParseIntegerSet(const string& value, char separator = ',');
-vector<int64_t> SParseIntegerVector(const string& value, char separator = ',');
+list<int64_t> SParseIntegerList(string_view value, char separator = ',');
+set<int64_t> SParseIntegerSet(string_view value, char separator = ',');
+vector<int64_t> SParseIntegerVector(string_view value, char separator = ',');
+
+// Parse into owning strings, skipping leading spaces and empty components and stopping at the first NUL.
+// The bool overloads clear valueList and return whether the final component is nonempty, even if earlier ones exist.
 bool SParseList(const char* value, list<string>& valueList, char separator = ',');
-bool SParseList(const string& value, list<string>& valueList, char separator = ',');
-set<string> SParseSet(const string& value, char separator = ',');
-list<string> SParseList(const string& value, char separator = ',');
+bool SParseList(string_view value, list<string>& valueList, char separator = ',');
+set<string> SParseSet(string_view value, char separator = ',');
+list<string> SParseList(string_view value, char separator = ',');
 
 // Concatenates things into a string. "Things" can mean essentially any
 // standard STL container of any type of object that "stringstream" can handle.
@@ -595,12 +679,6 @@ string SComposeJSONArray(const T& valueList)
 
 string SComposeJSONObject(const STable& nameValueMap, const bool forceString = false);
 
-// The optional keyCallback, if provided, will be called with the name of each new key in the object found as it's parsed.
-// this is useful for determining the order of supplied keys.
-STable SParseJSONObject(const string& object, const string& nullValue = "null", const function<void(const string&, const string&)>& callback = [] (const string&, const string&){});
-list<string> SParseJSONArray(const string& array, const string& nullValue = "null");
-string SGetJSONArrayFront(const string& jsonArray);
-
 // --------------------------------------------------------------------------
 // Network stuff
 // --------------------------------------------------------------------------
@@ -622,8 +700,21 @@ void SFDset(fd_map& fdm, int socket, short evts);
 // Returns false otherwise, or if this socket isn't in this fd_set, or if evts is 0.
 bool SFDAnySet(fd_map& fdm, int socket, short evts);
 
+// Resolves a "domain:port" string into an address.
+// This will block on a call to getaddrinfo unless passed a plain IP string, i.e: "192.168.0.1"
+bool SResolveHost(const string& host, sockaddr_in& addr);
+
+// Converts a `ddd.ddd.ddd.ddd` formatted IPV4 address with optional colon-separated port number to sockaddr_in.
+// Returns true on success, false on failure.
+bool SIPToAddr(const string& host, sockaddr_in& addr);
+
 // Socket helpers
-int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking);
+// On failure, `errorCode` receives the errno that caused it, if it's given.
+int S_socket(const sockaddr_in& addr, bool isTCP, bool isPort, bool isBlocking, int* errorCode = nullptr);
+
+// Convenience overload that resolves `host` first. This blocks on DNS; prefer the address-taking
+// version anywhere a stall would hold up a thread that has other work to do.
+int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking, int* errorCode = nullptr);
 int S_close(int* socket);
 int S_accept(int port, sockaddr_in& fromAddr, bool isBlocking);
 ssize_t S_recvfrom(int s, char* recvBuffer, int recvBufferSize, sockaddr_in& fromAddr);
@@ -654,18 +745,18 @@ uint64_t SFileSize(const string& path);
 // Crypto stuff
 // --------------------------------------------------------------------------
 // Various hashing functions
-string SHashSHA1(const string& buffer);
-string SHashSHA256(const string& buffer);
+string SHashSHA1(string_view buffer);
+string SHashSHA256(string_view buffer);
 
 // Various encoding/decoding functions
 string SEncodeBase64(const unsigned char* buffer, const size_t size);
-string SEncodeBase64(const string& buffer);
+string SEncodeBase64(string_view buffer);
 string SDecodeBase64(const unsigned char* buffer, const size_t size);
-string SDecodeBase64(const string& buffer);
+string SDecodeBase64(string_view buffer);
 
 // HMAC (for use with Amazon S3)
-string SHMACSHA1(const string& key, const string& buffer);
-string SHMACSHA256(const string& key, const string& buffer);
+string SHMACSHA1(string_view key, string_view buffer);
+string SHMACSHA256(string_view key, string_view buffer);
 
 // Encryption/Decryption
 #define SAES_KEY_SIZE 32 // AES256 32 bytes = 256 bits
@@ -682,14 +773,15 @@ string SAESDecryptNoStrip(const string& buffer, const size_t& bufferSize, const 
 // --------------------------------------------------------------------------
 string SQ(const char* val);
 string SQ(const string& val);
+string SQ(string_view val);
 string SQ(int val);
 string SQ(unsigned val);
 string SQ(uint64_t val);
 string SQ(int64_t val);
 string SQ(double val);
-string SQList(const string& val, bool integersOnly = true);
+string SQList(string_view val, bool integersOnly = true);
 
-template<typename Container> string SQList(const Container& valueList)
+template<typename Container> requires(!convertible_to<const Container&, string_view>) string SQList(const Container& valueList)
 {
     list<string> safeValues;
     for (typename Container::const_iterator valueIt = valueList.begin(); valueIt != valueList.end(); ++valueIt) {
@@ -701,6 +793,9 @@ template<typename Container> string SQList(const Container& valueList)
 void SQueryLogOpen(const string& logFilename);
 void SQueryLogClose();
 
+// A 50ms busy handler. Pass the sqlite3 connection as its context; SQuery logs successful busy waits.
+int SQueryBusyHandler(void* context, int count);
+
 // Returns an SQLite result code.
 // Bound parameters use SQLite's named-parameter syntax (`:name`, `@name`, or `$name`)
 // (positional `?`/`?NNN` // is not supported)
@@ -709,7 +804,8 @@ void SQueryLogClose();
 // expanded as SQL literals via sqlite3_expanded_sql) is appended to the string. Write paths use this to
 // journal a self-contained, replay-safe form of the query for replication; followers run the journaled
 // SQL via writeUnmodified() with no params map, so placeholders must already be inlined.
-int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThreshold = 2000* STIME_US_PER_MS, bool skipInfoWarn = false, sqlite3_qrf_spec* spec = nullptr, const map<string, SQliteParameter>& params = {}, string* expandedSql = nullptr);
+// If `readOnly` is true, any statement that could modify the database is rejected with SQLITE_READONLY before it runs.
+int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThreshold = 2000* STIME_US_PER_MS, bool skipInfoWarn = false, sqlite3_qrf_spec* spec = nullptr, const map<string, SQliteParameter>& params = {}, string* expandedSql = nullptr, bool readOnly = false);
 int SQuery(sqlite3* db, const string& sql, int64_t warnThreshold = 2000* STIME_US_PER_MS, bool skipInfoWarn = false);
 int SQuery(sqlite3* db, const string& sql, sqlite3_qrf_spec* spec);
 
@@ -733,8 +829,8 @@ string STIMESTAMP_MS(uint64_t time);
 // Miscellaneous stuff
 // --------------------------------------------------------------------------
 // Compression
-string SGZip(const string& content);
-string SGUnzip(const string& content);
+string SGZip(string_view content);
+string SGUnzip(string_view content);
 
 // Command-line helpers
 STable SParseCommandLine(int argc, char* argv[]);

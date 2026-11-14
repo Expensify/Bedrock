@@ -4,7 +4,7 @@
 
 map<string, function<BedrockPlugin* (BedrockServer&)>> BedrockPlugin::g_registeredPluginList;
 
-BedrockPlugin::BedrockPlugin(BedrockServer& s) : server(s)
+BedrockPlugin::BedrockPlugin(BedrockServer& s, function<void()> afterCommitCallback) : server(s), afterCommitCallback(afterCommitCallback)
 {
 }
 

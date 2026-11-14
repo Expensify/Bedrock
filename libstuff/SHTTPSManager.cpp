@@ -83,95 +83,75 @@ void SStandaloneHTTPSManager::postPoll(fd_map& fdm, SStandaloneHTTPSManager::Tra
     // Do the postPoll on the socket
     STCPManager::postPoll(fdm, *transaction.s);
 
-    //See if we got a response.
-    uint64_t now = STimeNow();
-
-    // The API for `deserialize` returns `0` if no response was deserialized (generally, because the response is incomplete), but
-    // there is an unusual case for responses that do not supply a `Content-Length` header. It's impossible to know if these
-    // are complete solely based on the content, so these return the size as if the body thus-far were the entire content.
-    // This means we have to check if we've hit EOF and closed the socket to know for sure that we've received the entire
-    // response in these cases.
-    int size = transaction.fullResponse.deserialize(transaction.s->recvBuffer);
-
-    // `204 No Content` is an implicit content length of 0. If we successfully parsed a 204 request, we can always
-    // treat the request as complete, becuase we need to have parsed all of the headers for `deserialize` above to
-    // return anything at all here.
-    int statusCode = 0;
-    if (size) {
-        size_t afterHTTPVersionSpace = transaction.fullResponse.methodLine.find(" ");
-        if (afterHTTPVersionSpace != string::npos) {
-            statusCode = atoi(transaction.fullResponse.methodLine.c_str() + afterHTTPVersionSpace);
+    const uint64_t now = STimeNow();
+    const Socket::State state = transaction.s->state.load();
+    const SFastBuffer& received = transaction.s->recvBuffer;
+    auto result = SHTTPResponseParser::Result::NEED_MORE;
+    if (received.size()) {
+        // The proxy socket uses this buffer for CONNECT until its tunnel opens. A rejected CONNECT
+        // closes the socket and leaves the proxy response available to report to the caller.
+        const auto* proxySocket = dynamic_cast<const SHTTPSProxySocket*>(transaction.s);
+        const bool isTargetResponse = !proxySocket || proxySocket->tunnelEstablished();
+        if (isTargetResponse || state == Socket::CLOSED) {
+            SData& response = transaction.shouldStreamResponse ? transaction.fullResponse : transaction._bufferedResponse;
+            const bool isHeadRequest = isTargetResponse && SStartsWith(transaction.fullRequest.methodLine, "HEAD ");
+            result = transaction._responseParser.parse(string_view(received.c_str(), received.size()), response, state == Socket::CLOSED, isHeadRequest);
+            if (!isTargetResponse && result == SHTTPResponseParser::Result::COMPLETE) {
+                const int proxyStatusCode = SHTTPResponseParser::getStatusCode(response.methodLine);
+                if (proxyStatusCode < 300 || proxyStatusCode >= 600) {
+                    // Only a CONNECT rejection can be reported before a tunnel is established.
+                    response.clear();
+                    result = SHTTPResponseParser::Result::NEED_MORE;
+                }
+            }
         }
     }
 
-    // If there's not a Content-Length, we need to check for the socket being closed.
-    bool hasContentLength = transaction.fullResponse.nameValueMap.contains("Content-Length");
-    bool completeRequest = size && ((statusCode == 204) || hasContentLength || (transaction.s->state == STCPManager::Socket::CLOSED));
-    if (completeRequest) {
-        // Consume how much we read.
-        transaction.s->recvBuffer.consumeFront(size);
-        transaction.finished = now;
+    const uint64_t timeoutAt = min(transaction.s->lastSendTime + timeoutMS * 1000, transaction.timeoutAt);
+    if (result == SHTTPResponseParser::Result::NEED_MORE && state <= Socket::CONNECTED && now <= timeoutAt) {
+        nextActivity = min(nextActivity, timeoutAt - now);
+        return;
+    }
 
-        // This is supposed to check for a "200" or "204 No Content"response, which it does very poorly. It also checks for message
-        // content. Why this is the what constitutes a valid response is lost to time. Any well-formed response should
-        // be valid here, and this should get cleaned up. However, this requires testing anything that might rely on
-        // the existing behavior, which is an exercise for later.
+    transaction.finished = now;
+    if (result == SHTTPResponseParser::Result::COMPLETE) {
+        if (!transaction.shouldStreamResponse) {
+            transaction.fullResponse = move(transaction._bufferedResponse);
+        }
+
+        // A receive callback can return the socket to a pool. Consume only this response first.
+        transaction.s->recvBuffer.consumeFront(transaction._responseParser.consumed());
+
+        // Callbacks handle responses with a body and the common empty success responses.
         if (
             SContains(transaction.fullResponse.methodLine, " 200") ||
             SContains(transaction.fullResponse.methodLine, "204") ||
             SContains(transaction.fullResponse.methodLine, "202") ||
             transaction.fullResponse.content.size()
         ) {
-            // Pass the transaction down to the subclass.
             _onRecv(transaction);
         } else {
-            // Coercing anything that's not 200 to 500 makes no sense, and should be abandoned with the above.
             SHMMM("Message failed: '" << transaction.fullResponse.methodLine << "'");
             transaction.response = getHTTPResponseCode(transaction.fullResponse.methodLine, 500);
         }
-
-        // Finished with the socket, free it up.
-        delete transaction.s;
-        transaction.s = nullptr;
+    } else if (result == SHTTPResponseParser::Result::INVALID) {
+        SHMMM("Invalid HTTP response, responding 502");
+        transaction.response = 502;
     } else {
-        // If we don't have a response, we need to check for a timeout, or a disconnection.
-        // The disconnection check is straightforward, we just check the socket state.
-        // The timeout is a little less so, because we have two different ways to time out:
-        //
-        // 1. If it's been more than `timeoutMS` since the last time we sent any data on our socket. This number can
-        //    change with each call to this function, because we shorten our timeouts at shutdown to avoid holding up
-        //    the whole server on a single stuck network request.
-        // 2. If the transaction's timeout (which is likely it's associated command's timeout) has passed.
-        if ((transaction.s->state.load() > Socket::CONNECTED) ||
-            (now > transaction.s->lastSendTime + timeoutMS * 1000) ||
-            (now > transaction.timeoutAt)) {
-            // Connection died or timed out. Check if we have any partial response data.
-            bool hasPartialResponse = !transaction.fullResponse.methodLine.empty() || size > 0;
-            if (hasPartialResponse) {
-                // We received some response data before connection closed. This is expected when
-                // server sends error response and closes (especially through proxies). Use the
-                // partial response we got.
-                SINFO("Connection closed after receiving partial response");
-                transaction.finished = now;
-                if (!transaction.fullResponse.methodLine.empty()) {
-                    _onRecv(transaction);
-                }
-
-                // Clean up the socket
-                delete transaction.s;
-                transaction.s = nullptr;
-            } else {
-                // No response data at all - this is a genuine failure
-                SHMMM("Connection " << ((transaction.s->state.load() > Socket::CONNECTED) ? "died prematurely" : "timed out"));
-                transaction.response = transaction.s->sendBufferEmpty() ? 501 : 500;
-            }
-        } else {
-            // No timeout yet, set nextActivity short enough that it'll catch the next timeout.
-            uint64_t remainingUntilTimeoutMS = (timeoutMS * 1000) - (now - transaction.s->lastSendTime);
-            uint64_t remainingUntilTimeoutAt = transaction.timeoutAt - now;
-            nextActivity = min(nextActivity, min(remainingUntilTimeoutMS, remainingUntilTimeoutAt));
-        }
+        // Callers use these transport statuses to decide whether and when to retry.
+        transaction.response = transaction.s->sendBufferEmpty() ? 501 : 500;
+        const string progress = _describeRequestProgress(transaction);
+        const string outcome = (state > Socket::CONNECTED) ? "died prematurely" : "timed out";
+        const string stage = _describeFailureStage(transaction, state, progress == "sent");
+        const string target = transaction.targetHost.empty() ? "an unknown host" : transaction.targetHost;
+        const string via = transaction.proxyHost.empty() ? "" : " via proxy " + transaction.proxyHost;
+        SHMMM("Connection " << outcome << " " << stage << " to " << target << via
+              << "; request " << progress << ", responding " << transaction.response);
     }
+
+    transaction._bufferedResponse = SData();
+    delete transaction.s;
+    transaction.s = nullptr;
 }
 
 SStandaloneHTTPSManager::Transaction::Transaction(SStandaloneHTTPSManager& manager_, const string& requestID) :
@@ -183,6 +163,15 @@ SStandaloneHTTPSManager::Transaction::Transaction(SStandaloneHTTPSManager& manag
     manager(manager_),
     requestID(requestID.empty() ? SThreadLogPrefix : requestID)
 {
+    // The blockingCommit thread runs commands under an exclusive transaction, serialized against the whole blocking
+    // queue. Starting an HTTPS request there would block that thread for the full network round-trip, stalling
+    // every command behind it. Every outbound request builds exactly one Transaction before opening its
+    // socket, so refusing here covers every manager uniformly, and the throw propagates out of peek to a clean failure.
+    // Reconstructing already-completed requests in BedrockCommand::deserializeHTTPSRequests happens on the
+    // command-reception thread, never worker 0, so this does not reject those.
+    if (isBlockingCommitThread) {
+        STHROW("500 Refused - HTTPS request attempted on blockingCommit thread");
+    }
 }
 
 SStandaloneHTTPSManager::Transaction::~Transaction()
@@ -203,6 +192,11 @@ unique_ptr<SStandaloneHTTPSManager::Transaction> SStandaloneHTTPSManager::_creat
 
 unique_ptr<SStandaloneHTTPSManager::Transaction> SStandaloneHTTPSManager::_httpsSend(const string& url, const SData& request, bool allowProxy)
 {
+    return _httpsSend(url, request, nullptr, allowProxy);
+}
+
+unique_ptr<SStandaloneHTTPSManager::Transaction> SStandaloneHTTPSManager::_httpsSend(const string& url, const SData& request, shared_ptr<const MTLSConnection> connection, bool allowProxy)
+{
     // Open a connection, optionally using SSL (if the URL is HTTPS). If that doesn't work, then just return a
     // completed transaction with an error response.
     string host, path;
@@ -213,22 +207,31 @@ unique_ptr<SStandaloneHTTPSManager::Transaction> SStandaloneHTTPSManager::_https
         host += ":443";
     }
 
-    unique_ptr<Transaction> transaction = make_unique<Transaction>(*this);
+    const bool isHttps = SStartsWith(url, "https://");
+    if (connection && (!isHttps || !SIEquals(host, connection->hostname))) {
+        SWARN("mTLS requires an HTTPS URL matching the connection hostname");
+        return _createErrorTransaction();
+    }
 
-    // If this is going to be an https transaction, create a certificate and give it to the socket.
+    unique_ptr<Transaction> transaction = make_unique<Transaction>(*this);
+    transaction->targetHost = host;
+
+    // Open a socket, optionally using a client certificate.
     Socket* s = nullptr;
     bool usingProxy = false;
     try {
         // If a proxy is set, and it's allowed to use it, go through the proxy.
-        bool isHttps = SStartsWith(url, "https://");
         if (isHttps && allowProxy && proxyAddressHTTPS.size()) {
             string proxyHost, path;
             SParseURI(proxyAddressHTTPS, proxyHost, path);
             SINFO("Proxying " << url << " through " << proxyHost);
-            s = new SHTTPSProxySocket(proxyHost, host, transaction->requestID);
+            transaction->proxyHost = proxyHost;
+            s = connection
+                ? new SHTTPSProxySocket(proxyHost, move(connection), transaction->requestID)
+                : new SHTTPSProxySocket(proxyHost, host, transaction->requestID);
             usingProxy = true;
         } else {
-            s = new Socket(host, isHttps);
+            s = connection ? new Socket(move(connection)) : new Socket(host, isHttps);
         }
     } catch (const SException& exception) {
         return _createErrorTransaction();
@@ -251,6 +254,38 @@ unique_ptr<SStandaloneHTTPSManager::Transaction> SStandaloneHTTPSManager::_https
 
     // Keep track of the transaction.
     return transaction;
+}
+
+string SStandaloneHTTPSManager::_describeFailureStage(const Transaction& transaction, Socket::State state, bool requestSent)
+{
+    const bool viaProxy = !transaction.proxyHost.empty();
+
+    // A failed lookup closes the socket without ever filling in its address.
+    const bool lookupFailed = transaction.s->connectFailure && transaction.s->addr.sin_addr.s_addr == 0;
+    if (state == Socket::RESOLVING || lookupFailed) {
+        return viaProxy ? "resolving the proxy" : "resolving DNS";
+    }
+    if (transaction.s->connectFailure || state == Socket::CONNECTING) {
+        return viaProxy ? "connecting to the proxy" : "connecting";
+    }
+    const SHTTPSProxySocket* proxySocket = dynamic_cast<const SHTTPSProxySocket*>(transaction.s);
+    if (proxySocket && !proxySocket->tunnelEstablished()) {
+        return "opening the proxy tunnel";
+    }
+    return requestSent ? "waiting for a response" : "sending the request";
+}
+
+string SStandaloneHTTPSManager::_describeRequestProgress(const Transaction& transaction)
+{
+    // An empty send buffer doesn't prove the request went out: a socket that closed before the request was queued
+    // never had it in its buffer. Bytes only count as reaching the target once a direct socket has sent something, or
+    // once a proxy socket's tunnel is open (the bytes before that are the CONNECT to the proxy).
+    const SHTTPSProxySocket* proxySocket = dynamic_cast<const SHTTPSProxySocket*>(transaction.s);
+    const bool reachedTarget = proxySocket ? proxySocket->tunnelEstablished() : transaction.s->lastSendTime > transaction.s->openTime;
+    if (!reachedTarget) {
+        return "not sent";
+    }
+    return transaction.s->sendBufferEmpty() ? "sent" : "not fully sent";
 }
 
 bool SStandaloneHTTPSManager::_onRecv(Transaction& transaction)

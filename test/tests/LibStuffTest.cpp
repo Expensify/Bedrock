@@ -1,8 +1,11 @@
+#include <libstuff/JSON/Utils.h>
+#include <arpa/inet.h>
 #include <cstring>
 #include <unistd.h>
 
 #include <libstuff/libstuff.h>
 #include <libstuff/SData.h>
+#include <libstuff/SHTTPResponseParser.h>
 #include <libstuff/SQResult.h>
 #include <libstuff/SRandom.h>
 #include <sqlitecluster/SQLite.h>
@@ -36,18 +39,27 @@ struct LibStuff : tpunit::TestFixture
                                      TEST(LibStuff::testCollapse),
                                      TEST(LibStuff::testStrip),
                                      TEST(LibStuff::testChunkedEncoding),
+                                     TEST(LibStuff::testIncrementalChunkedResponse),
+                                     TEST(LibStuff::testHTTPResponseBodyFraming),
+                                     TEST(LibStuff::testHTTPResponseWithoutBody),
+                                     TEST(LibStuff::testInternalResponseBody),
                                      TEST(LibStuff::testDaysInMonth),
                                      TEST(LibStuff::testGZip),
                                      TEST(LibStuff::testConstantTimeEquals),
                                      TEST(LibStuff::testParseIntegerList),
+                                     TEST(LibStuff::testSParseList),
                                      TEST(LibStuff::testSData),
                                      TEST(LibStuff::testSTable),
                                      TEST(LibStuff::testFileIO),
+                                     TEST(LibStuff::testSQ),
                                      TEST(LibStuff::testSQList),
                                      TEST(LibStuff::testRandom),
                                      TEST(LibStuff::testHexConversion),
                                      TEST(LibStuff::testBase32Conversion),
                                      TEST(LibStuff::testContains),
+                                     TEST(LibStuff::testStringViewConcatenation),
+                                     TEST(LibStuff::testSIEquals),
+                                     TEST(LibStuff::testSStartsWith),
                                      TEST(LibStuff::testFirstOfMonth),
                                      TEST(LibStuff::SREMatchTest),
                                      TEST(LibStuff::SREReplaceTest),
@@ -58,11 +70,75 @@ struct LibStuff : tpunit::TestFixture
                                      TEST(LibStuff::testReturningClause),
                                      TEST(LibStuff::testSQueryBoundParameters),
                                      TEST(LibStuff::testSQueryBoundParameterInjections),
+                                     TEST(LibStuff::testReadRejectsWrites),
                                      TEST(LibStuff::SRedactSensitiveValuesTest),
                                      TEST(LibStuff::SComposeHTTPTest),
-                                     TEST(LibStuff::testEncodeDecodeURIComponent)
+                                     TEST(LibStuff::testEncodeDecodeURIComponent),
+                                     TEST(LibStuff::testSGetPeerNamePreservesErrno),
+                                     TEST(LibStuff::testResolveHost),
+                                     TEST(LibStuff::testAutoThreadPrefixRestoresPreviousValues)
     )
     {
+    }
+
+    void testAutoThreadPrefixRestoresPreviousValues()
+    {
+        // `SAUTOPREFIX` in a self-contained block must restore all three thread-locals at the closing brace, which is
+        // what lets a caller set a prefix for one branch without leaking it into the rest of the scope.
+        const string originalPrefix = SThreadLogPrefix;
+        const string originalParam = SThreadLogParam;
+        const string originalCommand = SThreadLogCommand;
+
+        {
+            SData outerRequest("outerCommand");
+            outerRequest["requestID"] = "outer1";
+            outerRequest["logParam"] = "outer@example.com";
+            SAUTOPREFIX(outerRequest);
+            ASSERT_EQUAL(SThreadLogPrefix, "outer1");
+            ASSERT_EQUAL(SThreadLogParam, "outer@example.com");
+            ASSERT_EQUAL(SThreadLogCommand, "outerCommand");
+
+            {
+                SData innerRequest("innerCommand");
+                innerRequest["requestID"] = "inner1";
+                innerRequest["logParam"] = "inner@example.com";
+                SAUTOPREFIX(innerRequest);
+                ASSERT_EQUAL(SThreadLogPrefix, "inner1");
+                ASSERT_EQUAL(SThreadLogParam, "inner@example.com");
+                ASSERT_EQUAL(SThreadLogCommand, "innerCommand");
+            }
+
+            // The inner block reverts to the outer values, not to the defaults.
+            ASSERT_EQUAL(SThreadLogPrefix, "outer1");
+            ASSERT_EQUAL(SThreadLogParam, "outer@example.com");
+            ASSERT_EQUAL(SThreadLogCommand, "outerCommand");
+
+            // A request with no `requestID` or `logParam` applies the defaults, then still reverts to the outer values.
+            {
+                SAUTOPREFIX(SData("noHeaders"));
+                ASSERT_EQUAL(SThreadLogPrefix, "xxxxxx");
+                ASSERT_EQUAL(SThreadLogParam, "we@dont.know");
+                ASSERT_EQUAL(SThreadLogCommand, "noHeaders");
+            }
+            ASSERT_EQUAL(SThreadLogPrefix, "outer1");
+            ASSERT_EQUAL(SThreadLogParam, "outer@example.com");
+            ASSERT_EQUAL(SThreadLogCommand, "outerCommand");
+
+            // The `requestID` overload leaves `SThreadLogCommand` alone while it's in scope.
+            {
+                SAUTOPREFIX("sub1"s);
+                ASSERT_EQUAL(SThreadLogPrefix, "sub1");
+                ASSERT_EQUAL(SThreadLogParam, "we@dont.know");
+                ASSERT_EQUAL(SThreadLogCommand, "outerCommand");
+            }
+            ASSERT_EQUAL(SThreadLogPrefix, "outer1");
+            ASSERT_EQUAL(SThreadLogParam, "outer@example.com");
+            ASSERT_EQUAL(SThreadLogCommand, "outerCommand");
+        }
+
+        ASSERT_EQUAL(SThreadLogPrefix, originalPrefix);
+        ASSERT_EQUAL(SThreadLogParam, originalParam);
+        ASSERT_EQUAL(SThreadLogCommand, originalCommand);
     }
 
     void testEncryptDecrpyt()
@@ -94,12 +170,12 @@ struct LibStuff : tpunit::TestFixture
         const string& sampleJson = SFileLoad("sample_data/lottoNumbers.json");
         ASSERT_FALSE(sampleJson.empty());
 
-        STable obj = SParseJSONObject(sampleJson);
-        STable metaData = SParseJSONObject(obj["meta"]);
-        STable view = SParseJSONObject(metaData["view"]);
-        ASSERT_EQUAL(obj["top"], "top level attribute");
-        ASSERT_EQUAL(metaData["null_attribute"], "null");
-        ASSERT_EQUAL(view["name"], "Lottery Mega Millions Winning Numbers: Beginning 2002");
+        const auto obj = JSON::Value::parse(sampleJson);
+        const auto& metaData = obj["meta"];
+        const auto& view = metaData["view"];
+        ASSERT_EQUAL(obj["top"].getString(), "top level attribute");
+        ASSERT_TRUE(metaData["null_attribute"].isNull());
+        ASSERT_EQUAL(view["name"].getString(), "Lottery Mega Millions Winning Numbers: Beginning 2002");
     }
 
     void testJSON()
@@ -122,7 +198,8 @@ struct LibStuff : tpunit::TestFixture
         ASSERT_EQUAL(SToJSON("{\"science\":9e+61}"), "{\"science\":9e+61}");
         ASSERT_EQUAL(SToJSON("{\"science\":1E+99}"), "{\"science\":1E+99}");
 
-        STable innerObject0, innerObject1, innerObject0Verify, innerObject1Verify;
+        STable innerObject0, innerObject1;
+        JSON::Value innerObject0Verify, innerObject1Verify;
         innerObject0["utf8"] = "{\"foo\":\"\\u00b7\"}";
         innerObject0["singleQuoteTest"] = "These are 'single quotes'.";
         innerObject0["doubleQuoteTest"] = "These are \"double quotes\".";
@@ -139,9 +216,9 @@ struct LibStuff : tpunit::TestFixture
             "STATUS>\\n<CLTCOOKIE>4\\n<\\/ACCTINFOTRNRS>\\n<\\/SIGNUPMSGSRSV1>\\n<\\/OFX>\"}";
 
         // Verify we can undo our own encoding (Objects)
-        innerObject0Verify = SParseJSONObject(SComposeJSONObject(innerObject0));
+        innerObject0Verify = JSON::Value::parse(SComposeJSONObject(innerObject0));
         for (auto& item : innerObject0) {
-            ASSERT_EQUAL(innerObject0[item.first], innerObject0Verify[item.first]);
+            ASSERT_EQUAL(JSON::Value::parse(SToJSON(item.second)), innerObject0Verify[item.first]);
         }
 
         // Verify we can undo our own encoding (Arrays)
@@ -149,28 +226,27 @@ struct LibStuff : tpunit::TestFixture
         list<string> innerObjectList;
         innerObjectList.push_back(SComposeJSONObject(innerObject0));
         innerObjectList.push_back(SComposeJSONObject(innerObject1));
-        list<string> innerObjectListVerify = SParseJSONArray(SComposeJSONArray(innerObjectList));
+        auto innerObjectListVerify = JSON::Value::parse(SComposeJSONArray(innerObjectList));
         ASSERT_TRUE(innerObjectListVerify.size() == 2);
 
         // Verify we can undo our own encoding through 2 levels (Object)
-        innerObject0Verify = SParseJSONObject(innerObjectListVerify.front());
-        innerObject1Verify = SParseJSONObject(innerObjectListVerify.back());
+        innerObject0Verify = innerObjectListVerify[0];
+        innerObject1Verify = innerObjectListVerify.back();
         for (auto& item : innerObject0) {
-            ASSERT_EQUAL(innerObject0[item.first], innerObject0Verify[item.first]);
+            ASSERT_EQUAL(JSON::Value::parse(SToJSON(item.second)), innerObject0Verify[item.first]);
         }
         for (auto& item : innerObject1) {
-            ASSERT_EQUAL(innerObject1[item.first], innerObject1Verify[item.first]);
+            ASSERT_EQUAL(JSON::Value::parse(SToJSON(item.second)), innerObject1Verify[item.first]);
         }
 
         // Verify we can parse/encode PHP objects
-        ASSERT_EQUAL(innerObject0["ofxTest"], SComposeJSONObject(SParseJSONObject(innerObject0["ofxTest"])));
+        ASSERT_EQUAL(innerObject0["ofxTest"], SComposeJSONObject(JSON::Utils::toSTable(JSON::Value::parse(innerObject0["ofxTest"]))));
 
-        // Test parsing a crazy thing
-        STable ignore = SParseJSONObject(
-            SStrFromHex("7D6628F7AE67FBACE9DAF79312C48BA0B41AADD5BA1704E929B96B6F87708C0898868D55C0AAAE117CF20F1317D151"
-                        "348706C9EDFE8A0CDD13BFB476367DEA2761A102B26443C7D3A464DB49A37F1F816B8BEC4C55DBD9DAF0B70652D32A"
-                        "CBD224F9487E25398E740E99B24089A6343B6FD6C1BC6A89AF90F3DC69016A42066AAF430B1B584D236B8AD285828D"
-                        "59BB8375E2E955E246390DE9AA69D05DEF1FBC25318C9CCFE90159EC7EAA71637C07BD"));
+        // Preserve valid container formatting and quote invalid containers as strings.
+        const string valid = "{ \"value\" : 1.00 }";
+        ASSERT_EQUAL(SToJSON(valid), valid);
+        ASSERT_EQUAL(JSON::Value::parse(SToJSON(valid, true)).getString(), valid);
+        ASSERT_EQUAL(JSON::Value::parse(SToJSON("[1,]")).getString(), "[1,]");
 
         // Test NaN/Infinity handling - these should be treated as strings, not numbers
         ASSERT_EQUAL(SToJSON("nan"), "\"nan\"");
@@ -193,15 +269,16 @@ struct LibStuff : tpunit::TestFixture
         ASSERT_TRUE(nanJSON.find("\"-inf\"") != string::npos);
 
         // Verify round-trip parsing works
-        STable nanParsed = SParseJSONObject(nanJSON);
-        ASSERT_EQUAL(nanParsed["note"], "nan");
-        ASSERT_EQUAL(nanParsed["value"], "inf");
-        ASSERT_EQUAL(nanParsed["negative"], "-inf");
+        const auto nanParsed = JSON::Value::parse(nanJSON);
+        ASSERT_EQUAL(nanParsed["note"].getString(), "nan");
+        ASSERT_EQUAL(nanParsed["value"].getString(), "inf");
+        ASSERT_EQUAL(nanParsed["negative"].getString(), "-inf");
     }
 
     void testEscapeUnescape()
     {
         ASSERT_EQUAL(SEscape("a,b,c", ","), "a\\,b\\,c");
+        ASSERT_EQUAL(SEscape("a,b,c", ",", '\\', 3), "a\\,b");
         ASSERT_EQUAL(SUnescape(SEscape("\r\n\\\"\\zqy", "q")), "\r\n\\\"\\zqy");
         ASSERT_EQUAL(SEscape("\x1a", "\x1a"), "\\u001a");
         ASSERT_EQUAL(SUnescape("\\u0041"), "A");            // 1 Byte
@@ -379,6 +456,133 @@ struct LibStuff : tpunit::TestFixture
         ASSERT_EQUAL(SDaysInMonth(2014, 7), 31);
     }
 
+    void testIncrementalChunkedResponse()
+    {
+        // Given a chunked HTTP response with a complete first chunk.
+        SHTTPResponseParser parser;
+        SData response;
+        using Result = SHTTPResponseParser::Result;
+        const string prefix = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5;extension=value\r\nhello\r\n";
+        string received;
+
+        // When a complete chunk arrives one byte at a time before the response terminates.
+        for (const char character : prefix) {
+            received += character;
+            const auto result = parser.parse(received, response, false, false);
+
+            // Then the response stays pending after each byte.
+            ASSERT_TRUE(result == Result::NEED_MORE);
+        }
+
+        // Then its body is available before the rest of the response.
+        ASSERT_EQUAL(response.content, "hello");
+
+        // When later chunks and trailers finish the same response and the buffer contains another message.
+        received += "6\r\n world\r\n0\r\nX-Result: done\r\n\r\n";
+        const size_t messageSize = received.size();
+        received += "HTTP/1.1 204 No Content\r\n\r\n";
+        const auto result = parser.parse(received, response, false, false);
+
+        // Then the parser consumes only the first message and preserves its accumulated body and trailers.
+        ASSERT_TRUE(result == Result::COMPLETE);
+        ASSERT_EQUAL(parser.consumed(), messageSize);
+        ASSERT_EQUAL(response.content, "hello world");
+        ASSERT_EQUAL(response["Content-Length"], "11");
+        ASSERT_EQUAL(response["X-Result"], "done");
+        ASSERT_FALSE(response.isSet("Transfer-Encoding"));
+    }
+
+    void testHTTPResponseBodyFraming()
+    {
+        // Given a response with a declared length and a separate close-delimited response.
+        SHTTPResponseParser sized;
+        SHTTPResponseParser closeDelimited;
+        SData sizedResponse;
+        SData closeDelimitedResponse;
+        using Result = SHTTPResponseParser::Result;
+        const string sizedPrefix = "200 OK\r\nContent-Length: 5\r\n\r\nhe";
+        const string closePrefix = "HTTP/1.1 200 OK\r\n\r\nhe";
+
+        // When the first part of each body arrives.
+        const auto sizedPartial = sized.parse(sizedPrefix, sizedResponse, false, false);
+        const auto closePartial = closeDelimited.parse(closePrefix, closeDelimitedResponse, false, false);
+
+        // Then both responses expose the partial body and remain pending.
+        ASSERT_TRUE(sizedPartial == Result::NEED_MORE);
+        ASSERT_TRUE(closePartial == Result::NEED_MORE);
+        ASSERT_EQUAL(sizedResponse.content, "he");
+        ASSERT_EQUAL(closeDelimitedResponse.content, "he");
+
+        // When the remaining bytes arrive while both connections are still open.
+        const auto sizedComplete = sized.parse(sizedPrefix + "llo", sizedResponse, false, false);
+        const auto closePending = closeDelimited.parse(closePrefix + "llo", closeDelimitedResponse, false, false);
+
+        // Then only the response with a declared length completes, preserving its body and status line.
+        ASSERT_TRUE(sizedComplete == Result::COMPLETE);
+        ASSERT_TRUE(closePending == Result::NEED_MORE);
+        ASSERT_EQUAL(sizedResponse.content, "hello");
+        ASSERT_EQUAL(sizedResponse.methodLine, "200 OK");
+
+        // When the second connection closes.
+        const auto closeComplete = closeDelimited.parse(closePrefix + "llo", closeDelimitedResponse, true, false);
+
+        // Then the second response completes without duplicating body bytes.
+        ASSERT_TRUE(closeComplete == Result::COMPLETE);
+        ASSERT_EQUAL(closeDelimitedResponse.content, "hello");
+    }
+
+    void testHTTPResponseWithoutBody()
+    {
+        // Given an informational response followed by a final response with a representation length but no body.
+        const string interim = "HTTP/1.1 103 Early Hints\r\nLink: </style.css>; rel=preload\r\n\r\n";
+        const string final = "HTTP/1.1 304 Not Modified\r\nContent-Length: 12\r\n\r\n";
+        SHTTPResponseParser parser;
+        SData response;
+        using Result = SHTTPResponseParser::Result;
+
+        // When the informational response arrives.
+        const auto pending = parser.parse(interim, response, false, false);
+
+        // Then the parser waits for the final response.
+        ASSERT_TRUE(pending == Result::NEED_MORE);
+
+        // When the final response arrives on the same connection.
+        const auto result = parser.parse(interim + final, response, false, false);
+
+        // Then the final headers complete the response and preserve the representation length.
+        ASSERT_TRUE(result == Result::COMPLETE);
+        ASSERT_EQUAL(parser.consumed(), interim.size() + final.size());
+        ASSERT_EQUAL(response.methodLine, "HTTP/1.1 304 Not Modified");
+        ASSERT_EQUAL(response["Content-Length"], "12");
+        ASSERT_FALSE(response.isSet("Link"));
+        ASSERT_TRUE(response.content.empty());
+    }
+
+    void testInternalResponseBody()
+    {
+        // Given an internal Auth response whose status code permits a body.
+        const string body = R"({"ownerAmountOwed":"100"})";
+        const string header = "304 Owner needs to pay up.\r\nContent-Length: " + to_string(body.size()) + "\r\n\r\n";
+        SHTTPResponseParser parser;
+        SData response;
+        using Result = SHTTPResponseParser::Result;
+
+        // When the headers arrive before the body.
+        const auto pending = parser.parse(header, response, false, false);
+
+        // Then the parser waits for the declared body.
+        ASSERT_TRUE(pending == Result::NEED_MORE);
+
+        // When the body arrives on the same connection.
+        const auto result = parser.parse(header + body, response, false, false);
+
+        // Then the response completes with its status line and full body.
+        ASSERT_TRUE(result == Result::COMPLETE);
+        ASSERT_EQUAL(response.methodLine, "304 Owner needs to pay up.");
+        ASSERT_EQUAL(response.content, body);
+        ASSERT_EQUAL(parser.consumed(), header.size() + body.size());
+    }
+
     void testGZip()
     {
         // All these really test is that we won't segfault or anything.
@@ -426,6 +630,39 @@ struct LibStuff : tpunit::TestFixture
         }
         list<int64_t> after = SParseIntegerList(SComposeList(before));
         ASSERT_TRUE(before == after);
+    }
+
+    void testSParseList()
+    {
+        const char buffer[] = {'x', 'a', ',', ' ', 'b', ',', 'c', 'y'};
+        const string_view view(buffer + 1, 6);
+        list<string> values = {"stale"};
+        ASSERT_TRUE(SParseList(view, values));
+        ASSERT_EQUAL(values, (list<string>{"a", "b", "c"}));
+        ASSERT_EQUAL(SParseList(view), values);
+        ASSERT_EQUAL(SParseList("a, b,c"), values);
+        ASSERT_EQUAL(SParseList("a, b,c"s), values);
+        ASSERT_EQUAL(SParseList("a; b;c"sv, ';'), values);
+        ASSERT_TRUE(SParseList("a; b;c", values, ';'));
+        ASSERT_EQUAL(values, (list<string>{"a", "b", "c"}));
+
+        ASSERT_EQUAL(SParseList("  a  , ,b,, \tc"sv), (list<string>{"a  ", "b", "\tc"}));
+        ASSERT_FALSE(SParseList("a,"sv, values));
+        ASSERT_EQUAL(values, list<string>{"a"});
+        ASSERT_FALSE(SParseList(string_view{}, values));
+        ASSERT_TRUE(values.empty());
+        ASSERT_TRUE(SParseList(string_view{}).empty());
+        ASSERT_TRUE(SParseList(" , , "sv).empty());
+
+        ASSERT_EQUAL(SParseList("a,b\0,c"sv), (list<string>{"a", "b"}));
+        ASSERT_EQUAL(SParseList("a,b\0,c"s), (list<string>{"a", "b"}));
+        ASSERT_FALSE(SParseList("\0ignored"sv, values));
+        ASSERT_TRUE(values.empty());
+
+        string source = "one,two";
+        ASSERT_TRUE(SParseList(string_view(source), values));
+        source.assign(source.size(), 'x');
+        ASSERT_EQUAL(values, (list<string>{"one", "two"}));
     }
 
     void testSData()
@@ -521,6 +758,14 @@ struct LibStuff : tpunit::TestFixture
         ASSERT_EQUAL(SFileSize(path), 0);
     }
 
+    void testSQ()
+    {
+        const string value = "prefixO'Malleysuffix";
+        const string_view substring(value.data() + 6, 8);
+        ASSERT_EQUAL(SQ(substring), "'O''Malley'");
+        ASSERT_EQUAL(SQ(string_view(value.data() + 6, 0)), "''");
+    }
+
     void testSQList()
     {
         list<int> intList;
@@ -540,6 +785,11 @@ struct LibStuff : tpunit::TestFixture
         set<int64_t> int64Set;
         set<uint64_t> uint64Set;
         set<string> stringSet;
+        const string stringViewValues = "firstsecond";
+        vector<string_view> stringViewVector = {
+            string_view(stringViewValues.data(), 5),
+            string_view(stringViewValues.data() + 5, 6),
+        };
 
         ASSERT_EQUAL(SQList(intList), "");
         ASSERT_EQUAL(SQList(uintList), "");
@@ -630,6 +880,7 @@ struct LibStuff : tpunit::TestFixture
         ASSERT_EQUAL(SQList(int64Vector), "-10000000000, 10000000000");
         ASSERT_EQUAL(SQList(uint64Vector), "10000000000, 2");
         ASSERT_EQUAL(SQList(stringVector), "'1', 'potato'");
+        ASSERT_EQUAL(SQList(stringViewVector), "'first', 'second'");
 
         ASSERT_EQUAL(SQList(intVector), SQList(SComposeList(intList)));
         ASSERT_EQUAL(SQList(stringList), SQList(SComposeList(stringList), false));
@@ -680,8 +931,130 @@ struct LibStuff : tpunit::TestFixture
         ASSERT_TRUE(SContains(stringList, "asdf"));
         ASSERT_FALSE(SContains(stringList, "fdsa"));
 
+        const char listBuffer[] = {'x', 'a', 's', 'd', 'f', 'y'};
+        const string_view listView(listBuffer + 1, 4);
+        ASSERT_TRUE(SContains(stringList, listView));
+        ASSERT_FALSE(SContains(stringList, listView.substr(0, 3)));
+        ASSERT_FALSE(SContains(list<string>{}, listView));
+        ASSERT_TRUE(SContains(list<string>{""}, string_view{}));
+        ASSERT_TRUE(SContains(list<string>{"a\0b"s}, "a\0b"sv));
+        ASSERT_FALSE(SContains(list<string>{"a\0b"s}, "a"sv));
+
+        const list<string_view> views = {listView, "other"};
+        ASSERT_TRUE(SContains(views, "asdf"s));
+        ASSERT_TRUE(SContains(views, "other"));
+        ASSERT_FALSE(SContains(views, "missing"s));
+        const list<int> numbers = {1, 2};
+        ASSERT_TRUE(SContains(numbers, 1));
+        ASSERT_TRUE(SContains(numbers, 2LL));
+        ASSERT_FALSE(SContains(numbers, 3LL));
+
         ASSERT_TRUE(SContains(string("asdf"), "a"));
         ASSERT_TRUE(SContains(string("asdf"), string("asd")));
+
+        const char buffer[] = {'x', 'a', 'b', 'c', 'y'};
+        const string_view view(buffer + 1, 3);
+        ASSERT_TRUE(SContains(view, "bc"));
+        ASSERT_TRUE(SContains("xabc"s, view));
+        ASSERT_TRUE(SContains("abc", view));
+        ASSERT_TRUE(SContains(view, "bc"s));
+        ASSERT_TRUE(SContains(view, view.substr(1)));
+        ASSERT_FALSE(SContains(view, "cy"));
+        ASSERT_FALSE(SContains(view, "abcd"));
+        ASSERT_FALSE(SContains(view, "BC"));
+        ASSERT_TRUE(SContains(view, string_view{}));
+        ASSERT_TRUE(SContains(string_view{}, string_view{}));
+        ASSERT_FALSE(SContains(string_view{}, view));
+        ASSERT_TRUE(SContains("a\0bc"sv, "\0b"sv));
+        ASSERT_TRUE(SContains(view, 'c'));
+        ASSERT_FALSE(SContains(view, 'y'));
+        ASSERT_FALSE(SContains(string_view{}, 'a'));
+        ASSERT_TRUE(SContains("a\0b"sv, '\0'));
+
+        ASSERT_TRUE(SContains("abc", "bc"));
+        ASSERT_TRUE(SContains("abc", 'b'));
+        ASSERT_TRUE(SContains(SString("abc"), "bc"));
+    }
+
+    void testStringViewConcatenation()
+    {
+        const char buffer[] = {'a', 'b', 'c', 'd'};
+        const string_view view(buffer + 1, 2);
+        const string text = "text";
+        const SString tableValue = "table";
+        ASSERT_EQUAL(view + text, "bctext");
+        ASSERT_EQUAL(text + view, "textbc");
+        ASSERT_EQUAL(view + "literal", "bcliteral");
+        ASSERT_EQUAL("literal" + view, "literalbc");
+        ASSERT_EQUAL(view + view, "bcbc");
+        ASSERT_EQUAL(view + tableValue, "bctable");
+        ASSERT_EQUAL(tableValue + view, "tablebc");
+        ASSERT_EQUAL("prefix" + view + text + "suffix", "prefixbctextsuffix");
+        ASSERT_EQUAL(text, "text");
+        ASSERT_EQUAL(tableValue, "table");
+
+        ASSERT_EQUAL(string_view{} + view, "bc");
+        ASSERT_EQUAL(view + string_view{}, "bc");
+        ASSERT_EQUAL(string_view{} + string_view{}, "");
+        ASSERT_EQUAL("a\0b"sv + "c\0d"sv, "a\0bc\0d"s);
+
+        // A view may refer to the string whose storage is reused, even when concatenation reallocates.
+        string appendTarget(100, 'a');
+        const string_view appendView(appendTarget.data(), appendTarget.size());
+        ASSERT_EQUAL(move(appendTarget) + appendView, string(200, 'a'));
+        string prependTarget(100, 'b');
+        const string_view prependView(prependTarget.data(), prependTarget.size());
+        ASSERT_EQUAL(prependView + move(prependTarget), string(200, 'b'));
+
+        ASSERT_EQUAL(text + "literal", "textliteral");
+        ASSERT_EQUAL("literal" + text, "literaltext");
+        ASSERT_EQUAL(text + text, "texttext");
+    }
+
+    void testSIEquals()
+    {
+        const char buffer[] = {'x', 'H', 'e', 'L', 'L', 'o', 'y'};
+        const string_view view(buffer + 1, 5);
+        ASSERT_TRUE(SIEquals(view, "hello"));
+        ASSERT_TRUE(SIEquals("HELLO"s, view));
+        ASSERT_TRUE(SIEquals(view, "hello"sv));
+        ASSERT_TRUE(SIEquals("Hello", "hELLo"));
+        ASSERT_FALSE(SIEquals(view, "hell"));
+        ASSERT_FALSE(SIEquals("hell", view));
+        ASSERT_FALSE(SIEquals(view, "helloy"));
+        ASSERT_FALSE(SIEquals(view, "world"));
+        ASSERT_TRUE(SIEquals(string_view{}, ""));
+        ASSERT_TRUE(SIEquals(string_view{}, string_view{}));
+        ASSERT_FALSE(SIEquals(string_view{}, view));
+        ASSERT_FALSE(SIEquals(view, string_view{}));
+
+        // Preserve the previous strcasecmp behavior for strings containing NULs.
+        ASSERT_TRUE(SIEquals("a\0suffix"sv, "A"));
+        ASSERT_TRUE(SIEquals("A"s, "a\0suffix"s));
+        ASSERT_TRUE(SIEquals("a\0left"sv, "A\0right"sv));
+        ASSERT_TRUE(SIEquals(string_view{}, "\0suffix"sv));
+        ASSERT_FALSE(SIEquals("a\0suffix"sv, "b\0suffix"sv));
+    }
+
+    void testSStartsWith()
+    {
+        const char buffer[] = {'x', 'a', 'b', 'c', 'y'};
+        const string_view view(buffer + 1, 3);
+        ASSERT_TRUE(SStartsWith(view, "ab"));
+        ASSERT_TRUE(SStartsWith(view, "abc"s));
+        ASSERT_TRUE(SStartsWith("abcd"s, view));
+        ASSERT_TRUE(SStartsWith(view, view.substr(0, 2)));
+        ASSERT_TRUE(SStartsWith("abc", "ab"));
+        ASSERT_FALSE(SStartsWith(view, "bc"));
+        ASSERT_FALSE(SStartsWith(view, "abcd"));
+        ASSERT_FALSE(SStartsWith(view, "AB"));
+        ASSERT_TRUE(SStartsWith(view, string_view{}));
+        ASSERT_TRUE(SStartsWith(string_view{}, string_view{}));
+        ASSERT_FALSE(SStartsWith(string_view{}, view));
+        ASSERT_TRUE(SStartsWith(buffer + 1, 3, buffer + 1, 2));
+
+        ASSERT_TRUE(SStartsWith("a\0left"sv, "a\0right"sv.substr(0, 3)));
+        ASSERT_FALSE(SStartsWith("a\0"sv, "a\0b"sv));
     }
 
     void testFirstOfMonth()
@@ -759,6 +1132,11 @@ struct LibStuff : tpunit::TestFixture
         ASSERT_EQUAL(matchList[0][1], "Whiskers");
         ASSERT_EQUAL(matchList[1][1], "Mittens");
         ASSERT_EQUAL(matchList[2][1], "Snowball");
+
+        SRECompiledRegex compiledRegex = SRECompile(R"(KITTY\s+(\w+))", false);
+        ASSERT_FALSE(SREMatch(compiledRegex, catNames));
+        ASSERT_TRUE(SREMatch(compiledRegex, catNames, true));
+        ASSERT_EQUAL(SREMatchAll(compiledRegex, catNames).size(), 3);
     }
 
     void SREReplaceTest()
@@ -781,6 +1159,10 @@ struct LibStuff : tpunit::TestFixture
         string from2 = "a cat did something to a dog";
         string result4 = SREReplace("cat(.*)dog", from2, "chicken$1horse");
         ASSERT_EQUAL(result4, "a chicken did something to a horse");
+
+        SRECompiledRegex compiledRegex = SRECompile("CAT", false);
+        ASSERT_EQUAL(SREReplace(compiledRegex, from, "dinosaur"), expected);
+        ASSERT_EQUAL(SREReplace(compiledRegex, "another cat", "dinosaur"), "another dinosaur");
     }
 
     void testSReplace()
@@ -1117,6 +1499,45 @@ struct LibStuff : tpunit::TestFixture
                                         {{":id", SQLite::Parameter::i(3)}}));
     }
 
+    void testReadRejectsWrites()
+    {
+        TempDBFile dbFile;
+        SQLite db(dbFile.filename, 1000, 1000, 1);
+        db.beginTransaction(SQLite::TRANSACTION_TYPE::EXCLUSIVE);
+        db.write("CREATE TABLE users(id INTEGER PRIMARY KEY, name TEXT);");
+        db.write("INSERT INTO users VALUES (1, 'alice');");
+        db.prepare();
+        db.commit();
+
+        // A write piggybacked on a read, as an injected value would do, fails without running.
+        SQResult result;
+        db.beginTransaction(SQLite::TRANSACTION_TYPE::EXCLUSIVE);
+        ASSERT_FALSE(db.read("SELECT name FROM users; UPDATE users SET name = 'mallory'; --", result));
+        ASSERT_FALSE(db.read("INSERT INTO users VALUES (2, 'mallory');", result));
+        ASSERT_EQUAL(db.read("SELECT name FROM users;", nullptr), SQLITE_OK);
+        ASSERT_NOT_EQUAL(db.read("DELETE FROM users;", nullptr), SQLITE_OK);
+        ASSERT_TRUE(db.read("SELECT GROUP_CONCAT(name) FROM users;", result));
+        ASSERT_EQUAL("alice", result[0][0]);
+        db.rollback();
+
+        // Transaction-control statements are reported as read-only by SQLite, but must not run from a read either:
+        // a COMMIT here would commit the pending write without it ever being journaled.
+        db.beginTransaction(SQLite::TRANSACTION_TYPE::EXCLUSIVE);
+        ASSERT_TRUE(db.write("UPDATE users SET name = 'bob';"));
+        ASSERT_FALSE(db.read("SELECT 1; COMMIT;", result));
+        ASSERT_FALSE(db.read("SELECT 1; ROLLBACK;", result));
+        ASSERT_FALSE(db.read("SAVEPOINT injected;", result));
+        ASSERT_FALSE(db.read("RELEASE injected;", result));
+        ASSERT_FALSE(db.read("BEGIN;", result));
+        ASSERT_FALSE(db.read("ATTACH DATABASE ':memory:' AS injected;", result));
+        ASSERT_FALSE(db.read("DETACH DATABASE main;", result));
+        ASSERT_NOT_EQUAL(db.read("SELECT 1; COMMIT;", nullptr), SQLITE_OK);
+        ASSERT_TRUE(db.insideTransaction());
+        db.rollback();
+        ASSERT_TRUE(db.read("SELECT GROUP_CONCAT(name) FROM users;", result));
+        ASSERT_EQUAL("alice", result[0][0]);
+    }
+
     void SRedactSensitiveValuesTest()
     {
         string logValue = R"({"edits":["test1", "test2", "test3"]})";
@@ -1126,6 +1547,14 @@ struct LibStuff : tpunit::TestFixture
         logValue = R"({"authToken":"123IMANAUTHTOKEN321"})";
         SRedactSensitiveValues(logValue);
         ASSERT_EQUAL(R"({"authToken":<REDACTED>)", logValue);
+
+        logValue = R"({"exitTo":"inbox?policyID=1&authToken=123IMANAUTHTOKEN321&email=a%40b.com"})";
+        SRedactSensitiveValues(logValue);
+        ASSERT_EQUAL(R"({"exitTo":"inbox?policyID=1&authToken=<REDACTED>&email=a%40b.com"})", logValue);
+
+        logValue = "UPDATE nameValuePairs SET value='{\"exitTo\":\"inbox?authToken=123IMANAUTH";
+        SRedactSensitiveValues(logValue);
+        ASSERT_EQUAL("UPDATE nameValuePairs SET value='{\"exitTo\":\"inbox?authToken=<REDACTED>", logValue);
 
         logValue = R"({"html":"private conversation happens here"})";
         SRedactSensitiveValues(logValue);
@@ -1138,9 +1567,26 @@ struct LibStuff : tpunit::TestFixture
         string buffer = SComposeHTTP(methodLine, {}, "");
         ASSERT_EQUAL(buffer, "500 Internal Server Error\r\nContent-Length: 0\r\n\r\n");
 
-        // Verify that control characters are not allowed in methodLine
+        // Verify that a methodLine with control characters in it is encoded, so it can't inject a header
         string methodLineWithControlChars = "500 Internal Server Error\r\nContent-Type: application/json";
-        ASSERT_THROW(SComposeHTTP(methodLineWithControlChars, {}, ""), SException);
+        buffer = SComposeHTTP(methodLineWithControlChars, {}, "");
+        ASSERT_EQUAL(buffer, "500 Internal Server Error%0D%0AContent-Type%3A application%2Fjson\r\nContent-Length: 0\r\n\r\n");
+
+        // The requestID is first on the wire even when other headers sort before it.
+        for (const string requestIDHeader : {"requestID", "ReQuEsTiD"}) {
+            SData request("CreateJob");
+            request["data"] = "{}";
+            request["name"] = "www-prod/Test";
+            request[requestIDHeader] = "webrock-request-id";
+            request.content = "body";
+            const string expectedRequest = "CreateJob\r\n" + requestIDHeader + ": webrock-request-id\r\n"
+                "data: {}\r\nname: www-prod/Test\r\nContent-Length: 4\r\n\r\nbody";
+            ASSERT_EQUAL(request.serialize(), expectedRequest);
+
+            ostringstream out;
+            request.serialize(out);
+            ASSERT_EQUAL(out.str(), expectedRequest);
+        }
     }
 
     void testEncodeDecodeURIComponent()
@@ -1160,5 +1606,50 @@ struct LibStuff : tpunit::TestFixture
         // UTF-8: ü (U+00FC) = bytes 0xC3 0xBC → %C3%BC
         ASSERT_EQUAL(SEncodeURIComponent("\xC3\xBC"), "%C3%BC");
         ASSERT_EQUAL(SDecodeURIComponent(SEncodeURIComponent("\xC3\xBC")), "\xC3\xBC");
+    }
+
+    void testResolveHost()
+    {
+        // A raw IP needs no lookup at all.
+        sockaddr_in addr;
+        ASSERT_TRUE(SResolveHost("127.0.0.1:443", addr));
+        ASSERT_EQUAL(addr.sin_family, AF_INET);
+        ASSERT_EQUAL(ntohs(addr.sin_port), 443);
+        ASSERT_EQUAL(addr.sin_addr.s_addr, inet_addr("127.0.0.1"));
+
+        // A name goes through getaddrinfo. `localhost` comes out of /etc/hosts, so this doesn't
+        // depend on the network.
+        sockaddr_in resolved;
+        ASSERT_TRUE(SResolveHost("localhost:443", resolved));
+        ASSERT_EQUAL(ntohs(resolved.sin_port), 443);
+
+        // The port comes from the host string, not from whatever the resolver says.
+        sockaddr_in otherPort;
+        ASSERT_TRUE(SResolveHost("localhost:80", otherPort));
+        ASSERT_EQUAL(ntohs(otherPort.sin_port), 80);
+        ASSERT_EQUAL(otherPort.sin_addr.s_addr, resolved.sin_addr.s_addr);
+
+        // A name that doesn't resolve fails, and so does one we can't parse.
+        ASSERT_FALSE(SResolveHost("nonexistent-probe-xyzzy.invalid:443", addr));
+        ASSERT_FALSE(SResolveHost("", addr));
+    }
+
+    void testSGetPeerNamePreservesErrno()
+    {
+        // Callers pass SGetPeerName(s) and errno as sibling arguments while reporting a failure from send() or
+        // recv(). Argument evaluation order is unspecified, so if getpeername() were allowed to overwrite errno the
+        // caller could report ENOTCONN instead of the real error and treat a recoverable failure as fatal.
+        int s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+        ASSERT_TRUE(s >= 0);
+
+        // An unconnected socket makes getpeername() fail, which is the case that sets errno.
+        errno = EAGAIN;
+        const string peerName = SGetPeerName(s);
+        ASSERT_EQUAL(errno, EAGAIN);
+
+        // The failing errno still reaches the description.
+        ASSERT_EQUAL(peerName, "(errno#" + SToStr(ENOTCONN) + ")");
+
+        close(s);
     }
 } __LibStuff;

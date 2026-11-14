@@ -18,6 +18,7 @@ SQLitePeer::SQLitePeer(const string& name_, const string& host_, const STable& p
     name(name_),
     params(params_),
     permaFollower(isPermafollower(params)),
+    commandPortBlocked(false),
     latency(0),
     loggedIn(false),
     nextReconnect(0),
@@ -25,7 +26,6 @@ SQLitePeer::SQLitePeer(const string& name_, const string& host_, const STable& p
     state(SQLiteNodeState::SEARCHING),
     standupResponse(Response::NONE),
     subscribed(false),
-    transactionResponse(Response::NONE),
     version(),
     lastPingTime(0),
     forked(false),
@@ -75,6 +75,7 @@ bool SQLitePeer::remainingDataToSend() const
 void SQLitePeer::reset()
 {
     lock_guard<decltype(peerMutex)> lock(peerMutex);
+    commandPortBlocked = false;
     latency = 0;
     loggedIn = false;
     priority = 0;
@@ -83,10 +84,9 @@ void SQLitePeer::reset()
     state = SQLiteNodeState::SEARCHING;
     standupResponse = Response::NONE;
     subscribed = false;
-    transactionResponse = Response::NONE;
     version = "";
     lastPingTime = 0,
-    setCommit(0, "");
+    setCommit(0, "", 0);
     forked = false;
 }
 
@@ -240,18 +240,20 @@ string SQLitePeer::responseName(Response response)
     }
 }
 
-void SQLitePeer::setCommit(uint64_t count, const string& hashString)
+void SQLitePeer::setCommit(uint64_t count, const string& hashString, uint64_t hashID)
 {
     lock_guard<decltype(peerMutex)> lock(peerMutex);
     const_cast<atomic<uint64_t>&>(commitCount) = count;
     hash = hashString;
+    hashCommitID = hashID;
 }
 
-void SQLitePeer::getCommit(uint64_t& count, string& hashString) const
+void SQLitePeer::getCommit(uint64_t& count, string& hashString, uint64_t& hashID) const
 {
     lock_guard<decltype(peerMutex)> lock(peerMutex);
-    count = commitCount.load();
-    hashString = hash.load();
+    count = commitCount;
+    hashString = hash;
+    hashID = hashCommitID;
 }
 
 STable SQLitePeer::getData() const
@@ -270,9 +272,10 @@ STable SQLitePeer::getData() const
         {"version", version},
         {"hash", hash},
         {"commitCount", to_string(commitCount)},
+        {"hashCommitID", to_string(hashCommitID)},
         {"standupResponse", responseName(standupResponse)},
-        {"transactionResponse", responseName(transactionResponse)},
         {"subscribed", (subscribed ? "true" : "false")},
+        {"commandPortBlocked", (commandPortBlocked ? "true" : "false")},
     });
 
     // And anything from the params (note: doesn't overwrite our standard stuff).

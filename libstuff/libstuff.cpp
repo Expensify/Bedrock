@@ -11,6 +11,7 @@
 #include <sys/un.h>
 #include <cxxabi.h>
 #include <sys/ioctl.h>
+#include <chrono>
 #include <cmath>
 #include <iostream>
 
@@ -25,10 +26,12 @@
 #include <mbedtls/sha1.h>
 #include <mbedtls/sha256.h>
 
+#include <libstuff/JSON/Value.h>
 #include <libstuff/SQResult.h>
 #include <libstuff/SData.h>
 #include <libstuff/SFastBuffer.h>
 #include <libstuff/SFluentdLogger.h>
+#include <libstuff/qrf.h>
 #include <libstuff/sqlite3.h>
 
 // Additional headers
@@ -91,7 +94,9 @@
 thread_local string SThreadLogPrefix{"xxxxxx"};
 thread_local string SThreadLogParam{"we@dont.know"};
 thread_local string SThreadLogName;
+thread_local string SThreadLogCommand;
 thread_local bool isSyncThread;
+thread_local bool isBlockingCommitThread;
 
 // We store the process name passed in `SInitialize` to use in logging.
 thread_local string SProcessName;
@@ -114,6 +119,7 @@ atomic<void (*)(int priority, const char* format, ...)> SSyslogFunc = &syslog;
 void SInitialize(const string& threadName, const char* processName)
 {
     isSyncThread = false;
+    isBlockingCommitThread = false;
     // This is not really thread safe. It's guaranteed to run only once, because of the atomic flag, but it's not
     // guaranteed that a second caller to `SInitialize` will wait until this block has completed before attempting to
     // use the socket logging variables. This is handled by the fact that we call `SInitialize` in main() which waits
@@ -302,6 +308,7 @@ void SFluentdLog(int priority, const char* typeTag, string&& message, const char
     record["source"] = "bedrock";
     record["request_id"] = SThreadLogPrefix;
     record["log_param"] = SThreadLogParam;
+    record["command"] = SThreadLogCommand;
     record["type_tag"] = typeTag;
     record["thread_name"] = SThreadLogName;
     record["file"] = file;
@@ -341,7 +348,7 @@ string SToHex(uint64_t value, int digits)
     return working;
 }
 
-string SToHex(const string& value)
+string SToHex(string_view value)
 {
     // Fill from front to back
     string working;
@@ -361,7 +368,7 @@ string SToHex(uint32_t value)
 }
 
 // --------------------------------------------------------------------------
-uint64_t SFromHex(const string& value)
+uint64_t SFromHex(string_view value)
 {
     // Convert one digit at a time
     uint64_t binValue = 0;
@@ -393,11 +400,11 @@ string SStrFromHex(const string& buffer)
     return retVal;
 }
 
-string SBase32HexStringFromBase32(const string& buffer)
+string SBase32HexStringFromBase32(string_view buffer)
 {
     static const char map[] = "QRSTUV\0\0\0\0\0\0\0\0\0""0123456789ABCDEFGHIJKLMNOP";
     static const int mapLength = sizeof(map);
-    string out = buffer;
+    string out = buffer.empty() ? "" : string(buffer);
     int shiftedIndex;
     for (size_t i = 0; i < out.size(); i++) {
         shiftedIndex = out[i] - 50;
@@ -446,9 +453,9 @@ bool SIContains(const string& lhs, const string& rhs)
     return SContains(SToLower(lhs), SToLower(rhs));
 }
 
-bool SStartsWith(const string& haystack, const string& needle)
+bool SStartsWith(string_view haystack, string_view needle)
 {
-    return SStartsWith(haystack.c_str(), haystack.size(), needle.c_str(), needle.size());
+    return needle.empty() || SStartsWith(haystack.data(), haystack.size(), needle.data(), needle.size());
 }
 
 bool SStartsWith(const char* haystack, size_t haystackSize, const char* needle, size_t needleSize)
@@ -460,32 +467,35 @@ bool SStartsWith(const char* haystack, size_t haystackSize, const char* needle, 
 }
 
 // --------------------------------------------------------------------------
-string STrim(const string& lhs)
+string STrim(string_view lhs)
 {
     // Just trim off the front and back whitespace
-    if (!lhs.empty()) {
-        const char* front(lhs.data());
-        const char* back(&lhs.back());
-        while (*front && isspace(*front)) {
-            ++front;
-        }
-        while (back > front && isspace(*back)) {
-            --back;
-        }
-        return string(front, ++back);
+    if (lhs.empty()) {
+        return "";
     }
-    return "";
+    size_t front = 0;
+    size_t back = lhs.size();
+    while (front < back && isspace(static_cast<unsigned char>(lhs[front]))) {
+        ++front;
+    }
+    while (back > front && isspace(static_cast<unsigned char>(lhs[back - 1]))) {
+        --back;
+    }
+    return string(lhs.substr(front, back - front));
 }
 
 // --------------------------------------------------------------------------
-string SCollapse(const string& lhs)
+string SCollapse(string_view lhs)
 {
     // Collapse all whitespace into a single space
     string out;
     out.reserve(lhs.size());
     bool inWhite = false;
-    for (const char* c(lhs.data()); *c; ++c) {
-        if (isspace(*c)) {
+    for (const char c : lhs) {
+        if (c == '\0') {
+            break;
+        }
+        if (isspace(static_cast<unsigned char>(c))) {
             // Only add if not already whitespace
             if (!inWhite) {
                 out += ' ';
@@ -493,7 +503,7 @@ string SCollapse(const string& lhs)
             inWhite = true;
         } else {
             // Not whitespace, add
-            out += *c;
+            out += c;
             inWhite = false;
         }
     }
@@ -501,42 +511,49 @@ string SCollapse(const string& lhs)
 }
 
 // --------------------------------------------------------------------------
-string SStrip(const string& lhs)
+string SStrip(string_view lhs)
 {
     // Strip out all non-printable characters
     string working;
     working.reserve(lhs.size());
-    for (const char* c(lhs.data()); *c; ++c) {
-        if (isprint(*c)) {
-            working += *c;
+    for (const char c : lhs) {
+        if (c == '\0') {
+            break;
+        }
+        if (isprint(static_cast<unsigned char>(c))) {
+            working += c;
         }
     }
     return working;
 }
 
 // --------------------------------------------------------------------------
-string SStrip(const string& lhs, const string& chars, bool charsAreSafe)
+string SStrip(string_view lhs, string_view chars, bool charsAreSafe)
 {
     // Strip out all unsafe characters
     string working;
     working.reserve(lhs.size());
-    for (const char* c(lhs.data()); *c; ++c) {
+    for (const char c : lhs) {
+        if (c == '\0') {
+            break;
+        }
         // If the characters are in the set and are safe, then add.
         // Otherwise, if the characters are unsafe but not in the set, still add.
-        bool inSet = (chars.find(*c) != string::npos);
+        bool inSet = (chars.find(c) != string_view::npos);
         if (inSet == charsAreSafe) {
-            working += *c;
+            working += c;
         }
     }
     return working;
 }
 
 // --------------------------------------------------------------------------
-string SEscape(const char* lhs, const string& unsafe, char escaper)
+string SEscape(const char* lhs, const string& unsafe, char escaper, size_t length)
 {
     // Escape all unsafe characters
     string working;
-    while (*lhs) {
+    size_t position = 0;
+    while (length ? position < length : *lhs) {
         // Insert an escape if an unsafe characater
         if (unsafe.find(*lhs) != string::npos || *lhs == escaper) {
             // Insert the escape
@@ -564,6 +581,7 @@ string SEscape(const char* lhs, const string& unsafe, char escaper)
             working += *lhs;
         }
         ++lhs;
+        ++position;
     }
     return working;
 }
@@ -657,18 +675,21 @@ string SUnescape(const char* lhs, char escaper)
 }
 
 // --------------------------------------------------------------------------
-string SReplace(const string& value, const string& find, const string& replace)
+string SReplace(string_view value, string_view find, string_view replace)
 {
+    if (value.empty()) {
+        return "";
+    }
     // What are you trying to pull sending an empty string here?
     if (find.empty()) {
-        return value;
+        return string(value);
     }
 
     // Look for first match
     size_t pos = value.find(find);
-    if (pos == string::npos) {
+    if (pos == string_view::npos) {
         // No matches, return original
-        return value;
+        return string(value);
     }
 
     // Reserve a reasonable size (use value.size() as minimum, will grow if needed)
@@ -679,20 +700,20 @@ string SReplace(const string& value, const string& find, const string& replace)
     size_t lastPos = 0;
     do
     {
-        // Append text before match using pointers (avoids substr)
-        out.append(value.data() + lastPos, pos - lastPos);
+        // Append text before match without copying it into a temporary string
+        out.append(value.substr(lastPos, pos - lastPos));
         out.append(replace);
         lastPos = pos + find.size();
         pos = value.find(find, lastPos);
-    } while (pos != string::npos);
+    } while (pos != string_view::npos);
 
     // Append remaining text
-    out.append(value.data() + lastPos, value.size() - lastPos);
+    out.append(value.substr(lastPos));
     return out;
 }
 
 // --------------------------------------------------------------------------
-string SReplaceAllBut(const string& value, const string& safeChars, char replaceChar)
+string SReplaceAllBut(string_view value, string_view safeChars, char replaceChar)
 {
     // Build a lookup table for O(1) character checking
     bool isSafe[256] = {false};
@@ -710,7 +731,7 @@ string SReplaceAllBut(const string& value, const string& safeChars, char replace
 }
 
 // --------------------------------------------------------------------------
-string SReplaceAll(const string& value, const string& unsafeChars, char replaceChar)
+string SReplaceAll(string_view value, string_view unsafeChars, char replaceChar)
 {
     // Build a lookup table for O(1) character checking
     bool isUnsafe[256] = {false};
@@ -728,7 +749,7 @@ string SReplaceAll(const string& value, const string& unsafeChars, char replaceC
 }
 
 // --------------------------------------------------------------------------
-int SStateNameToInt(const char* states[], const string& stateName, unsigned int numStates)
+int SStateNameToInt(const char* states[], string_view stateName, unsigned int numStates)
 {
     // Converts an array of state names back to the index
     for (int i = 0; i < (int) numStates; i++) {
@@ -740,7 +761,7 @@ int SStateNameToInt(const char* states[], const string& stateName, unsigned int 
 }
 
 // --------------------------------------------------------------------------
-bool SConstantTimeEquals(const string& secret, const string& userInput)
+bool SConstantTimeEquals(string_view secret, string_view userInput)
 {
     // If one (and only one) of the parameters is zero length, fail now.  This
     // leaks no timing information and keeps us from having to worry about
@@ -768,7 +789,7 @@ bool SConstantTimeIEquals(const string& secret, const string& userInput)
 }
 
 // --------------------------------------------------------------------------
-list<int64_t> SParseIntegerList(const string& value, char separator)
+list<int64_t> SParseIntegerList(string_view value, char separator)
 {
     list<int64_t> valueList;
     list<string> strings = SParseList(value, separator);
@@ -779,7 +800,7 @@ list<int64_t> SParseIntegerList(const string& value, char separator)
 }
 
 // --------------------------------------------------------------------------
-set<int64_t> SParseIntegerSet(const string& value, char separator)
+set<int64_t> SParseIntegerSet(string_view value, char separator)
 {
     set<int64_t> valueSet;
     list<string> strings = SParseList(value, separator);
@@ -790,7 +811,7 @@ set<int64_t> SParseIntegerSet(const string& value, char separator)
 }
 
 // --------------------------------------------------------------------------
-vector<int64_t> SParseIntegerVector(const string& value, char separator)
+vector<int64_t> SParseIntegerVector(string_view value, char separator)
 {
     vector<int64_t> valueVector;
     list<string> strings = SParseList(value, separator);
@@ -801,19 +822,23 @@ vector<int64_t> SParseIntegerVector(const string& value, char separator)
 }
 
 // --------------------------------------------------------------------------
-bool SParseList(const char* ptr, list<string>& valueList, char separator)
+bool SParseList(string_view value, list<string>& valueList, char separator)
 {
     // Clear the input
     valueList.clear();
 
     // Walk across the string and break into comma/whitespace delimited substrings
     string component;
-    while (*ptr) {
+    for (const char character : value) {
+        if (character == '\0') {
+            break;
+        }
+
         // Is this the start of a new string?  If so, ignore to trim leading whitespace.
-        if (component.empty() && *ptr == ' ') {
+        if (component.empty() && character == ' ') {
         }
         // Is this a delimiter?  If so, let's add our current component to the list and start a new one
-        else if (*ptr == separator) {
+        else if (character == separator) {
             // Only add if the component is non-empty
             if (!component.empty()) {
                 valueList.push_back(component);
@@ -822,11 +847,8 @@ bool SParseList(const char* ptr, list<string>& valueList, char separator)
         }
         // Otherwise, add to the working component
         else {
-            component += *ptr;
+            component += character;
         }
-
-        // Finally, go to the next character
-        ++ptr;
     }
 
     // Reached the end of the string; if we are working on a component, add it
@@ -839,7 +861,7 @@ bool SParseList(const char* ptr, list<string>& valueList, char separator)
 }
 
 // --------------------------------------------------------------------------
-set<string> SParseSet(const string& value, char separator)
+set<string> SParseSet(string_view value, char separator)
 {
     set<string> valueSet;
     list<string> strings = SParseList(value, separator);
@@ -938,6 +960,18 @@ void _SParseHTTP_GetUpToEnd(const char* start, const char* end, string& out)
 }
 
 // --------------------------------------------------------------------------
+void SSetHTTPHeader(STable& headers, const string& name, string_view value)
+{
+    // SComposeHTTP uses this separator to write each Set-Cookie value as a separate header.
+    auto existing = headers.find(name);
+    if (existing != headers.end() && SIEquals(name, "Set-Cookie")) {
+        existing->second += S_COOKIE_SEPARATOR;
+        existing->second.append(value);
+    } else {
+        headers[name] = SUnescape(string(value));
+    }
+}
+
 int SParseHTTP(const char* buffer, size_t length, string& methodLine, STable& nameValueMap, string& content)
 {
     // Clear the output
@@ -1104,24 +1138,7 @@ int SParseHTTP(const char* buffer, size_t length, string& methodLine, STable& na
                         while (*(valueEnd - 1) == ' ') {
                             --valueEnd;
                         }
-                        int valueLength = (int) (valueEnd - valueStart);
-                        string value;
-                        if (valueLength > 0) {
-                            // Copy the value
-                            value.resize(valueLength);
-                            memcpy(&value[0], valueStart, valueLength);
-                        }
-
-                        // Store the result.  If there's something already
-                        // there just override, with the exception of
-                        // Set-Cookie: generate a crappy list with 0xFF
-                        // separation.  (See SComposeHTTP for explanation.)
-                        STable::iterator it = nameValueMap.find(name);
-                        if (it == nameValueMap.end() || !SIEquals(name, "Set-Cookie")) {
-                            nameValueMap[name] = SUnescape(value); // strip any slash-escaping
-                        } else {
-                            nameValueMap[name] = it->second + S_COOKIE_SEPARATOR + value;
-                        }
+                        SSetHTTPHeader(nameValueMap, name, valueStart < valueEnd ? string_view(valueStart, valueEnd - valueStart) : string_view());
                     }
                 }
             }
@@ -1338,14 +1355,32 @@ void SComposeHTTP(string& buffer, const string& methodLine, const STable& nameVa
     buffer.clear();
 
     // Validate methodLine before adding it to the buffer to avoid control characters
+    bool invalidCharsInMethodLine = false;
     for (const unsigned char c : methodLine) {
         if (c != 9 && (c < 32 || c == 127)) {
-            STHROW("Invalid control character ascii(" + to_string(static_cast<int>(c)) + ") in methodLine");
+            invalidCharsInMethodLine = true;
         }
     }
+    string methodLineToUse;
+    if (invalidCharsInMethodLine) {
+        methodLineToUse = SEncodeURIComponent(methodLine, true);
+    } else {
+        methodLineToUse = methodLine;
+    }
 
-    buffer += methodLine + "\r\n";
+    buffer += methodLineToUse + "\r\n";
+
+    // Keep the requestID ahead of potentially large request parameters.
+    const auto requestID = nameValueMap.find("requestID");
+    if (requestID != nameValueMap.end()) {
+        buffer += requestID->first + ": " + SEscape(requestID->second, "\r\n\t") + "\r\n";
+    }
+
     for (pair<string, string> item : nameValueMap) {
+        if (SIEquals("requestID", item.first)) {
+            continue;
+        }
+
         if (SIEquals("Set-Cookie", item.first)) {
             // Parse this list and generate a separate cookie for each.
             // Technically, this shouldn't be necessary: RFC2109 section 4.2.2
@@ -1407,7 +1442,7 @@ string SComposePOST(const STable& nameValueMap)
 }
 
 // --------------------------------------------------------------------------
-bool SParseHost(const string& host, string& domain, uint16_t& port)
+bool SParseHost(string_view host, string& domain, uint16_t& port)
 {
     // Split around the ':'
     domain = SBefore(host, ":");
@@ -1426,7 +1461,7 @@ bool SParseHost(const string& host, string& domain, uint16_t& port)
 }
 
 // --------------------------------------------------------------------------
-string SEncodeURIComponent(const string& value)
+string SEncodeURIComponent(string_view value, bool keepSpaces)
 {
     // Construct an encoded version.  According to:
     // http://developer.mozilla.org/en/docs/Core_JavaScript_1.5_Reference:Global_Functions:encodeURIComponent
@@ -1441,8 +1476,7 @@ string SEncodeURIComponent(const string& value)
         } else {
             switch (ch) {
                 case ' ':
-                    // Unsafe character, replace
-                    working += '+';
+                    working += keepSpaces ? ' ' : '+';
                     break;
 
                 case '-':
@@ -1486,8 +1520,6 @@ string SDecodeURIComponent(const char* buffer, int length)
 }
 
 // --------------------------------------------------------------------------
-const char* _SParseJSONValue(const char* ptr, const char* end, string& value, bool populateValue, const string& nullValue);
-
 string SToJSON(const int64_t value, const bool forceString)
 {
     return SToJSON(to_string(value), forceString);
@@ -1521,22 +1553,24 @@ string SToJSON(const string& value, const bool forceString)
     // Is it already a JSON array or object?
     if (!forceString && value.size() >= 2 &&
         ((value[0] == '[' && value[value.size() - 1] == ']') || (value[0] == '{' && value[value.size() - 1] == '}'))) {
-        // If we can parse it, then return the array or object.
-        string ignore;
-        const char* ptr = value.c_str();
-        const char* end = ptr + value.size();
-        const char* parseEnd = _SParseJSONValue(ptr, end, ignore, false, "null");
-        if (parseEnd == end) { // Parsed it all.
-            return value;
+        // Preserve the original formatting when the shared parser accepts the complete value.
+        // Reject embedded NULs so the parser cannot accept just a valid prefix.
+        if (value.find('\0') == string::npos) {
+            try {
+                JSON::Value::parse(value);
+                return value;
+            } catch (const JSON::InvalidArgument&) {
+                // Invalid JSON is escaped as a string below.
+            }
         }
     }
 
     // Otherwise, it's a string -- escape and return
     // We need to escape all control characters in the string, not just the white-space control characters.
-    return "\"" + SEscape(value, "\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f"
-                                 "\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f\x7f\"\\/",
-                          '\\') +
-           "\"";
+    const string escaped = SEscape(value.c_str(), "\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f"
+                                         "\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f\x7f\"\\/",
+                                   '\\', value.size());
+    return "\"" + SReplace(escaped, string(1, '\0'), "\\u0000") + "\"";
 }
 
 // --------------------------------------------------------------------------
@@ -1555,297 +1589,7 @@ string SComposeJSONObject(const STable& nameValueMap, const bool forceString)
 }
 
 // --------------------------------------------------------------------------
-#define _JSONWS()                                                                                                      \
-        do {                                                                                                               \
-            while (ptr < end && isspace(*ptr))                                                                             \
-            ++ptr;                                                                                                     \
-            if (ptr >= end)                                                                                                \
-            return ptr;                                                                                                \
-        } while (0)
-#define _JSONTEST(_CH_)                                                                                                \
-        do {                                                                                                               \
-            if (ptr >= end || *ptr != _CH_) {                                                                              \
-                if (ptr >= end)                                                                                            \
-                SDEBUG("Expecting: '" << _CH_ << "', found 'eol'");                                                    \
-                else                                                                                                       \
-                SDEBUG("Expecting: '" << _CH_ << "', found '" << ptr << "'");                                          \
-                return NULL;                                                                                               \
-            }                                                                                                              \
-            ++ptr;                                                                                                         \
-        } while (0)
-#define _JSONASSERTPTR()                                                                                               \
-        do {                                                                                                               \
-            if (ptr == NULL)                                                                                               \
-            return NULL;                                                                                               \
-        } while (0)
-//#define _JSONLOG( ) do { cout << __LINE__ << ": " << ptr << endl; } while(0)
-#define _JSONLOG()                                                                                                     \
-        do {                                                                                                               \
-        } while (0)
-const char* _SParseJSONString(const char* ptr, const char* end, string& out, bool populateOut)
-{
-    SASSERT(ptr && end);
-    SASSERT(*ptr);
-    _JSONLOG();
-    // Walk across and find the end quote
-    _JSONWS();
-    _JSONTEST('"');
-    const char* strStart = ptr;
-    for (; ptr < end && *ptr; ++ptr) {
-        // Found the end of this string
-        if (*ptr == '"') {
-            break;
-        }
-        // We want to skip all escaped characters so we don't mistakenly count
-        // an escaped double-quote as the actual end.
-        else if (*ptr == '\\') {
-            ++ptr;
-        }
-    }
-    _JSONTEST('"');
-
-    if (populateOut) {
-        string strOut(strStart, ptr - strStart - 1);
-        out += SUnescape(strOut.c_str(), '\\');
-    }
-    return ptr;
-}
-
-// --------------------------------------------------------------------------
-const char* _SParseJSONArray(const char* ptr, const char* end, list<string>& out, bool populateOut, const string& nullValue)
-{
-    SASSERT(ptr && end);
-    SASSERT(*ptr);
-    _JSONLOG();
-    // Walk across the array
-    _JSONWS();
-    _JSONTEST('[');
-    _JSONWS();
-    if (*ptr == ']') {
-        return ptr + 1; // Empty array
-    }
-    while (true) {
-        // Find the value
-        _JSONWS();
-        string value;
-        ptr = _SParseJSONValue(ptr, end, value, populateOut, nullValue);
-        _JSONASSERTPTR(); // Make sure no parse error.
-        if (populateOut) {
-            out.push_back(value);
-        }
-        _JSONLOG();
-
-        // See if we're done
-        _JSONWS();
-        if (*ptr == ']') {
-            return ptr + 1; // Done
-        }
-        _JSONTEST(',');
-    }
-}
-
-// --------------------------------------------------------------------------
-const char* _SParseJSONObject(const char* ptr, const char* end, STable& out, bool populateOut, const string& nullValue, const function<void(const string&, const string&)>& callback = [] (const string&, const string&){})
-{
-    SASSERT(ptr && end);
-    SASSERT(*ptr);
-    _JSONLOG();
-    // Walk across the name value table
-    _JSONWS();
-    _JSONTEST('{');
-    _JSONWS();
-    if (*ptr == '}') {
-        return ptr + 1; // Empty object
-    }
-    while (true) {
-        // Find the name
-        _JSONWS();
-        string name;
-        ptr = _SParseJSONString(ptr, end, name, populateOut);
-        _JSONASSERTPTR(); // Make sure no parse error.
-        _JSONWS();
-        _JSONTEST(':');
-
-        // Find the value
-        _JSONWS();
-        string value;
-        ptr = _SParseJSONValue(ptr, end, value, populateOut, nullValue);
-        _JSONASSERTPTR(); // Make sure no parse error.
-        if (populateOut) {
-            // Got one more
-            out[name] = value;
-            callback(name, value);
-        }
-        _JSONLOG();
-
-        // See if we're done
-        _JSONWS();
-        if (*ptr == '}') {
-            return ptr + 1; // Finished this object
-        }
-        _JSONTEST(',');
-    }
-}
-
-// --------------------------------------------------------------------------
-const char* _SParseJSONValue(const char* ptr, const char* end, string& value, bool populateValue, const string& nullValue)
-{
-    _JSONLOG();
-    // Classify based on the first character
-    _JSONWS();
-    switch (*ptr) {
-        case '"': {
-            // String
-            ptr = _SParseJSONString(ptr, end, value, populateValue);
-            _JSONASSERTPTR(); // Make sure no parse error.
-            break;
-        }
-
-        case '{': {
-            // Object -- just grab the string representation.
-            STable ignore;
-            const char* valueStart = ptr;
-            ptr = _SParseJSONObject(ptr, end, ignore, false, nullValue);
-            _JSONASSERTPTR(); // Make sure no parse error.
-            if (populateValue) {
-                value.resize(ptr - valueStart);
-                memcpy(&value[0], valueStart, ptr - valueStart);
-            }
-            break;
-        }
-
-        case '[': {
-            // Array -- just grab the string representation.
-            list<string> ignore;
-            const char* valueStart = ptr;
-            ptr = _SParseJSONArray(ptr, end, ignore, false, nullValue);
-            _JSONASSERTPTR(); // Make sure no parse error.
-            if (populateValue) {
-                value.resize(ptr - valueStart);
-                memcpy(&value[0], valueStart, ptr - valueStart);
-            }
-            break;
-        }
-
-        default: {
-            // Maybe a number?
-            if (isdigit(*ptr) || (*ptr == '-' && ptr + 1 < end && isdigit(*(ptr + 1)))) {
-                // Parse this number
-                const char* numStart = ptr;
-
-                // Maybe a negative value?
-                if (*ptr == '-') {
-                    ++ptr;
-                }
-                while (ptr < end && isdigit(*ptr)) {
-                    ++ptr;
-                }
-
-                // Maybe a float value?
-                if (*ptr == '.') {
-                    ++ptr;
-                    while (ptr < end && isdigit(*ptr)) {
-                        ++ptr;
-                    }
-                }
-
-                // Maybe a scientific notation value?
-                if (*ptr == 'e' || *ptr == 'E') {
-                    ++ptr;
-                    if (*ptr == '-' || *ptr == '+') {
-                        ++ptr;
-                    }
-                    while (ptr < end && isdigit(*ptr)) {
-                        ++ptr;
-                    }
-                }
-
-                if (populateValue) {
-                    value.resize(ptr - numStart);
-                    memcpy(&value[0], numStart, ptr - numStart);
-                }
-            } else if (!strncmp(ptr, "true", 4)) {
-                // Found boolean true
-                if (populateValue) {
-                    value = "true";
-                }
-                ptr += 4; // strlen(true)
-            } else if (!strncmp(ptr, "false", 5)) {
-                // Found boolean false
-                if (populateValue) {
-                    value = "false";
-                }
-                ptr += 5; // strlen(false)
-            } else if (!strncmp(ptr, "null", 4)) {
-                // Found null
-                if (populateValue) {
-                    value = nullValue;
-                }
-                ptr += 4; // strlen(null)
-            }
-            // else unsupported, ignore
-            break;
-        }
-    }
-
-    // Done
-    return ptr;
-}
-
-STable SParseJSONObject(const string& object, const string& nullValue, const function<void(const string&, const string&)>& callback)
-{
-    // Assume it's an object
-    STable out;
-    if (object.size() < 2) {
-        return out;
-    }
-    const char* ptr = object.c_str();
-    const char* end = ptr + object.size();
-    const char* parseEnd = _SParseJSONObject(ptr, end, out, true, nullValue, callback);
-
-    // Trim trailing whitespace
-    while (parseEnd && parseEnd < end && *parseEnd && isspace(*parseEnd)) {
-        ++parseEnd;
-    }
-
-    // Did we parse it all?  If not, return nothing.
-    if (parseEnd < end) {
-        // Did not parse it all.
-        if (parseEnd) {
-            SWARN("Incomplete parse at:" << parseEnd << "(" << (int) (end - parseEnd) << ", ch:" << (int) (*parseEnd)
-                  << ")");
-        } else {
-            SWARN("Malformed JSON (" << out.size() << " entries parsed)");
-        }
-        return STable();
-    }
-    return out;
-}
-
-// --------------------------------------------------------------------------
-list<string> SParseJSONArray(const string& array, const string& nullValue)
-{
-    // Assume it's an array
-    list<string> out;
-    if (array.size() < 2) {
-        return out;
-    }
-    const char* ptr = array.c_str();
-    const char* end = ptr + array.size();
-    const char* parseEnd = _SParseJSONArray(ptr, end, out, true, nullValue);
-    while (parseEnd && isspace(*parseEnd)) {
-        // Skip trailing whitespace.
-        parseEnd++;
-    }
-    if (parseEnd != end) {
-        // Did not parse it all.
-        return list<string>();
-    }
-    return out;
-}
-
-// --------------------------------------------------------------------------
-string SGZip(const string& content)
+string SGZip(string_view content)
 {
     z_stream stream;
 
@@ -1853,7 +1597,7 @@ string SGZip(const string& content)
     stream.zfree = Z_NULL;
     stream.opaque = Z_NULL;
 
-    stream.next_in = (unsigned char*) content.c_str();
+    stream.next_in = (unsigned char*) (content.empty() ? "" : content.data());
     stream.avail_in = (unsigned int) content.size();
 
     int GZIP_ENCODING = 16;
@@ -1896,7 +1640,7 @@ string SGZip(const string& content)
     }
 }
 
-string SGUnzip(const string& content)
+string SGUnzip(string_view content)
 {
     const int CHUNK = 16384;
     int status;
@@ -1918,7 +1662,7 @@ string SGUnzip(const string& content)
     }
 
     strm.avail_in = (decltype(strm.avail_in)) content.size();
-    strm.next_in = (unsigned char*) content.c_str();
+    strm.next_in = (unsigned char*) (content.empty() ? "" : content.data());
 
     do
     {
@@ -1951,53 +1695,90 @@ string SGUnzip(const string& content)
 /////////////////////////////////////////////////////////////////////////////
 
 // --------------------------------------------------------------------------
-int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking)
+bool SIPToAddr(const string& host, sockaddr_in& addr)
+{
+    string domain;
+    uint16_t port = 0;
+    if (!SParseHost(host, domain, port)) {
+        return false;
+    }
+
+    // Is the domain just a raw IP? Then there's nothing to look up.
+    unsigned int ip = inet_addr(domain.c_str());
+    if (!ip || ip == INADDR_NONE) {
+        return false;
+    }
+
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(port);
+    addr.sin_addr.s_addr = ip;
+    return true;
+}
+
+bool SResolveHost(const string& host, sockaddr_in& addr)
+{
+    if (SIPToAddr(host, addr)) {
+        return true;
+    }
+
+    string domain;
+    uint16_t port = 0;
+    if (!SParseHost(host, domain, port)) {
+        SWARN("Failed to resolve '" << host << "': invalid host.");
+        return false;
+    }
+
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(port);
+
+    auto start = chrono::steady_clock::now();
+
+    struct addrinfo hints;
+    memset(&hints, 0, sizeof hints);
+    struct addrinfo* resolved = nullptr;
+    hints.ai_family = AF_INET; // IPv4
+    hints.ai_socktype = SOCK_STREAM;
+
+    int result = getaddrinfo(domain.c_str(), to_string(port).c_str(), &hints, &resolved);
+    auto elapsed = chrono::duration_cast<chrono::milliseconds>(chrono::steady_clock::now() - start);
+    SINFO("DNS lookup took " << elapsed.count() << "ms for '" << domain << "'.");
+
+    if (result || !resolved) {
+        freeaddrinfo(resolved);
+        SWARN("Failed to resolve '" << host << "': can't resolve host error no#" << SToStr(result));
+        return false;
+    }
+
+    sockaddr_in* resolvedAddr = (sockaddr_in*) resolved->ai_addr;
+    addr.sin_addr.s_addr = resolvedAddr->sin_addr.s_addr;
+    freeaddrinfo(resolved);
+
+    return true;
+}
+
+// --------------------------------------------------------------------------
+int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking, int* errorCode)
+{
+    sockaddr_in addr;
+    if (!SResolveHost(host, addr)) {
+        // There's no socket call to report on yet, so this is whatever the lookup left behind.
+        if (errorCode) {
+            *errorCode = S_errno;
+        }
+        return -1;
+    }
+    return S_socket(addr, isTCP, isPort, isBlocking, errorCode);
+}
+
+// --------------------------------------------------------------------------
+int S_socket(const sockaddr_in& addr, bool isTCP, bool isPort, bool isBlocking, int* errorCode)
 {
     // Try to set up the socket
     int s = -1;
+    int socketError = 0;
     try {
-        // First, just parse the host
-        string domain;
-        uint16_t port = 0;
-        if (!SParseHost(host, domain, port)) {
-            STHROW("invalid host: " + host);
-        }
-
-        // Is the domain just a raw IP?
-        unsigned int ip = inet_addr(domain.c_str());
-        if (!ip || ip == INADDR_NONE) {
-            // Nope -- resolve the domain
-            uint64_t start = STimeNow();
-
-            // Allocate and initialize addrinfo structures.
-            struct addrinfo hints;
-            memset(&hints, 0, sizeof hints);
-            struct addrinfo* resolved = nullptr;
-
-            // Set up the hints.
-            hints.ai_family = AF_INET; // IPv4
-            hints.ai_socktype = SOCK_STREAM;
-
-            // Do the initialization.
-            int result = getaddrinfo(domain.c_str(), to_string(port).c_str(), &hints, &resolved);
-            SINFO("DNS lookup took " << (STimeNow() - start) / 1000 << "ms for '" << domain << "'.");
-
-            // There was a problem.
-            if (result || !resolved) {
-                freeaddrinfo(resolved);
-                STHROW("can't resolve host error no#" + SToStr(result));
-            }
-            // Grab the resolved address.
-            sockaddr_in* addr = (sockaddr_in*) resolved->ai_addr;
-            ip = addr->sin_addr.s_addr;
-            char plainTextIP[INET_ADDRSTRLEN];
-            inet_ntop(AF_INET, &addr->sin_addr, plainTextIP, INET_ADDRSTRLEN);
-            SINFO("Resolved " << domain << " to ip: " << plainTextIP << ".");
-
-            // Done resolving.
-            freeaddrinfo(resolved);
-        }
-
         // Open a socket
         if (isTCP) {
             s = (int) socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
@@ -2005,6 +1786,7 @@ int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking)
             s = (int) socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
         }
         if (s == -1) {
+            socketError = S_errno;
             STHROW("couldn't open");
         }
 
@@ -2014,7 +1796,12 @@ int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking)
         if (!isBlocking) {
             // Set non-blocking
             int flags = fcntl(s, F_GETFL);
-            if ((flags < 0) || fcntl(s, F_SETFL, flags | O_NONBLOCK)) {
+            if (flags < 0) {
+                socketError = S_errno;
+                STHROW("couldn't set non-blocking");
+            }
+            if (fcntl(s, F_SETFL, flags | O_NONBLOCK)) {
+                socketError = S_errno;
                 STHROW("couldn't set non-blocking");
             }
         }
@@ -2024,30 +1811,23 @@ int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking)
             // Enable port reuse (so we don't have TIME_WAIT binding issues) and
             u_long enable = 1;
             if (setsockopt(s, SOL_SOCKET, SO_REUSEADDR, (char*) &enable, sizeof(enable))) {
+                socketError = S_errno;
                 STHROW("couldn't set REUSEADDR");
             }
 
             // Bind to the configured port
-            sockaddr_in addr;
-            memset(&addr, 0, sizeof(addr));
-            addr.sin_family = AF_INET;
-            addr.sin_port = htons(port);
-            addr.sin_addr.s_addr = ip;
             if (::bind(s, (sockaddr*) &addr, sizeof(addr))) {
+                socketError = S_errno;
                 STHROW("couldn't bind");
             }
 
             // Start listening, if TCP
             if (isTCP && listen(s, SOMAXCONN)) {
+                socketError = S_errno;
                 STHROW("couldn't listen");
             }
         } else {
             // If TCP, connect
-            sockaddr_in addr;
-            memset(&addr, 0, sizeof(addr));
-            addr.sin_family = AF_INET;
-            addr.sin_port = htons(port);
-            addr.sin_addr.s_addr = ip;
             if (connect(s, (sockaddr*) &addr, sizeof(addr)) == -1) {
                 switch (S_errno) {
                     case S_EWOULDBLOCK:
@@ -2059,6 +1839,7 @@ int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking)
                         break;
 
                     default:
+                        socketError = S_errno;
                         STHROW("couldn't connect");
                 }
             }
@@ -2067,9 +1848,13 @@ int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking)
         // Success, ready to go.
         return s;
     } catch (const SException& e) {
+        int error = socketError ? socketError : S_errno;
         // Failed to open
-        SWARN("Failed to open " << (isTCP ? "TCP" : "UDP") << (isPort ? " port" : " socket") << " '" << host
-              << "': " << e.what() << "(errno=" << S_errno << " '" << strerror(S_errno) << "')");
+        SWARN("Failed to open " << (isTCP ? "TCP" : "UDP") << (isPort ? " port" : " socket") << " '" << addr
+              << "': " << e.what() << "(errno=" << error << " '" << strerror(error) << "')");
+        if (errorCode) {
+            *errorCode = error;
+        }
         if (s != -1) {
             S_close(&s);
         }
@@ -2258,6 +2043,9 @@ bool S_recvappend(int s, SFastBuffer& recvBuffer)
         }
     }
 
+    // Save errno from the recvfrom() that ended the loop, before the string building below can overwrite it.
+    const int recvErrno = errno;
+
     // See how we finished
     if (numRecv == 0) {
         return false; // Graceful shutdown; socket closed
@@ -2265,7 +2053,7 @@ bool S_recvappend(int s, SFastBuffer& recvBuffer)
     // Some kind of error -- what happened?
     stringstream addrStr;
     addrStr << fromAddr;
-    return SCheckNetworkErrorType("recv", addrStr.str(), S_errno);
+    return SCheckNetworkErrorType("recv", addrStr.str(), recvErrno);
 }
 
 // --------------------------------------------------------------------------
@@ -2287,9 +2075,15 @@ bool S_sendconsume(int s, SFastBuffer& sendBuffer)
 
     // Send as much as we can
     ssize_t numSent = send(s, sendBuffer.c_str(), sendBuffer.size(), MSG_NOSIGNAL);
+
+    // Save errno before anything else runs. Both strerror() and getpeername() can overwrite it, and the order in
+    // which function arguments are evaluated is unspecified, so reading errno inline at a call site can yield the
+    // errno of a sibling argument instead of the one from send().
+    const int sendErrno = errno;
+
     string errorMessage;
     if (numSent == -1) {
-        errorMessage = " Error: "s + strerror(errno);
+        errorMessage = " Error: "s + strerror(sendErrno);
     }
 
     if (numSent > 0) {
@@ -2303,13 +2097,13 @@ bool S_sendconsume(int s, SFastBuffer& sendBuffer)
 
     // If we failed to send with over 1GB in the buffer, return false, even if the error would normally be non-fatal.
     if (sendBuffer.size() > 1024 * 1024 * 1024) {
-        SWARN("send() failed with response '" << strerror(errno) << "' (#" << errno << "), and buffer size: "
+        SWARN("send() failed with response '" << strerror(sendErrno) << "' (#" << sendErrno << "), and buffer size: "
               << sendBuffer.size() << ", closing.");
         return false;
     }
 
     // Error, what kind?
-    return SCheckNetworkErrorType("send", SGetPeerName(s), S_errno);
+    return SCheckNetworkErrorType("send", SGetPeerName(s), sendErrno);
 }
 
 void SFDset(fd_map& fdm, int socket, short evts)
@@ -2379,14 +2173,21 @@ string SGetHostName()
 // --------------------------------------------------------------------------
 string SGetPeerName(int s)
 {
+    // Callers commonly use this to describe a socket while reporting an error from a different syscall, so this
+    // must leave errno exactly as it found it.
+    const int callerErrno = errno;
+
     // Just call the function that does this
     sockaddr_in addr{};
     socklen_t socklen = sizeof(addr);
     int result = getpeername(s, (sockaddr*) &addr, &socklen);
+    const int peerNameErrno = errno;
+    errno = callerErrno;
+
     if (result == 0) {
         return SToStr(addr);
     } else {
-        return "(errno#" + SToStr(S_errno) + ")";
+        return "(errno#" + SToStr(peerNameErrno) + ")";
     }
 }
 
@@ -2636,19 +2437,19 @@ uint64_t SFileSize(const string& path)
 // Cryptography stuff
 /////////////////////////////////////////////////////////////////////////////
 
-string SHashSHA1(const string& buffer)
+string SHashSHA1(string_view buffer)
 {
     string result;
     result.resize(20);
-    mbedtls_sha1((unsigned char*) buffer.c_str(), buffer.size(), (unsigned char*) &result[0]);
+    mbedtls_sha1((unsigned char*) (buffer.empty() ? "" : buffer.data()), buffer.size(), (unsigned char*) &result[0]);
     return result;
 }
 
-string SHashSHA256(const string& buffer)
+string SHashSHA256(string_view buffer)
 {
     string result;
     result.resize(32);
-    mbedtls_sha256((unsigned char*) buffer.c_str(), buffer.size(), (unsigned char*) &result[0], 0);
+    mbedtls_sha256((unsigned char*) (buffer.empty() ? "" : buffer.data()), buffer.size(), (unsigned char*) &result[0], 0);
     return result;
 }
 
@@ -2667,9 +2468,9 @@ string SEncodeBase64(const unsigned char* buffer, size_t size)
     return out;
 }
 
-string SEncodeBase64(const string& bufferString)
+string SEncodeBase64(string_view bufferString)
 {
-    return SEncodeBase64((unsigned char*) bufferString.c_str(), bufferString.size());
+    return SEncodeBase64((unsigned char*) (bufferString.empty() ? "" : bufferString.data()), bufferString.size());
 }
 
 // --------------------------------------------------------------------------
@@ -2686,13 +2487,13 @@ string SDecodeBase64(const unsigned char* buffer, size_t size)
     return out;
 }
 
-string SDecodeBase64(const string& bufferString)
+string SDecodeBase64(string_view bufferString)
 {
-    return SDecodeBase64((unsigned char*) bufferString.c_str(), bufferString.size());
+    return SDecodeBase64((unsigned char*) (bufferString.empty() ? "" : bufferString.data()), bufferString.size());
 }
 
 // --------------------------------------------------------------------------
-string SHMACSHA1(const string& key, const string& buffer)
+string SHMACSHA1(string_view key, string_view buffer)
 {
     // See: http://en.wikipedia.org/wiki/HMAC
 
@@ -2712,7 +2513,7 @@ string SHMACSHA1(const string& key, const string& buffer)
 }
 
 // --------------------------------------------------------------------------
-string SHMACSHA256(const string& key, const string& buffer)
+string SHMACSHA256(string_view key, string_view buffer)
 {
     // See: http://en.wikipedia.org/wiki/HMAC
 
@@ -2736,7 +2537,7 @@ string SHMACSHA256(const string& key, const string& buffer)
 /////////////////////////////////////////////////////////////////////////////
 
 // --------------------------------------------------------------------------
-string SQList(const string& val, bool integersOnly)
+string SQList(string_view val, bool integersOnly)
 {
     // Parse and verify
     list<string> dirtyList;
@@ -2800,9 +2601,62 @@ void SQueryLogClose()
     }
 }
 
+struct QueryBusyWait;
+static thread_local QueryBusyWait* currentQueryBusyWait = nullptr;
+
+struct QueryBusyWait
+{
+    sqlite3* db;
+    uint64_t elapsedUS = 0;
+    size_t retries = 0;
+    bool isExhausted = false;
+    QueryBusyWait* previous;
+
+    explicit QueryBusyWait(sqlite3* connection) : db(connection), previous(currentQueryBusyWait)
+    {
+        currentQueryBusyWait = this;
+    }
+
+    ~QueryBusyWait()
+    {
+        currentQueryBusyWait = previous;
+    }
+
+    void logRecovery(int error) const
+    {
+        if (error == SQLITE_OK && retries && !isExhausted) {
+            SINFO("SQLite busy contention cleared after " << elapsedUS << "us of waiting across " << retries << " retries.");
+        }
+    }
+};
+
+int SQueryBusyHandler(void* context, int count)
+{
+    // SQLite's native busy timeout starts with these delays; cap the final sleep at the remaining 50ms budget.
+    static constexpr int delaysMS[] = {1, 2, 5, 10, 15, 17};
+    QueryBusyWait* wait = currentQueryBusyWait;
+    if (wait && wait->db != static_cast<sqlite3*>(context)) {
+        wait = nullptr;
+    }
+    if (count >= static_cast<int>(size(delaysMS))) {
+        if (wait) {
+            wait->isExhausted = true;
+        }
+        return 0;
+    }
+
+    const auto start = chrono::steady_clock::now();
+    this_thread::sleep_for(chrono::milliseconds(delaysMS[count]));
+    if (wait) {
+        wait->elapsedUS += chrono::duration_cast<chrono::microseconds>(chrono::steady_clock::now() - start).count();
+        wait->retries++;
+    }
+    return 1;
+}
+
 // --------------------------------------------------------------------------
 // Executes a SQLite query
-int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThreshold, bool skipInfoWarn, sqlite3_qrf_spec* spec, const map<string, SQliteParameter>& params, string* expandedSql)
+int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThreshold, bool skipInfoWarn, sqlite3_qrf_spec* spec, const map<string, SQliteParameter>& params, string* expandedSql, bool readOnly)
 {
 #define MAX_TRIES 3
     // Execute the query and get the results
@@ -2829,6 +2683,7 @@ int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThresho
     // walk rather than just the step loop. Each try re-prepares and re-binds; the bind state is on a
     // brand-new prepared statement so there's nothing to preserve across the retry.
     for (int tries = 0; tries < MAX_TRIES; tries++) {
+        QueryBusyWait busyWait(db);
         result.clear();
         if (expandedSql) {
             expandedSql->clear();
@@ -2873,6 +2728,14 @@ int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThresho
                 // If we get a null statement (from parsing a blank string) we can skip, this isn't an error.
                 error = SQLITE_OK;
                 continue;
+            }
+
+            // Checked before binding or stepping so a write smuggled into a read (e.g. via SQL injection) never runs.
+            if (readOnly && !sqlite3_stmt_readonly(preparedStatement)) {
+                SWARN("[security] Refusing to run a statement that writes from a read-only query");
+                sqlite3_finalize(preparedStatement);
+                error = SQLITE_READONLY;
+                break;
             }
 
             // Bind parameters once per prepared statement. The bind state survives sqlite3_reset, so we never
@@ -2933,15 +2796,17 @@ int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThresho
                     sqlite3_free(errorMsg);
                 }
                 sqlite3_finalize(preparedStatement);
+                busyWait.logRecovery(error);
                 return error;
             }
 
             int numColumns = sqlite3_column_count(preparedStatement);
-            result.headers.resize(numColumns);
+            vector<string> headers(numColumns);
 
             for (int i = 0; i < numColumns; i++) {
-                result.headers[i] = sqlite3_column_name(preparedStatement, i);
+                headers[i] = sqlite3_column_name(preparedStatement, i);
             }
+            result.setHeaders(move(headers));
 
             while (true) {
                 size_t beforeStep = 0;
@@ -3022,6 +2887,7 @@ int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThresho
         }
 
         extErr = sqlite3_extended_errcode(db);
+        busyWait.logRecovery(error);
         if (error != SQLITE_BUSY || extErr == SQLITE_BUSY_SNAPSHOT) {
             break;
         }
@@ -3166,10 +3032,10 @@ void STerminateHandler(void)
     abort();
 }
 
-bool SIsValidSQLiteDateModifier(const string& modifier)
+bool SIsValidSQLiteDateModifier(string_view modifier)
 {
     // See: https://www.sqlite.org/lang_datefunc.html
-    list<string> parts = SParseList(SToUpper(modifier));
+    list<string> parts = SParseList(SToUpper(modifier.empty() ? "" : string(modifier)));
     for (const string& part : parts) {
         // Simple regexp validation
         if (SREMatch("^(\\+|-)\\d{1,8} (SECOND)S?$", part)) {
@@ -3194,32 +3060,27 @@ bool SIsValidSQLiteDateModifier(const string& modifier)
     return true;
 }
 
-bool SREMatch(const string& regExp, const string& input, bool caseSensitive, bool partialMatch, vector<string>* matches, size_t startOffset, size_t* matchOffset)
+bool SREMatch(string_view regExp, string_view input, bool caseSensitive, bool partialMatch, vector<string>* matches, size_t startOffset, size_t* matchOffset)
 {
-    int errornumber = 0;
-    PCRE2_SIZE erroroffset = 0;
-    uint32_t matchFlags = 0;
+    return SREMatch(SRECompile(regExp, caseSensitive), input, partialMatch, matches, startOffset, matchOffset);
+}
 
-    // These require full-string matches as that's the historical way this function works.
-    uint32_t compileFlags = partialMatch ? 0 : PCRE2_ANCHORED | PCRE2_ENDANCHORED;
-    if (!caseSensitive) {
-        compileFlags |= PCRE2_CASELESS;
-    }
-    pcre2_code* re = pcre2_compile((PCRE2_SPTR8) regExp.c_str(), PCRE2_ZERO_TERMINATED, compileFlags, &errornumber, &erroroffset, 0);
-    if (!re) {
-        STHROW("Bad regex: " + regExp);
-    }
-
-    pcre2_match_context* matchContext = pcre2_match_context_create(0);
-    pcre2_set_depth_limit(matchContext, 1000);
-    pcre2_match_data* matchData = pcre2_match_data_create_from_pattern(re, 0);
-
-    int result = pcre2_match(re, (PCRE2_SPTR8) input.c_str() + startOffset, input.size() - startOffset, 0, matchFlags, matchData, matchContext);
-
-    // Clear out existing matches.
+bool SREMatch(const SRECompiledRegex& regExp, string_view input, bool partialMatch, vector<string>* matches, size_t startOffset, size_t* matchOffset)
+{
     if (matches) {
         matches->clear();
     }
+    if (startOffset > input.size()) {
+        return false;
+    }
+
+    // These require full-string matches as that's the historical way this function works.
+    uint32_t matchFlags = partialMatch ? 0 : PCRE2_ANCHORED | PCRE2_ENDANCHORED;
+    pcre2_match_context* matchContext = pcre2_match_context_create(0);
+    pcre2_set_depth_limit(matchContext, 1000);
+    pcre2_match_data* matchData = pcre2_match_data_create_from_pattern(static_cast<pcre2_code*>(regExp.regex), 0);
+
+    int result = pcre2_match(static_cast<pcre2_code*>(regExp.regex), (PCRE2_SPTR8) (input.empty() ? "" : input.data()) + startOffset, input.size() - startOffset, 0, matchFlags, matchData, matchContext);
 
     // If the caller wanted to receive matches, and we have them, figure them out.
     if (result > 0 && matches) {
@@ -3231,27 +3092,31 @@ bool SREMatch(const string& regExp, const string& input, bool caseSensitive, boo
             if (start == PCRE2_UNSET || end == PCRE2_UNSET) {
                 continue;
             }
-            matches->push_back(input.substr(startOffset + start, end - start));
+            matches->emplace_back(input.substr(startOffset + start, end - start));
             if (i == 0 && matchOffset) {
                 *matchOffset = startOffset + start;
             }
         }
     }
 
-    pcre2_code_free(re);
     pcre2_match_context_free(matchContext);
     pcre2_match_data_free(matchData);
 
     return result > 0;
 }
 
-vector<vector<string>> SREMatchAll(const string& regExp, const string& input, bool caseSensitive)
+vector<vector<string>> SREMatchAll(string_view regExp, string_view input, bool caseSensitive)
+{
+    return SREMatchAll(SRECompile(regExp, caseSensitive), input);
+}
+
+vector<vector<string>> SREMatchAll(const SRECompiledRegex& regExp, string_view input)
 {
     vector<vector<string>> returnValue;
     vector<string> matches;
     size_t startOffset = 0;
     size_t matchOffset = 0;
-    while (SREMatch(regExp, input, caseSensitive, true, &matches, startOffset, &matchOffset)) {
+    while (SREMatch(regExp, input, true, &matches, startOffset, &matchOffset)) {
         returnValue.push_back(matches);
         startOffset = matchOffset + matches[0].size();
     }
@@ -3259,22 +3124,56 @@ vector<vector<string>> SREMatchAll(const string& regExp, const string& input, bo
     return returnValue;
 }
 
-string SREReplace(const string& regExp, const string& input, const string& replacement, bool caseSensitive)
+SRECompiledRegex::SRECompiledRegex(void* regex) : regex(regex)
 {
-    char* output = nullptr;
-    size_t outSize = 0;
+}
+
+SRECompiledRegex::~SRECompiledRegex()
+{
+    pcre2_code_free(static_cast<pcre2_code*>(regex));
+}
+
+SRECompiledRegex::SRECompiledRegex(SRECompiledRegex&& other) noexcept : regex(other.regex)
+{
+    other.regex = nullptr;
+}
+
+SRECompiledRegex& SRECompiledRegex::operator=(SRECompiledRegex&& other) noexcept
+{
+    if (this != &other) {
+        pcre2_code_free(static_cast<pcre2_code*>(regex));
+        regex = other.regex;
+        other.regex = nullptr;
+    }
+    return *this;
+}
+
+SRECompiledRegex SRECompile(string_view regExp, bool caseSensitive)
+{
     int errornumber = 0;
     PCRE2_SIZE erroroffset = 0;
     uint32_t compileFlags = caseSensitive ? 0 : PCRE2_CASELESS;
-    uint32_t substituteFlags = PCRE2_SUBSTITUTE_GLOBAL | PCRE2_SUBSTITUTE_EXTENDED | PCRE2_SUBSTITUTE_OVERFLOW_LENGTH;
-    pcre2_code* re = pcre2_compile((PCRE2_SPTR8) regExp.c_str(), PCRE2_ZERO_TERMINATED, compileFlags, &errornumber, &erroroffset, 0);
-    if (!re) {
+    pcre2_code* regex = pcre2_compile((PCRE2_SPTR8) (regExp.empty() ? "" : regExp.data()), regExp.size(), compileFlags, &errornumber, &erroroffset, 0);
+    if (!regex) {
         STHROW("Bad regex: " + regExp);
     }
+    return SRECompiledRegex(regex);
+}
+
+string SREReplace(string_view regExp, string_view input, string_view replacement, bool caseSensitive)
+{
+    return SREReplace(SRECompile(regExp, caseSensitive), input, replacement);
+}
+
+string SREReplace(const SRECompiledRegex& regExp, string_view input, string_view replacement)
+{
+    char* output = nullptr;
+    size_t outSize = 0;
+    uint32_t substituteFlags = PCRE2_SUBSTITUTE_GLOBAL | PCRE2_SUBSTITUTE_EXTENDED | PCRE2_SUBSTITUTE_OVERFLOW_LENGTH;
     pcre2_match_context* matchContext = pcre2_match_context_create(0);
     pcre2_set_depth_limit(matchContext, 1000);
     for (int i = 0; i < 2; i++) {
-        int result = pcre2_substitute(re, (PCRE2_SPTR8) input.c_str(), input.size(), 0, substituteFlags, 0, matchContext, (PCRE2_SPTR8) replacement.c_str(), replacement.size(), (PCRE2_UCHAR*) output, &outSize);
+        int result = pcre2_substitute(static_cast<pcre2_code*>(regExp.regex), (PCRE2_SPTR8) (input.empty() ? "" : input.data()), input.size(), 0, substituteFlags, 0, matchContext, (PCRE2_SPTR8) (replacement.empty() ? "" : replacement.data()), replacement.size(), (PCRE2_UCHAR*) output, &outSize);
         if (i == 0 && result == PCRE2_ERROR_NOMEMORY) {
             // This is the expected case on the first run, there's not enough space to store the result, so we allocate the space and do it again.
             output = (char*) malloc(outSize);
@@ -3295,7 +3194,6 @@ string SREReplace(const string& regExp, const string& input, const string& repla
         free(output);
     }
 
-    pcre2_code_free(re);
     pcre2_match_context_free(matchContext);
 
     return outputString;
@@ -3307,6 +3205,9 @@ void SRedactSensitiveValues(string& s)
     // The message may be truncated midway through the authToken, so there may not be a closing quote (") at the end of
     // the authToken, so we need to optionally match the closing quote with a question mark (?).
     s = SREReplace("\"authToken\":\".*\"?", s, "\"authToken\":<REDACTED>");
+
+    // authTokens also appear as URL query parameters, for example inside stored redirect URLs.
+    s = SREReplace("authToken=[^&\"'\\s]+", s, "authToken=<REDACTED>");
 
     // Redact queries that contain encrypted fields since there's no value in logging them.
     s = SREReplace("v[0-9]+:[0-9A-F]{10,}", s, "<REDACTED>");
@@ -3365,15 +3266,20 @@ SAutoThreadPrefix::SAutoThreadPrefix(const SData& request)
     // Retain the old values
     oldPrefix = SThreadLogPrefix;
     oldLogParam = SThreadLogParam;
+    oldCommand = SThreadLogCommand;
     const string requestID = request.isSet("requestID") ? request["requestID"] : "xxxxxx";
     SThreadLogPrefix = requestID;
     SThreadLogParam = request.isSet("logParam") ? request["logParam"] : "we@dont.know";
+    SThreadLogCommand = request.methodLine;
 }
 
 SAutoThreadPrefix::SAutoThreadPrefix(const string& rID)
 {
+    // This overload is used for sub-scopes (e.g. an individual HTTPS transaction) that have their own request ID
+    // but aren't themselves a command, so we leave SThreadLogCommand as whatever the enclosing command set it to.
     oldPrefix = SThreadLogPrefix;
     oldLogParam = SThreadLogParam;
+    oldCommand = SThreadLogCommand;
     SThreadLogPrefix = rID.empty() ? "xxxxxx" : rID;
     SThreadLogParam = "we@dont.know";
 }
@@ -3382,6 +3288,7 @@ SAutoThreadPrefix::~SAutoThreadPrefix()
 {
     SThreadLogPrefix = move(oldPrefix);
     SThreadLogParam = move(oldLogParam);
+    SThreadLogCommand = move(oldCommand);
 }
 
 float SToFloat(const string& val)
@@ -3406,17 +3313,17 @@ uint64_t SToUInt64(const string& val)
 
 bool SContains(const list<string>& valueList, const char* value)
 {
-    return ::find(valueList.begin(), valueList.end(), string(value)) != valueList.end();
+    return SContains(valueList, string_view(value));
 }
 
-bool SContains(const string& haystack, const string& needle)
+bool SContains(string_view haystack, string_view needle)
 {
-    return haystack.find(needle) != string::npos;
+    return haystack.find(needle) != string_view::npos;
 }
 
-bool SContains(const string& haystack, char needle)
+bool SContains(string_view haystack, char needle)
 {
-    return haystack.find(needle) != string::npos;
+    return haystack.find(needle) != string_view::npos;
 }
 
 bool SContains(const STable& nameValueMap, const string& name)
@@ -3424,26 +3331,24 @@ bool SContains(const STable& nameValueMap, const string& name)
     return nameValueMap.find(name) != nameValueMap.end();
 }
 
-bool SIEquals(const string& lhs, const string& rhs)
+bool SIEquals(string_view lhs, string_view rhs)
 {
-    return !strcasecmp(lhs.c_str(), rhs.c_str());
+    lhs = lhs.substr(0, lhs.find('\0'));
+    rhs = rhs.substr(0, rhs.find('\0'));
+    return lhs.size() == rhs.size() && (lhs.empty() || strncasecmp(lhs.data(), rhs.data(), lhs.size()) == 0);
 }
 
-bool SEndsWith(const string& haystack, const string& needle)
+bool SEndsWith(string_view haystack, string_view needle)
 {
-    if (needle.size() > haystack.size()) {
-        return false;
-    } else {
-        return haystack.substr(haystack.size() - needle.size()) == needle;
-    }
+    return needle.size() <= haystack.size() && haystack.substr(haystack.size() - needle.size()) == needle;
 }
 
-string SStripAllBut(const string& lhs, const string& chars)
+string SStripAllBut(string_view lhs, string_view chars)
 {
     return SStrip(lhs, chars, true);
 }
 
-string SStripNonNum(const string& lhs)
+string SStripNonNum(string_view lhs)
 {
     return SStripAllBut(lhs, "0123456789");
 }
@@ -3458,44 +3363,45 @@ string SUnescape(const string& lhs, char escaper)
     return SUnescape(lhs.c_str(), escaper);
 }
 
-string SStripTrim(const string& lhs)
+string SStripTrim(string_view lhs)
 {
     return STrim(SStrip(lhs));
 }
 
-string SBefore(const string& value, const string& needle)
+string SBefore(string_view value, string_view needle)
 {
     size_t pos = value.find(needle);
-    if (pos == string::npos) {
+    if (pos == string_view::npos || pos == 0) {
         return "";
     } else {
-        return value.substr(0, pos);
+        return string(value.substr(0, pos));
     }
 }
 
-string SAfter(const string& value, const string& needle)
+string SAfter(string_view value, string_view needle)
 {
     size_t pos = value.find(needle);
-    if (pos == string::npos) {
+    if (pos == string_view::npos || pos + needle.size() == value.size()) {
         return "";
     } else {
-        return value.substr(pos + needle.size());
+        return string(value.substr(pos + needle.size()));
     }
 }
 
-string SAfterLastOf(const string& value, const string& needle)
+string SAfterLastOf(string_view value, string_view needle)
 {
     size_t pos = value.find_last_of(needle);
-    if (pos == string::npos) {
+    if (pos == string_view::npos || pos + 1 == value.size()) {
         return "";
     } else {
-        return value.substr(pos + 1);
+        return string(value.substr(pos + 1));
     }
 }
 
-string SAfterUpTo(const string& value, const string& after, const string& upTo)
+string SAfterUpTo(string_view value, string_view after, string_view upTo)
 {
-    return SBefore(SAfter(value, after), upTo);
+    size_t pos = value.find(after);
+    return pos == string_view::npos ? "" : SBefore(value.substr(pos + after.size()), upTo);
 }
 
 void SAppend(string& lhs, const void* rhs, int num)
@@ -3510,9 +3416,9 @@ void SAppend(string& lhs, const string& rhs)
     lhs += rhs;
 }
 
-int SParseHTTP(const string& buffer, string& methodLine, STable& nameValueMap, string& content)
+int SParseHTTP(string_view buffer, string& methodLine, STable& nameValueMap, string& content)
 {
-    return SParseHTTP(buffer.c_str(), (int) buffer.size(), methodLine, nameValueMap, content);
+    return SParseHTTP(buffer.empty() ? "" : buffer.data(), buffer.size(), methodLine, nameValueMap, content);
 }
 
 string SComposeHTTP(const string& methodLine, const STable& nameValueMap, const string& content)
@@ -3522,51 +3428,45 @@ string SComposeHTTP(const string& methodLine, const STable& nameValueMap, const 
     return buffer;
 }
 
-string SComposeHost(const string& host, int port)
+string SComposeHost(string_view host, int port)
 {
     return host + ":" + SToStr(port);
 }
 
-bool SHostIsValid(const string& host)
+bool SHostIsValid(string_view host)
 {
     string domain;
     uint16_t port = 0;
     return SParseHost(host, domain, port);
 }
 
-string SGetDomain(const string& host)
+string SGetDomain(string_view host)
 {
     string domain;
     uint16_t ignore;
     if (SParseHost(host, domain, ignore)) {
         return domain;
     } else {
-        return host;
+        return host.empty() ? "" : string(host);
     }
 }
 
-string SDecodeURIComponent(const string& value)
+string SDecodeURIComponent(string_view value)
 {
-    return SDecodeURIComponent(value.c_str(), (int) value.size());
+    return value.empty() ? "" : SDecodeURIComponent(value.data(), (int) value.size());
 }
 
-bool SParseList(const string& value, list<string>& valueList, char separator)
+bool SParseList(const char* value, list<string>& valueList, char separator)
 {
-    return SParseList(value.c_str(), valueList, separator);
+    return SParseList(string_view(value), valueList, separator);
 }
 
-list<string> SParseList(const string& value, char separator)
+list<string> SParseList(string_view value, char separator)
 {
     list<string> valueList;
     SParseList(value, valueList, separator);
     return valueList;
 }
-
-string SGetJSONArrayFront(const string& jsonArray)
-{
-    list<string> l = SParseJSONArray(jsonArray);
-    return l.empty() ? "" : l.front();
-};
 
 string SToStr(const sockaddr_in& addr)
 {
@@ -3585,7 +3485,12 @@ string SQ(const char* val)
 
 string SQ(const string& val)
 {
-    return SQ(val.c_str());
+    return SQ(string_view(val));
+}
+
+string SQ(string_view val)
+{
+    return val.empty() ? "''" : "'" + SEscape(val.data(), "'", '\'', val.size()) + "'";
 }
 
 string SQ(int val)

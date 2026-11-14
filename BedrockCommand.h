@@ -15,11 +15,11 @@ public:
         PROCESS,
         POSTPROCESS,
         COMMIT_WORKER,
-        COMMIT_SYNC,
         QUEUE_WORKER,
-        QUEUE_SYNC,
         QUEUE_BLOCKING,
         QUEUE_PAGE_LOCK,
+        COMMAND_THREAD,
+        DB_HANDLE,
 
         // Time spent in the blockingCommit thread (not the same as "commit lock time")
         BLOCKING_PREPEEK,
@@ -41,6 +41,12 @@ public:
     static const uint64_t DEFAULT_TIMEOUT = 110'000; // 110 seconds, so clients can have a 2 minutes timeout.
     static const uint64_t DEFAULT_TIMEOUT_FORGET = 60'000 * 60; // 1 hour for `connection: forget` commands.
     static const uint64_t DEFAULT_PROCESS_TIMEOUT = 5'000; // 5 seconds.
+
+    // How long a command named in `-synchronousCommands` may hold the blocking commit thread. That thread owns the
+    // commit lock for its whole transaction, and SQLiteNode::_changeState waits on the same lock with no timeout, so
+    // this also bounds how long a node state change can be stalled. It has to stay well under the 30 second peer
+    // receive timeout that would otherwise cost us the leader.
+    static const uint64_t SYNCHRONOUS_COMMAND_TIMEOUT = 27'000; // 27 seconds.
 
     // Constructor to initialize via a request object (by move).
     BedrockCommand(SQLiteCommand&& baseCommand, BedrockPlugin* plugin, bool escalateImmediately_ = false);
@@ -134,6 +140,9 @@ public:
     // Finish recording time for a given action type. `type` must match what was passed to the most recent call to
     // `startTiming`.
     void stopTiming(TIMING_INFO type);
+
+    // Record an interval that began outside the command's execution thread.
+    void recordTiming(TIMING_INFO type, uint64_t startTime);
 
     // Add a summary of our timing info to our response object.
     void finalizeTimingInfo();
@@ -305,6 +314,11 @@ private:
     // True if this command should be escalated immediately. This can be true for any command that does all of its work
     // in `process` instead of peek, as it will always be escalated to leader
     const bool escalateImmediately;
+
+    // True if this command was named in `-synchronousCommands`. Such commands run on the blocking commit thread, so
+    // they're serialized against each other and against every other write, and they get SYNCHRONOUS_COMMAND_TIMEOUT
+    // rather than the shorter DEFAULT_PROCESS_TIMEOUT that thread otherwise imposes.
+    bool isSynchronous = false;
 
     // Setting this to `true` will cause this command to abort immediately, even in the middle of a slow database query.
     // NOTE: currently, this will not abort from every case where a command could be stuck, but only in DB queries.

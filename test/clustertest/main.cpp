@@ -1,9 +1,13 @@
 #include <iostream>
+#include <memory>
 #include <unistd.h>
 
 #include <libstuff/libstuff.h>
 #include <libstuff/SData.h>
 #include <test/lib/BedrockTester.h>
+#include <test/lib/BedrockTestPath.h>
+#include <test/lib/ConsoleOutputWriter.h>
+#include <test/lib/NcursesOutputWriter.h>
 
 /*
  * This is based on the 'test' application in the parent directory to this one, but specifically aims to test the
@@ -11,10 +15,17 @@
  * database between tests, and so in all likelihood, an early failure will carry over into later failures in
  * subsequent tests. This is expected as we want to verify overall database integrity rather than unit test individual
  * bits of functionality.
+ * -useNewOutput shows the live test dashboard for a single run with stdin/stdout/stderr on terminals (default).
+ * Repeated runs or redirected streams use console output. Pass false for console output.
  */
+
+static tpunit::NcursesOutputWriter* activeOutput = nullptr;
 
 void sigclean(int sig)
 {
+    if (activeOutput) {
+        activeOutput->restoreAfterSignal();
+    }
     cout << "Got SIGINT, cleaning up." << endl;
     BedrockTester::stopAll();
     cout << "Done." << endl;
@@ -32,6 +43,7 @@ void log()
 
 int main(int argc, char* argv[])
 {
+    configureBedrockTestPath();
     SData args = SParseCommandLine(argc, argv);
 
     // Catch sigint.
@@ -86,7 +98,6 @@ int main(int argc, char* argv[])
     if (args.isSet("-v")) {
         BedrockTester::VERBOSE_LOGGING = true;
         SLogLevel(LOG_DEBUG);
-        tpunit::_TestFixture::_verboseOutput = true;
     }
     if (args.isSet("-q")) {
         BedrockTester::QUIET_LOGGING = true;
@@ -94,10 +105,26 @@ int main(int argc, char* argv[])
     }
 
     int retval = 0;
+    tpunit::ConsoleOutputWriter outputWriter(args.isSet("-v"));
+    unique_ptr<tpunit::NcursesOutputWriter> newOutput;
+    const bool shouldUseNewOutput = !args.isSet("-useNewOutput") ||
+        args["-useNewOutput"].empty() ||
+        args.test("-useNewOutput");
+    if (shouldUseNewOutput && repeatCount == 1 && isatty(STDERR_FILENO) && tpunit::NcursesOutputWriter::available()) {
+        try {
+            newOutput = make_unique<tpunit::NcursesOutputWriter>();
+            activeOutput = newOutput.get();
+        } catch (const runtime_error& error) {
+            cerr << "New test output unavailable: " << error.what() << ". Using console output." << endl;
+        }
+    }
+    auto initThread = []() {
+    };
     {
         for (int i = 0; i < repeatCount; i++) {
             try {
-                retval = tpunit::Tests::run(include, exclude, before, after, threads);
+                retval = tpunit::Tests::run(include, exclude, before, after, threads, initThread, &tpunit::_TestFixture::sorter,
+                                            newOutput ? static_cast<tpunit::OutputWriter*>(newOutput.get()) : &outputWriter);
             } catch (...) {
                 cout << "Unhandled exception running tests!" << endl;
                 retval = 1;
@@ -106,6 +133,11 @@ int main(int argc, char* argv[])
     }
 
     SStopSignalThread();
+
+    if (newOutput) {
+        newOutput->finish();
+        activeOutput = nullptr;
+    }
 
     // Tester gets destroyed here. Everything's done.
     return retval;

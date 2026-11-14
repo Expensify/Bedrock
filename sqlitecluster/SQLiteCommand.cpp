@@ -32,30 +32,11 @@ SQLiteCommand::SQLiteCommand(SData&& _request) :
     privateRequest(preprocessRequest(move(_request))),
     request(privateRequest),
     initiatingClientID(0),
-    writeConsistency(SQLiteNode::ASYNC),
     complete(false),
     escalationTimeUS(0),
     creationTime(STimeNow()),
     escalated(false)
 {
-    // Initialize the consistency, if supplied.
-    if (request.isSet("writeConsistency")) {
-        int tempConsistency = request.calc("writeConsistency");
-        switch (tempConsistency) {
-            // For any valid case, we just set the value directly.
-            case SQLiteNode::ASYNC:
-            case SQLiteNode::ONE:
-            case SQLiteNode::QUORUM:
-                writeConsistency = static_cast<SQLiteNode::ConsistencyLevel>(tempConsistency);
-                break;
-
-            default:
-                // But an invalid case gets set to ASYNC, and a warning is thrown.
-                SWARN("'" << request.methodLine << "' requested invalid consistency: " << writeConsistency);
-                writeConsistency = SQLiteNode::ASYNC;
-                break;
-        }
-    }
 }
 
 SQLiteCommand::SQLiteCommand(SQLiteCommand&& from) :
@@ -65,12 +46,17 @@ SQLiteCommand::SQLiteCommand(SQLiteCommand&& from) :
     id(move(from.id)),
     jsonContent(move(from.jsonContent)),
     response(move(from.response)),
-    writeConsistency(from.writeConsistency),
     complete(from.complete),
     escalationTimeUS(from.escalationTimeUS),
     creationTime(from.creationTime),
     escalated(from.escalated)
 {
+}
+
+SQLiteCommand::SQLiteCommand(SQLiteCommand&& from, void(*preprocessor)(SData&)) :
+    SQLiteCommand(move(from))
+{
+    preprocessor(privateRequest);
 }
 
 SQLiteCommand& SQLiteCommand::operator=(SQLiteCommand&& from) noexcept
@@ -81,7 +67,6 @@ SQLiteCommand& SQLiteCommand::operator=(SQLiteCommand&& from) noexcept
     id = move(from.id);
     jsonContent = move(from.jsonContent);
     response = move(from.response);
-    writeConsistency = from.writeConsistency;
     complete = from.complete;
     escalationTimeUS = from.escalationTimeUS;
     creationTime = from.creationTime;
@@ -94,7 +79,6 @@ SQLiteCommand::SQLiteCommand() :
     privateRequest(),
     request(privateRequest),
     initiatingClientID(0),
-    writeConsistency(SQLiteNode::ASYNC),
     complete(false),
     escalationTimeUS(0),
     creationTime(STimeNow()),

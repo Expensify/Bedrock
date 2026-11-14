@@ -1,3 +1,4 @@
+#include <libstuff/JSON/Value.h>
 #include <fstream>
 
 #include <libstuff/SData.h>
@@ -96,36 +97,17 @@ struct CompressionTest : tpunit::TestFixture
     {
         SData status("Status");
         string response = node.executeWaitVerifyContent(status);
-        STable json = SParseJSONObject(response);
-        return SToUInt64(json["commitCount"]);
+        JSON::Value json = JSON::Value::parse(response);
+        return json["CommitCount"].getUint();
     }
 
     // Run a SELECT query against the journal tables via the bedrock server's DB plugin.
     // All reads go through the server so that UDFs and dictionaries are available.
     string queryJournal(BedrockTester& node, const string& selectExpression, uint64_t commitID)
     {
-        // Build a UNION query across all journal tables.
-        // First, get the list of journal table names from the server.
-        SData tableCmd("Query");
-        tableCmd["Format"] = "json";
-        tableCmd["Query"] = "SELECT tbl_name FROM sqlite_master WHERE tbl_name LIKE 'journal%' ORDER BY tbl_name;";
-        auto tableResults = node.executeWaitMultipleData({tableCmd});
-        SQResult tables;
-        tables.deserialize(tableResults[0].content);
-
-        // Build UNION query across all journal tables.
-        string sql;
-        for (size_t i = 0; i < tables.size(); i++) {
-            if (!sql.empty()) {
-                sql += " UNION ";
-            }
-            sql += "SELECT " + selectExpression + " FROM " + tables[i][0] + " WHERE id = " + SQ(commitID);
-        }
-        sql += ";";
-
         SData command("Query");
         command["Format"] = "json";
-        command["Query"] = sql;
+        command["Query"] = "SELECT " + selectExpression + " FROM journalEntries WHERE id = " + SQ(commitID) + ";";
         auto results = node.executeWaitMultipleData({command});
         if (results[0].methodLine == "200 OK" && !results[0].content.empty()) {
             SQResult result;

@@ -10,9 +10,9 @@ Bedrock's primary feature is its ability to seamlessly synchronize data between 
 
 2. All nodes attempt to connect to all other nodes.
 
-3. During this process all nodes `SYNCHRONIZE` from their peers, which means they broadcast "My most recent transaction has commitCount X, and the hash of every transaction up to that point is Y".  Anybody who has newer data will respond with the missing transactions, which are all committed in the same order on every node via a [private blockchain](https://bedrockdb.com/blockchain.html).
+3. During this process all nodes `SYNCHRONIZE` from their peers, advertising their highest contiguous journal ID as `CommitCount` and the latest nonblank entry up through that commit as `HashCommitID` and `Hash`. Anybody who has newer data will respond with the missing transactions in commit ID order. The journal accepts [GUID transaction hashes and blank entries](https://bedrockdb.com/blockchain.html).
 
-4. Any two nodes that disagree on what the hash of a given transaction should be will immediately disconnect from each other.  This means that any node that has "forked" away from the cluster will be excluded from participation.
+4. Nodes compare the ID and hash of the latest nonblank entry in their shared journal prefix. Trailing blank entries do not affect agreement, but are included when determining which node is ahead. Nodes that disagree disconnect from each other, excluding forked nodes from participation.
 
 5. The Paxos distributed consensus algorithm is used to identify which of the connected nodes has the highest priority.  If enough of the *configured* nodes are online and agree, the highest node will stand up as `LEADER`.  All other nodes begin `FOLLOWING` to that leader.  (On the other hand, if too few of the configured nodes are able to connect so as to achieve quorum, then nobody will stand up, thereby avoiding the "split brain" problem.)
 
@@ -20,16 +20,22 @@ Bedrock's primary feature is its ability to seamlessly synchronize data between 
 
 7. Each node processes read requests from its local database.  By default it will respond based on the latest data.  However, the client can optionally provide a `commitCount`, which if larger than the current commit count of that node's database, will cause the node to hold off on responding until the database has been synchronized up to that point.  In this way, clients can avoid inconsistency by querying two different nodes with different states (though in practice, clients should attempt to query the same node repeatedly to avoid any unnecessary delay).  All of this is provided "out of the box" by Bedrock's [PHP client library](https://github.com/Expensify/Bedrock-PHP).
 
-8. Write commands are escalated to the leader, which coordinates a distributed two-phase commit transaction.  By default, the leader waits for a quorum of followers to approve the transaction, before committing it on the leader database and instructing the followers to do the same.
+8. Write commands are escalated to the leader, which commits them to its own database and then streams them to the followers.  The leader does not wait for followers to acknowledge a transaction before committing it, which is what allows write throughput to exceed `1/median(rtt)` transactions per second.
 
-9. However, a "selective synchronization" algorithm is used to achieve higher write throughput than could be obtained with full quorum alone.  (It requires `median(rtt)` seconds to obtain quorum, limiting total throughput to `1/median(rtt)` full quorum write transactions.)  In this way clients can designate the [level of consistency desired](https://github.com/Expensify/Bedrock/blob/main/sqlitecluster/SQLiteNode.cpp#L1075) on an individual transaction basis, including `QUORUM` (a majority of followers must approve), `ONE` (any follower, typically the nearest), or `ASYNC` (no followers).
+   Live `TRANSACTION` messages identify the commit with `ID`. Currently, leaders also send the deprecated `NewCount` alias for older peers. Receivers use `ID` when present and otherwise fall back to `NewCount`; when both are present, `NewCount` is ignored. Once all nodes support `ID`, sending and accepting `NewCount` can be removed.
 
-10. Obviously, `ASYNC` provides the highest write throughput because the leader commits without waiting.  However, this allows the leader to "race ahead" of the cluster, which is dangerous: if the leader crashes at that point, its unsynchronized commits could be lost forever.  Accordingly, this is recommended only for commits that can be safely lost (eg, a comment on a report) versus a commit that is very dangerous to lose (eg, reimbursing an expense report).
+   Each replicated commit includes its commit ID, hash, SQL, and a `Snapshot` dependency ([See the hct_journal documentation](https://sqlite.org/hctree/doc/hctree/doc/hctree/replication2.md)). When `Snapshot` is absent, followers require the preceding commit (`ID - 1`). Leaders currently send this sequential dependency explicitly and continue broadcasting commits in order. The support for blank snapshots exists only to facilitate the transition to newer versions of the code that will always send them.
 
-11. Furthermore, for safety, the leader is limited to a maximum number of commits it will go without full quorum, configurable via the `-quorumCheckpoint` command line option.
+   WAL2 and non-experimental HC-Tree followers buffer commits by ID and apply contiguous commits serially. Experimental HC-Tree followers use 16 threads, executing a commit only when its dependency snapshot is available. This permits parallel, out-of-order application when commits carry earlier dependencies, while sequential dependencies still result in serial application.
 
-12. After a write transaction is processed, the response is returned to the node that escalated it, and then back to the client.
+   Live transactions are accepted only from the selected leader. Any duplicate commit ID, including an ID at or below the contiguous commit count, is discarded and treated as a fork from the sender, even if its hash matches. Pending IDs stay reserved until contiguous progress covers them, including while applying or completed beyond a gap; duplicate handling does not compare GUIDs or read the journal. Resetting the noncontiguous HC-Tree tail on a leader/session change remains pending SQLite's rollback API and is not yet implemented.
 
-13. If the leader dies before an escalated command has been processed, the follower will re-escalate the command to the new leader once elected.  Furthermore, followers will continue accepting commands during the period of leader failover, thereby ensuring that the client sees no "downtime" and merely a short delay (typically imperceptible).
+   Synchronization and subscription catch-up batches remain ordered. Their commits use the same worker threads, but they do not yet run in parallel.
 
-14. When the leader returns to operation, the leader will synchronize any transactions it missed while down, and then stand back up and take over control from the interim leader seamlessly.
+9. The cost of not waiting is that the leader can "race ahead" of the cluster: if it crashes with commits that haven't reached anyone else, those commits are lost.  A cluster is therefore only as durable as the leader's ability to hand its commits off before it dies.  There is no per-transaction way to ask for a stronger guarantee.
+
+10. After a write transaction is processed, the response is returned to the node that escalated it, and then back to the client.
+
+11. If the leader dies before an escalated command has been processed, the follower will re-escalate the command to the new leader once elected.  Furthermore, followers will continue accepting commands during the period of leader failover, thereby ensuring that the client sees no "downtime" and merely a short delay (typically imperceptible).
+
+12. When the leader returns to operation, the leader will synchronize any transactions it missed while down, and then stand back up and take over control from the interim leader seamlessly.

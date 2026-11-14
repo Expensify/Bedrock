@@ -1,0 +1,452 @@
+#include <BedrockBlockingCommandQueue.h>
+#include <test/lib/tpunit++.hpp>
+
+// A queue whose clock the test controls, so window and block behavior is deterministic. All times below are
+// microseconds. The tests drive the public API and control the clock.
+struct TestBlockingCommandQueue : public BedrockBlockingCommandQueue
+{
+    static unique_ptr<BedrockCommand> makeCommand(const string& identifier, const string& commandName, const string& requestID = "", const string& logParam = "")
+    {
+        SData request(commandName);
+        if (!requestID.empty()) {
+            request["requestID"] = requestID;
+        }
+        if (!logParam.empty()) {
+            request["logParam"] = logParam;
+        }
+        auto command = make_unique<BedrockCommand>(SQLiteCommand(move(request)), nullptr);
+        command->blockingQueueRateLimitIdentifier = identifier;
+        return command;
+    }
+
+    void setNow(uint64_t now)
+    {
+        _testNow = now;
+    }
+
+protected:
+    uint64_t _now() const override
+    {
+        return _testNow.load();
+    }
+
+private:
+    atomic<uint64_t> _testNow{0};
+};
+
+struct BlockingCommandQueueTest : tpunit::TestFixture
+{
+    BlockingCommandQueueTest() : tpunit::TestFixture("BlockingCommandQueue",
+                                                     TEST(BlockingCommandQueueTest::testIdentifierOverThresholdBlocks),
+                                                     TEST(BlockingCommandQueueTest::testUnderThresholdNotBlocked),
+                                                     TEST(BlockingCommandQueueTest::testIdentifiersAreIndependent),
+                                                     TEST(BlockingCommandQueueTest::testCommandDimensionIgnoresIdentifier),
+                                                     TEST(BlockingCommandQueueTest::testPushReportsRateLimitDimensions),
+                                                     TEST(BlockingCommandQueueTest::testDequeueReportsRateLimitDimensions),
+                                                     TEST(BlockingCommandQueueTest::testDequeueRestoresLogPrefix),
+                                                     TEST(BlockingCommandQueueTest::testEmptyIdentifierSkipsIdentifierDimension),
+                                                     TEST(BlockingCommandQueueTest::testWindowExpiry),
+                                                     TEST(BlockingCommandQueueTest::testPartialCredit),
+                                                     TEST(BlockingCommandQueueTest::testBlockDurationHoldsThenClears),
+                                                     TEST(BlockingCommandQueueTest::testDisabledThresholdsNeverBlock),
+                                                     TEST(BlockingCommandQueueTest::testClearResets),
+                                                     TEST(BlockingCommandQueueTest::testGlobalRateLimiterOverThresholdBlocksEveryone),
+                                                     TEST(BlockingCommandQueueTest::testGlobalRateLimiterRejectsOnPushAndDequeue),
+                                                     TEST(BlockingCommandQueueTest::testGlobalRateLimiterTakesPrecedence),
+                                                     TEST(BlockingCommandQueueTest::testGlobalRateLimiterWindowIsIndependent),
+                                                     TEST(BlockingCommandQueueTest::testGlobalRateLimiterBlockDurationHoldsThenClears),
+                                                     TEST(BlockingCommandQueueTest::testClearResetsGlobalRateLimiter))
+    {
+    }
+
+    void testIdentifierOverThresholdBlocks()
+    {
+        TestBlockingCommandQueue queue;
+        queue.setSharedRateLimiterWindow(100);
+        queue.setBlockingIdentifierThreshold(50);
+        queue.setBlockingCommandThreshold(0);
+        queue.setSharedRateLimiterBlockDuration(1000);
+        queue.setNow(1000);
+
+        queue.recordExecutionTime("acct1", "cmd", 30);
+        ASSERT_EQUAL(queue.getBlockingDimension("acct1", "cmd"), "");
+
+        queue.recordExecutionTime("acct1", "cmd", 30);
+        ASSERT_EQUAL(queue.getBlockingDimension("acct1", "cmd"), "identifier");
+    }
+
+    void testUnderThresholdNotBlocked()
+    {
+        TestBlockingCommandQueue queue;
+        queue.setSharedRateLimiterWindow(100);
+        queue.setBlockingIdentifierThreshold(50);
+        queue.setBlockingCommandThreshold(0);
+        queue.setNow(1000);
+
+        queue.recordExecutionTime("acct1", "cmd", 40);
+        ASSERT_EQUAL(queue.getBlockingDimension("acct1", "cmd"), "");
+    }
+
+    void testIdentifiersAreIndependent()
+    {
+        TestBlockingCommandQueue queue;
+        queue.setSharedRateLimiterWindow(100);
+        queue.setBlockingIdentifierThreshold(50);
+        queue.setBlockingCommandThreshold(0);
+        queue.setNow(1000);
+
+        queue.recordExecutionTime("acct1", "cmd", 60);
+        ASSERT_EQUAL(queue.getBlockingDimension("acct1", "cmd"), "identifier");
+        ASSERT_EQUAL(queue.getBlockingDimension("acct2", "cmd"), "");
+    }
+
+    void testCommandDimensionIgnoresIdentifier()
+    {
+        // With the identifier dimension disabled, a command over its threshold blocks for every identifier.
+        TestBlockingCommandQueue queue;
+        queue.setSharedRateLimiterWindow(100);
+        queue.setBlockingIdentifierThreshold(0);
+        queue.setBlockingCommandThreshold(50);
+        queue.setNow(1000);
+
+        queue.recordExecutionTime("acct1", "cmd", 60);
+        ASSERT_EQUAL(queue.getBlockingDimension("acct1", "cmd"), "command");
+        ASSERT_EQUAL(queue.getBlockingDimension("acct2", "cmd"), "command");
+        ASSERT_EQUAL(queue.getBlockingDimension("acct1", "otherCmd"), "");
+    }
+
+    void testPushReportsRateLimitDimensions()
+    {
+        TestBlockingCommandQueue identifierQueue;
+        identifierQueue.setBlockingIdentifierThreshold(50);
+        identifierQueue.setBlockingCommandThreshold(0);
+        identifierQueue.setNow(1000);
+        identifierQueue.recordExecutionTime("acct1", "cmd", 60);
+
+        bool identifierRejected = false;
+        try {
+            identifierQueue.push(identifierQueue.makeCommand("acct1", "cmd"));
+        } catch (const SException& e) {
+            identifierRejected = true;
+            ASSERT_EQUAL(string(e.what()), "503 Blocking queue rate limited (identifier)");
+        }
+        ASSERT_TRUE(identifierRejected);
+
+        TestBlockingCommandQueue commandQueue;
+        commandQueue.setBlockingIdentifierThreshold(0);
+        commandQueue.setBlockingCommandThreshold(50);
+        commandQueue.setNow(1000);
+        commandQueue.recordExecutionTime("acct1", "cmd", 60);
+
+        bool commandRejected = false;
+        try {
+            commandQueue.push(commandQueue.makeCommand("acct2", "cmd"));
+        } catch (const SException& e) {
+            commandRejected = true;
+            ASSERT_EQUAL(string(e.what()), "503 Blocking queue rate limited (command)");
+        }
+        ASSERT_TRUE(commandRejected);
+
+        TestBlockingCommandQueue bothDimensionsQueue;
+        bothDimensionsQueue.setBlockingIdentifierThreshold(50);
+        bothDimensionsQueue.setBlockingCommandThreshold(50);
+        bothDimensionsQueue.setNow(1000);
+        bothDimensionsQueue.recordExecutionTime("acct1", "cmd", 60);
+
+        bool bothDimensionsRejected = false;
+        try {
+            bothDimensionsQueue.push(bothDimensionsQueue.makeCommand("acct1", "cmd"));
+        } catch (const SException& e) {
+            bothDimensionsRejected = true;
+            ASSERT_EQUAL(string(e.what()), "503 Blocking queue rate limited (identifier)");
+        }
+        ASSERT_TRUE(bothDimensionsRejected);
+    }
+
+    void testDequeueReportsRateLimitDimensions()
+    {
+        TestBlockingCommandQueue identifierQueue;
+        identifierQueue.setBlockingIdentifierThreshold(50);
+        identifierQueue.setBlockingCommandThreshold(0);
+        identifierQueue.setNow(1000);
+        identifierQueue.push(identifierQueue.makeCommand("acct1", "cmd"));
+        identifierQueue.recordExecutionTime("acct1", "cmd", 60);
+
+        auto identifierCommand = identifierQueue.get(1'000'000);
+        ASSERT_TRUE(identifierCommand->complete);
+        ASSERT_EQUAL(identifierCommand->response.methodLine, "503 Blocking queue rate limited (identifier)");
+
+        TestBlockingCommandQueue commandQueue;
+        commandQueue.setBlockingIdentifierThreshold(0);
+        commandQueue.setBlockingCommandThreshold(50);
+        commandQueue.setNow(1000);
+        commandQueue.push(commandQueue.makeCommand("acct2", "cmd"));
+        commandQueue.recordExecutionTime("acct1", "cmd", 60);
+
+        auto command = commandQueue.get(1'000'000);
+        ASSERT_TRUE(command->complete);
+        ASSERT_EQUAL(command->response.methodLine, "503 Blocking queue rate limited (command)");
+    }
+
+    void testDequeueRestoresLogPrefix()
+    {
+        // `_dequeue()`'s prefix is scoped, so it must be gone once `get()` returns: the blocking worker sets its own
+        // prefix after `get()` and would otherwise inherit a stale one.
+        TestBlockingCommandQueue queue;
+        queue.setBlockingIdentifierThreshold(50);
+        queue.setBlockingCommandThreshold(0);
+        queue.setNow(1000);
+        queue.push(queue.makeCommand("acct1", "cmd", "rejected1", "rejected@example.com"));
+        queue.recordExecutionTime("acct1", "cmd", 60);
+
+        SData outerRequest("outerCmd");
+        outerRequest["requestID"] = "outer1";
+        outerRequest["logParam"] = "outer@example.com";
+        SAUTOPREFIX(outerRequest);
+
+        auto command = queue.get(1'000'000);
+        ASSERT_TRUE(command->complete);
+        ASSERT_EQUAL(command->response.methodLine, "503 Blocking queue rate limited (identifier)");
+
+        ASSERT_EQUAL(SThreadLogPrefix, "outer1");
+        ASSERT_EQUAL(SThreadLogParam, "outer@example.com");
+        ASSERT_EQUAL(SThreadLogCommand, "outerCmd");
+    }
+
+    void testEmptyIdentifierSkipsIdentifierDimension()
+    {
+        // An empty identifier is skipped, but the command dimension still applies.
+        TestBlockingCommandQueue queue;
+        queue.setSharedRateLimiterWindow(100);
+        queue.setBlockingIdentifierThreshold(50);
+        queue.setBlockingCommandThreshold(50);
+        queue.setNow(1000);
+
+        queue.recordExecutionTime("", "cmd", 60);
+        ASSERT_EQUAL(queue.getBlockingDimension("", "cmd"), "command");
+    }
+
+    void testWindowExpiry()
+    {
+        // A sample older than the window no longer counts toward the threshold.
+        TestBlockingCommandQueue queue;
+        queue.setSharedRateLimiterWindow(100);
+        queue.setBlockingIdentifierThreshold(50);
+        queue.setBlockingCommandThreshold(0);
+        queue.setSharedRateLimiterBlockDuration(1000);
+        queue.setNow(1000);
+
+        // One 40us sample, under the 50us threshold on its own.
+        queue.recordExecutionTime("acct1", "cmd", 40);
+        ASSERT_EQUAL(queue.getBlockingDimension("acct1", "cmd"), "");
+
+        // A full window later, record another 40us. The first has aged out, so the window holds only 40us
+        // (< 50). If it still counted, the two would sum to 80 and block.
+        queue.setNow(1150);
+        queue.recordExecutionTime("acct1", "cmd", 40);
+        ASSERT_EQUAL(queue.getBlockingDimension("acct1", "cmd"), "");
+    }
+
+    void testPartialCredit()
+    {
+        // A sample counts only for the part that still lies inside the window.
+        TestBlockingCommandQueue queue;
+        queue.setSharedRateLimiterWindow(100);
+        queue.setBlockingIdentifierThreshold(35);
+        queue.setBlockingCommandThreshold(0);
+        queue.setSharedRateLimiterBlockDuration(1000);
+        queue.setNow(1000);
+
+        // 30us sample, under the 35us threshold.
+        queue.recordExecutionTime("acct1", "cmd", 30);
+        ASSERT_EQUAL(queue.getBlockingDimension("acct1", "cmd"), "");
+
+        // 80us later, only window - age = 100 - 80 = 20us of the first sample still counts. With a new 10us
+        // sample the window holds 20 + 10 = 30us (< 35). Counting the full 30 + 10 = 40 would block.
+        queue.setNow(1080);
+        queue.recordExecutionTime("acct1", "cmd", 10);
+        ASSERT_EQUAL(queue.getBlockingDimension("acct1", "cmd"), "");
+    }
+
+    void testBlockDurationHoldsThenClears()
+    {
+        TestBlockingCommandQueue queue;
+        queue.setSharedRateLimiterWindow(100);
+        queue.setBlockingIdentifierThreshold(50);
+        queue.setBlockingCommandThreshold(0);
+        queue.setSharedRateLimiterBlockDuration(500);
+        queue.setNow(1000);
+
+        queue.recordExecutionTime("acct1", "cmd", 60);
+        ASSERT_EQUAL(queue.getBlockingDimension("acct1", "cmd"), "identifier");
+
+        // The sample has aged out of the window, but the block still holds for its fixed duration.
+        queue.setNow(1200);
+        ASSERT_EQUAL(queue.getBlockingDimension("acct1", "cmd"), "identifier");
+
+        // After the block duration, with nothing left in the window, it clears.
+        queue.setNow(1600);
+        ASSERT_EQUAL(queue.getBlockingDimension("acct1", "cmd"), "");
+    }
+
+    void testDisabledThresholdsNeverBlock()
+    {
+        TestBlockingCommandQueue queue;
+        queue.setSharedRateLimiterWindow(100);
+        queue.setBlockingIdentifierThreshold(0);
+        queue.setBlockingCommandThreshold(0);
+        queue.setGlobalRateLimiterThreshold(0);
+        queue.setNow(1000);
+
+        queue.recordExecutionTime("acct1", "cmd", 1000000);
+        ASSERT_EQUAL(queue.getBlockingDimension("acct1", "cmd"), "");
+    }
+
+    void testClearResets()
+    {
+        TestBlockingCommandQueue queue;
+        queue.setSharedRateLimiterWindow(100);
+        queue.setBlockingIdentifierThreshold(50);
+        queue.setBlockingCommandThreshold(0);
+        queue.setSharedRateLimiterBlockDuration(1000);
+        queue.setNow(1000);
+
+        queue.recordExecutionTime("acct1", "cmd", 60);
+        ASSERT_EQUAL(queue.getBlockingDimension("acct1", "cmd"), "identifier");
+
+        queue.clearRateLimits();
+        ASSERT_EQUAL(queue.getBlockingDimension("acct1", "cmd"), "");
+    }
+
+    void testGlobalRateLimiterOverThresholdBlocksEveryone()
+    {
+        // The global rate limiter counts every command, so a burst of commands with different identifiers trips it even
+        // though no single identifier or command is over a limit of its own.
+        TestBlockingCommandQueue queue;
+        queue.setBlockingIdentifierThreshold(0);
+        queue.setBlockingCommandThreshold(0);
+        queue.setGlobalRateLimiterWindow(100);
+        queue.setGlobalRateLimiterThreshold(50);
+        queue.setGlobalRateLimiterBlockDuration(1000);
+        queue.setNow(1000);
+
+        queue.recordExecutionTime("acct1", "cmd1", 30);
+        ASSERT_EQUAL(queue.getBlockingDimension("acct1", "cmd1"), "");
+
+        queue.recordExecutionTime("acct2", "cmd2", 30);
+        ASSERT_EQUAL(queue.getBlockingDimension("acct2", "cmd2"), "global");
+        ASSERT_EQUAL(queue.getBlockingDimension("acct3", "cmd3"), "global");
+        ASSERT_EQUAL(queue.getBlockingDimension("", ""), "global");
+    }
+
+    void testGlobalRateLimiterRejectsOnPushAndDequeue()
+    {
+        TestBlockingCommandQueue pushQueue;
+        pushQueue.setBlockingIdentifierThreshold(0);
+        pushQueue.setBlockingCommandThreshold(0);
+        pushQueue.setGlobalRateLimiterThreshold(50);
+        pushQueue.setNow(1000);
+        pushQueue.recordExecutionTime("acct1", "cmd", 60);
+
+        bool pushRejected = false;
+        try {
+            pushQueue.push(pushQueue.makeCommand("acct2", "otherCmd"));
+        } catch (const SException& e) {
+            pushRejected = true;
+            ASSERT_EQUAL(string(e.what()), "503 Blocking queue rate limited (global)");
+        }
+        ASSERT_TRUE(pushRejected);
+
+        // Commands that were already queued get rejected on the way out, so a backlog drains instead of running.
+        TestBlockingCommandQueue dequeueQueue;
+        dequeueQueue.setBlockingIdentifierThreshold(0);
+        dequeueQueue.setBlockingCommandThreshold(0);
+        dequeueQueue.setGlobalRateLimiterThreshold(50);
+        dequeueQueue.setNow(1000);
+        dequeueQueue.push(dequeueQueue.makeCommand("acct2", "otherCmd"));
+        dequeueQueue.recordExecutionTime("acct1", "cmd", 60);
+
+        auto command = dequeueQueue.get(1'000'000);
+        ASSERT_TRUE(command->complete);
+        ASSERT_EQUAL(command->response.methodLine, "503 Blocking queue rate limited (global)");
+    }
+
+    void testGlobalRateLimiterTakesPrecedence()
+    {
+        // One command can trip the identifier and the global rate limiter at once. The reject reports global,
+        // because that is the one that also rejects everybody else.
+        TestBlockingCommandQueue queue;
+        queue.setSharedRateLimiterWindow(100);
+        queue.setBlockingIdentifierThreshold(50);
+        queue.setBlockingCommandThreshold(0);
+        queue.setSharedRateLimiterBlockDuration(1000);
+        queue.setGlobalRateLimiterWindow(100);
+        queue.setGlobalRateLimiterThreshold(50);
+        queue.setGlobalRateLimiterBlockDuration(1000);
+        queue.setNow(1000);
+
+        queue.recordExecutionTime("acct1", "cmd", 60);
+        ASSERT_EQUAL(queue.getBlockingDimension("acct1", "cmd"), "global");
+    }
+
+    void testGlobalRateLimiterWindowIsIndependent()
+    {
+        // The global rate limiter has its own window, so a sample that has aged out of the shared window can
+        // still count toward the global threshold.
+        TestBlockingCommandQueue queue;
+        queue.setSharedRateLimiterWindow(100);
+        queue.setBlockingIdentifierThreshold(0);
+        queue.setBlockingCommandThreshold(0);
+        queue.setGlobalRateLimiterWindow(1000);
+        queue.setGlobalRateLimiterThreshold(50);
+        queue.setGlobalRateLimiterBlockDuration(1000);
+        queue.setNow(1000);
+
+        queue.recordExecutionTime("acct1", "cmd", 30);
+        ASSERT_EQUAL(queue.getBlockingDimension("acct1", "cmd"), "");
+
+        // The clock is now 500us past the first sample, which puts it outside the 100us shared window but
+        // inside the 1000us global window. All 30us of it still counts, so the total reaches 60 (> 50).
+        queue.setNow(1500);
+        queue.recordExecutionTime("acct1", "cmd", 30);
+        ASSERT_EQUAL(queue.getBlockingDimension("acct1", "cmd"), "global");
+    }
+
+    void testGlobalRateLimiterBlockDurationHoldsThenClears()
+    {
+        TestBlockingCommandQueue queue;
+        queue.setBlockingIdentifierThreshold(0);
+        queue.setBlockingCommandThreshold(0);
+        queue.setGlobalRateLimiterWindow(100);
+        queue.setGlobalRateLimiterThreshold(50);
+        queue.setGlobalRateLimiterBlockDuration(500);
+        queue.setNow(1000);
+
+        queue.recordExecutionTime("acct1", "cmd", 60);
+        ASSERT_EQUAL(queue.getBlockingDimension("acct1", "cmd"), "global");
+
+        // The sample has aged out of the window, but the block still holds for its fixed duration.
+        queue.setNow(1200);
+        ASSERT_EQUAL(queue.getBlockingDimension("acct1", "cmd"), "global");
+
+        queue.setNow(1600);
+        ASSERT_EQUAL(queue.getBlockingDimension("acct1", "cmd"), "");
+    }
+
+    void testClearResetsGlobalRateLimiter()
+    {
+        TestBlockingCommandQueue queue;
+        queue.setBlockingIdentifierThreshold(0);
+        queue.setBlockingCommandThreshold(0);
+        queue.setGlobalRateLimiterWindow(100);
+        queue.setGlobalRateLimiterThreshold(50);
+        queue.setGlobalRateLimiterBlockDuration(1000);
+        queue.setNow(1000);
+
+        queue.recordExecutionTime("acct1", "cmd", 60);
+        ASSERT_EQUAL(queue.getBlockingDimension("acct1", "cmd"), "global");
+
+        queue.clearRateLimits();
+        ASSERT_EQUAL(queue.getBlockingDimension("acct1", "cmd"), "");
+    }
+} __BlockingCommandQueueTest;

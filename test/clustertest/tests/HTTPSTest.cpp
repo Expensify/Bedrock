@@ -86,11 +86,9 @@ struct HTTPSTest : tpunit::TestFixture
                     if (j % nthHasRequest == 0) {
                         // They should throw all sorts of errors if they repeat HTTPS requests.
                         SData request("sendrequest b");
-                        request["writeConsistency"] = "ASYNC";
                         requests.push_back(request);
                     } else {
                         SData request("idcollision f");
-                        request["writeConsistency"] = "ASYNC";
                         requests.push_back(request);
                     }
                 }

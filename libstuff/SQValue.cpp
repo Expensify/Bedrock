@@ -49,6 +49,15 @@ SQValue::operator string() const
     }
 }
 
+string_view SQValue::asStringView(string& scratch) const
+{
+    if (type == TYPE::TEXT || type == TYPE::BLOB) {
+        return text;
+    }
+    scratch = static_cast<string>(*this);
+    return scratch;
+}
+
 string operator+(string lhs, const SQValue& rhs)
 {
     lhs += static_cast<string>(rhs);
