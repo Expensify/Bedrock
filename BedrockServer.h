@@ -14,6 +14,7 @@ class SQLitePeer;
 class BedrockCore;
 
 class BedrockServer : public SQLiteServer {
+    friend struct CommandPortTest;
 public:
 
     // Gives every plugin a chance to verify and/or modify the database schema. The leader runs this once each time it

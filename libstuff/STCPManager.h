@@ -62,10 +62,8 @@ public:
         virtual bool send(size_t* bytesSentCount = nullptr);
         virtual bool send(const string& buffer, size_t* bytesSentCount = nullptr);
 
-        // Like send(), but loops until the entire buffer has been queued to the kernel (or a hard error
-        // occurs), rather than leaving whatever a single send() call didn't accept sitting in sendBuffer. Only
-        // valid on a blocking socket: on a non-blocking socket, a full kernel send buffer makes send() return
-        // immediately instead of waiting, which would turn this loop into a CPU-burning busy-spin.
+        // Appends the response once and drains pending bytes until empty or a send fails. Only valid on blocking
+        // sockets: retrying a non-blocking socket without waiting for readiness can busy-spin.
         bool sendAll(const string& buffer);
 
         virtual bool recv();
