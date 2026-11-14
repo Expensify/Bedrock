@@ -18,12 +18,14 @@ struct CommandPortTest : tpunit::TestFixture
                               TEST(CommandPortTest::testCompleteReply),
                               TEST(CommandPortTest::testPartialReplyBeforeClose),
                               TEST(CommandPortTest::testPartialReplyWithKeepAlive),
+                              TEST(CommandPortTest::testMixedCaseConnectionClose),
                               TEST(CommandPortTest::testReplyAfterTemporaryNoProgress),
                               TEST(CommandPortTest::testFailedReplyAfterPartialWrite),
                               TEST(CommandPortTest::testFailedReplyAfterClientReset),
                               TEST(CommandPortTest::testNonBlockingFlushLeavesRemainder),
                               TEST(CommandPortTest::testResponseHandoffRetainsCommand),
                               TEST(CommandPortTest::testShutdownDeadlineStopsDelivery),
+                              TEST(CommandPortTest::testRunningStateIgnoresExpiredShutdownDeadline),
                               TEST(CommandPortTest::testReadHalfCloseAllowsDelivery),
                               TEST(CommandPortTest::testSlowReaderDoesNotBlockSynchronousCommands))
     {
@@ -112,6 +114,16 @@ public:
     void testPartialReplyWithKeepAlive()
     {
         verifyReply("keep-alive", 64, false);
+    }
+
+    void testMixedCaseConnectionClose()
+    {
+        verifyReply("Close", 64, false);
+    }
+
+    void testRunningStateIgnoresExpiredShutdownDeadline()
+    {
+        verifyReply("close", 16384, false, false, chrono::steady_clock::now() - chrono::seconds(1));
     }
 
     void testReplyAfterTemporaryNoProgress()
@@ -365,7 +377,8 @@ public:
         EXPECT_EQUAL(failedReplies, 0U);
     }
 
-    void verifyReply(const string& connection, size_t firstWriteLimit, bool pauseAfterFirstWrite, bool failAfterFirstWrite = false)
+    void verifyReply(const string& connection, size_t firstWriteLimit, bool pauseAfterFirstWrite,
+                     bool failAfterFirstWrite = false, chrono::time_point<chrono::steady_clock> shutdownTime = {})
     {
         int fds[2];
         ASSERT_EQUAL(socketpair(AF_UNIX, SOCK_STREAM, 0, fds), 0);
@@ -378,6 +391,7 @@ public:
         BedrockServer server(SQLiteNodeState::LEADING, args);
         server._shutdownState = BedrockServer::RUNNING;
         server._outstandingSocketThreads = 0;
+        server._shutdownTime = shutdownTime;
 
         SData request("Query");
         request["Connection"] = connection;
@@ -393,7 +407,8 @@ public:
         EXPECT_EQUAL(sender.sendCalls, 0U);
         EXPECT_TRUE(sender.sendBufferEmpty());
         EXPECT_EQUAL(sender.state.load(), STCPManager::Socket::CONNECTED);
-        EXPECT_EQUAL(server._deliverReply(command), !failAfterFirstWrite);
+        const bool delivered = server._deliverReply(command);
+        EXPECT_EQUAL(delivered, !failAfterFirstWrite);
 
         string received;
         char buffer[16384];
@@ -416,7 +431,7 @@ public:
             EXPECT_TRUE(received == expected);
             EXPECT_EQUAL(failedReplies, 0U);
         }
-        if (connection == "close") {
+        if (SIEquals(connection, "close")) {
             EXPECT_EQUAL(count, 0);
         } else {
             EXPECT_EQUAL(sender.state.load(), STCPManager::Socket::CONNECTED);

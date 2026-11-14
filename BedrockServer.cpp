@@ -1415,7 +1415,7 @@ void BedrockServer::_reply(unique_ptr<BedrockCommand>& command)
 
     // If we're shutting down, tell the caller to close the connection.
     // Also, if the caller wanted us to close the connection, we'll parrot that back.
-    if (_shutdownState.load() != RUNNING || command->request["Connection"] == "close") {
+    if (_shutdownState.load() != RUNNING || SIEquals(command->request["Connection"], "close")) {
         command->response["Connection"] = "close";
     }
 
@@ -1475,7 +1475,7 @@ bool BedrockServer::_deliverReply(unique_ptr<BedrockCommand>& command)
     bool success = true;
     while (!socket.sendBufferEmpty()) {
         const auto shutdownTime = _shutdownTime.load();
-        if (shutdownTime != chrono::time_point<chrono::steady_clock>{} && chrono::steady_clock::now() >= shutdownTime) {
+        if (_shutdownState.load() != RUNNING && shutdownTime != chrono::time_point<chrono::steady_clock>{} && chrono::steady_clock::now() >= shutdownTime) {
             success = false;
             break;
         }
