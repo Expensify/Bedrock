@@ -4,6 +4,8 @@
 #include <test/lib/BedrockTester.h>
 
 #include <arpa/inet.h>
+#include <fcntl.h>
+#include <future>
 #include <sys/socket.h>
 #include <thread>
 #include <unistd.h>
@@ -18,7 +20,8 @@ struct CommandPortTest : tpunit::TestFixture
                               TEST(CommandPortTest::testPartialReplyWithKeepAlive),
                               TEST(CommandPortTest::testReplyAfterTemporaryNoProgress),
                               TEST(CommandPortTest::testFailedReplyAfterPartialWrite),
-                              TEST(CommandPortTest::testFailedReplyAfterClientReset))
+                              TEST(CommandPortTest::testFailedReplyAfterClientReset),
+                              TEST(CommandPortTest::testNonBlockingFlushLeavesRemainder))
     {
     }
 
@@ -173,6 +176,37 @@ public:
         << " bytes accepted, failed-reply callbacks: " << failedReplies << endl;
         ASSERT_TRUE(pending > 0 && pending < total);
         EXPECT_EQUAL(failedReplies, 1U);
+    }
+
+    void testNonBlockingFlushLeavesRemainder()
+    {
+        int fds[2];
+        ASSERT_EQUAL(socketpair(AF_UNIX, SOCK_STREAM, 0, fds), 0);
+        STCPManager::Socket sender(fds[0], STCPManager::Socket::CONNECTED);
+        STCPManager::Socket receiver(fds[1], STCPManager::Socket::CONNECTED);
+        const int bufferSize = 4096;
+        ASSERT_EQUAL(setsockopt(sender.s, SOL_SOCKET, SO_SNDBUF, &bufferSize, sizeof(bufferSize)), 0);
+        const int flags = fcntl(sender.s, F_GETFL);
+        ASSERT_TRUE(flags >= 0 && !(flags & O_NONBLOCK));
+        const size_t size = 4 * 1024 * 1024;
+        sender.setSendBuffer(string(size, 'x'));
+
+        promise<bool> result;
+        auto completed = result.get_future();
+        thread flushing([&]() {
+            SInitialize("nonblocking-flush-test");
+            result.set_value(sender.sendNonBlocking() && sender.sendNonBlocking());
+        });
+        const bool ready = completed.wait_for(chrono::seconds(2)) == future_status::ready;
+        if (!ready) {
+            receiver.shutdown(STCPManager::Socket::CLOSED);
+        }
+        flushing.join();
+        ASSERT_TRUE(ready);
+        EXPECT_TRUE(completed.get());
+        const size_t pending = sender.sendBufferCopy().size();
+        EXPECT_TRUE(pending > 0 && pending < size);
+        EXPECT_EQUAL(fcntl(sender.s, F_GETFL), flags);
     }
 
     void verifyReply(const string& connection, size_t firstWriteLimit, bool pauseAfterFirstWrite, bool failAfterFirstWrite = false)

@@ -67,6 +67,10 @@ public:
         bool sendAll(const string& buffer);
 
         virtual bool recv();
+
+        // Flushes pending plaintext bytes without waiting for kernel buffer space or changing the fd's blocking mode.
+        virtual bool sendNonBlocking();
+
         void shutdown(State toState = SHUTTINGDOWN);
 
         uint64_t id;
