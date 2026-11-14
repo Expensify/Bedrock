@@ -510,10 +510,13 @@ bool BedrockServer::isShuttingDown()
 
 void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlocking, bool hasDedicatedThread)
 {
-    // This takes ownership of the passed command. By calling the move constructor, the caller's unique_ptr is now empty, and so when the one here goes out of scope (i.e., this function
-    // returns), the command is destroyed.
     unique_ptr<BedrockCommand> command(move(_command));
+    _runCommand(command, isBlocking, hasDedicatedThread);
+    _handoffReply(command);
+}
 
+void BedrockServer::_runCommand(unique_ptr<BedrockCommand>& command, bool isBlocking, bool hasDedicatedThread)
+{
     SAUTOPREFIX(command->request);
 
     // If the command has already timed out, reply as such.
@@ -1412,7 +1415,7 @@ void BedrockServer::_reply(unique_ptr<BedrockCommand>& command)
 
     // If we're shutting down, tell the caller to close the connection.
     // Also, if the caller wanted us to close the connection, we'll parrot that back.
-    if (_shutdownState.load() != RUNNING || command->request["Connection"] == "close") {
+    if (_shutdownState.load() != RUNNING || SIEquals(command->request["Connection"], "close")) {
         command->response["Connection"] = "close";
     }
 
@@ -1431,12 +1434,9 @@ void BedrockServer::_reply(unique_ptr<BedrockCommand>& command)
                 SERROR("Couldn't find plugin '" << pluginName << ".");
             }
         } else {
-            // Otherwise we send the standard response.
-            if (!command->socket->send(command->response.serialize())) {
-                // If we can't send (client closed the socket?), alert our plugin it's response was never sent.
-                SINFO("No socket to reply for: '" << command->request.methodLine << "' #" << command->initiatingClientID);
-                command->handleFailedReply();
-            }
+            // The connection thread owns standard response writes and closes only after delivery completes.
+            command->responseReady = true;
+            return;
         }
 
         // If `Connection: close` was set, shut down the socket, in case the caller ignores us.
@@ -1451,6 +1451,60 @@ void BedrockServer::_reply(unique_ptr<BedrockCommand>& command)
         }
         command->handleFailedReply();
     }
+}
+
+void BedrockServer::_handoffReply(unique_ptr<BedrockCommand>& command)
+{
+    if (!command || !command->responseReady) {
+        return;
+    }
+    SASSERT(command->responseCallback);
+    command->destructionCallback = nullptr;
+    auto callback = move(command->responseCallback);
+    callback(move(command));
+}
+
+bool BedrockServer::_deliverReply(unique_ptr<BedrockCommand>& command)
+{
+    SAUTOPREFIX(command->request);
+    Socket& socket = *command->socket;
+    const SData& response = command->response;
+    SASSERT(command->responseReady && socket.sendBufferEmpty());
+    socket.setSendBuffer(response.serialize());
+
+    bool success = true;
+    while (!socket.sendBufferEmpty()) {
+        const auto shutdownTime = _shutdownTime.load();
+        if (_shutdownState.load() != RUNNING && shutdownTime != chrono::time_point<chrono::steady_clock>{} && chrono::steady_clock::now() >= shutdownTime) {
+            success = false;
+            break;
+        }
+
+        pollfd writable = {socket.s, POLLOUT, 0};
+        const int result = poll(&writable, 1, 1000);
+        if (result < 0 && errno == EINTR) {
+            continue;
+        }
+        if (result < 0 || (writable.revents & (POLLERR | POLLHUP | POLLNVAL))) {
+            success = false;
+            break;
+        }
+        if (writable.revents & POLLOUT) {
+            if (!socket.sendNonBlocking()) {
+                success = false;
+                break;
+            }
+        }
+    }
+
+    if (!success || SIEquals(response["Connection"], "close") || _shutdownState.load() != RUNNING) {
+        socket.shutdown(Socket::CLOSED);
+    }
+    if (!success) {
+        SINFO("Failed response delivery for '" << command->request.methodLine << "' #" << command->initiatingClientID);
+        command->handleFailedReply();
+    }
+    return success;
 }
 
 void BedrockServer::blockCommandPort(const string& reason)
@@ -1828,6 +1882,7 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command)
             cmd->response.methodLine = "503 Service Unavailable";
             cmd->complete = true;
             _reply(cmd);
+            _handoffReply(cmd);
         }
         // `getAll` bypasses `_dequeue`, so reset identifier counts to match the now-empty queue.
         _blockingCommandQueue.clearRateLimits();
@@ -2412,9 +2467,7 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
         SInitialize(threadName);
         SINFO("[performance] Socket thread starting");
 
-        // This outer loop just runs until the entire socket life cycle is done, meaning it deserializes a command,
-        // waits for it to get processed, deserializes another, etc, until the socket gets closed.
-        // This whole block is largely duplicated from `postPoll` and modified to work on a single non-blocking socket.
+        // Handle one command and its complete response before reading the next command on this connection.
         while (socket.state != STCPManager::Socket::CLOSED) {
             // We are going to call `poll` in a loop with only this one socket as a file descriptor.
             // The reason for this is because it's possible that a client is connected to us, and not sending us any data.
@@ -2509,6 +2562,7 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
                             mutex m;
                             condition_variable cv;
                             atomic<bool> finished = false;
+                            unique_ptr<BedrockCommand> response;
 
                             function<void()> callback = [&m, &cv, &finished]() {
                                 // Lock the mutex above (which will be locked by this thread while we're queuing), which waits
@@ -2524,6 +2578,11 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
                             if (hasSocket) {
                                 // Set the destructor callback for when the command finishes.
                                 command->destructionCallback = &callback;
+                                command->responseCallback = [&](unique_ptr<BedrockCommand> ready) {
+                                    lock_guard lock(m);
+                                    response = move(ready);
+                                    cv.notify_all();
+                                };
                             }
 
                             // Running the command in a separate thread allows this thread to poll the client socket and if it is
@@ -2537,10 +2596,10 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
                                 runCommand(move(command));
                             });
 
-                            // Now that the command is running, we wait for it to complete (if it has a socket, and hasn't finished by the time we get to this point).
-                            // When this happens, destructionCallback fires, sets `finished` to true, and we can move on to the next request.
+                            // A standard reply transfers the command back; plugin replies or discarded commands notify
+                            // through destruction. Both paths keep the socket and callback state alive until execution ends.
                             unique_lock<mutex> lock(m);
-                            while (!finished && hasSocket) {
+                            while (!finished && !response && hasSocket) {
                                 struct pollfd disconnectCheck = {socket.s, (POLLIN | POLLRDHUP), 0};
                                 if (poll(&disconnectCheck, 1, 0) > 0) {
                                     if (!commandShouldAbortFlag && disconnectCheck.revents & (POLLHUP | POLLERR | POLLNVAL | POLLRDHUP)) {
@@ -2559,7 +2618,11 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
                             }
 
                             commandThread.join();
+                            command = move(response);
                         }
+                    }
+                    if (command && command->responseReady) {
+                        _deliverReply(command);
                     }
                 }
             } else if (socket.state == STCPManager::Socket::SHUTTINGDOWN || socket.state == STCPManager::Socket::CLOSED) {

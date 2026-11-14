@@ -14,6 +14,7 @@ class SQLitePeer;
 class BedrockCore;
 
 class BedrockServer : public SQLiteServer {
+    friend struct CommandPortTest;
 public:
 
     // Gives every plugin a chance to verify and/or modify the database schema. The leader runs this once each time it
@@ -339,9 +340,14 @@ private:
     // Each worker thread runs this function. It gets the same data as the sync thread, plus its individual thread ID.
     void worker(int threadId);
 
-    // Send a reply for a completed command back to the initiating client. If the `originator` of the command is set,
-    // then this is an error, as the command should have been sent back to a peer.
+    // Finalizes a completed reply. Standard responses are delivered by the connection thread; plugins own their replies.
     void _reply(unique_ptr<BedrockCommand>& command);
+
+    void _runCommand(unique_ptr<BedrockCommand>& command, bool isBlocking, bool hasDedicatedThread);
+    void _handoffReply(unique_ptr<BedrockCommand>& command);
+
+    // Runs only on the owning connection thread. Keeps the command alive until delivery or failed-reply recovery ends.
+    bool _deliverReply(unique_ptr<BedrockCommand>& command);
 
     // The following are constants used as methodlines by status command requests.
     static constexpr auto STATUS_IS_FOLLOWER = "GET /status/isFollower HTTP/1.1";
@@ -442,7 +448,7 @@ private:
     map<string, set<STable>> _crashCommands;
 
     // Returns whether or not the command was a status or control command. If it was, it will have already been handled
-    // and responded to upon return
+    // and its reply prepared upon return.
     bool _handleIfStatusOrControlCommand(unique_ptr<BedrockCommand>& command);
 
     // Apply a crash-command blacklist entry received through either HTTP or the cluster connection.

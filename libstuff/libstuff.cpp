@@ -2059,6 +2059,11 @@ bool S_recvappend(int s, SFastBuffer& recvBuffer)
 // --------------------------------------------------------------------------
 bool S_sendconsume(int s, SFastBuffer& sendBuffer)
 {
+    return S_sendconsume(s, sendBuffer, 0);
+}
+
+bool S_sendconsume(int s, SFastBuffer& sendBuffer, int flags)
+{
     SASSERT(s);
     // If empty, nothing to do
     if (sendBuffer.empty()) {
@@ -2074,7 +2079,7 @@ bool S_sendconsume(int s, SFastBuffer& sendBuffer)
     }
 
     // Send as much as we can
-    ssize_t numSent = send(s, sendBuffer.c_str(), sendBuffer.size(), MSG_NOSIGNAL);
+    ssize_t numSent = send(s, sendBuffer.c_str(), sendBuffer.size(), MSG_NOSIGNAL | flags);
 
     // Save errno before anything else runs. Both strerror() and getpeername() can overwrite it, and the order in
     // which function arguments are evaluated is unspecified, so reading errno inline at a call site can yield the

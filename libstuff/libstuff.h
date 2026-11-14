@@ -720,6 +720,7 @@ int S_accept(int port, sockaddr_in& fromAddr, bool isBlocking);
 ssize_t S_recvfrom(int s, char* recvBuffer, int recvBufferSize, sockaddr_in& fromAddr);
 bool S_recvappend(int s, SFastBuffer& recvBuffer);
 bool S_sendconsume(int s, SFastBuffer& sendBuffer);
+bool S_sendconsume(int s, SFastBuffer& sendBuffer, int flags);
 int S_poll(fd_map& fdm, uint64_t timeout);
 
 // Network helpers

@@ -61,7 +61,12 @@ public:
         void* data;
         virtual bool send(size_t* bytesSentCount = nullptr);
         virtual bool send(const string& buffer, size_t* bytesSentCount = nullptr);
+
         virtual bool recv();
+
+        // Flushes pending plaintext bytes without waiting for kernel buffer space or changing the fd's blocking mode.
+        virtual bool sendNonBlocking();
+
         void shutdown(State toState = SHUTTINGDOWN);
 
         uint64_t id;
