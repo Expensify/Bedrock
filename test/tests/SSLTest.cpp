@@ -26,7 +26,12 @@ public:
         return _describeRequestProgress(transaction);
     }
 
-    unique_ptr<Transaction> send(const string& url, const SData& request, int maxReconnectAttempts = MAX_RECONNECT_ATTEMPTS)
+    unique_ptr<Transaction> send(const string& url, const SData& request)
+    {
+        return _httpsSend(url, request);
+    }
+
+    unique_ptr<Transaction> send(const string& url, const SData& request, int maxReconnectAttempts)
     {
         return _httpsSend(url, request, false, maxReconnectAttempts);
     }
@@ -120,7 +125,7 @@ struct SSLTest : tpunit::TestFixture
                               TEST(SSLTest::reconnectTest),
                               TEST(SSLTest::proxyRefusedReconnectTest),
                               TEST(SSLTest::noReconnectAfterSendTest),
-                              TEST(SSLTest::reconnectOptOutTest),
+                              TEST(SSLTest::noReconnectByDefaultTest),
                               TEST(SSLTest::reconnectAfterTimeoutTest),
                               AFTER_CLASS(SSLTest::teardown))
     {
@@ -413,7 +418,7 @@ struct SSLTest : tpunit::TestFixture
         const uint16_t port = FakeHTTPServer::unusedPort();
         SData request("GET / HTTP/1.1");
         request["Host"] = "127.0.0.1:" + to_string(port);
-        unique_ptr<SStandaloneHTTPSManager::Transaction> transaction = manager.send("http://127.0.0.1:" + to_string(port) + "/", request);
+        unique_ptr<SStandaloneHTTPSManager::Transaction> transaction = manager.send("http://127.0.0.1:" + to_string(port) + "/", request, SStandaloneHTTPSManager::MAX_RECONNECT_ATTEMPTS);
         transaction->timeoutAt = STimeNow() + 10'000'000;
 
         unique_ptr<FakeHTTPServer> server;
@@ -470,7 +475,7 @@ struct SSLTest : tpunit::TestFixture
         FakeHTTPServer server(port);
         SData request("GET / HTTP/1.1");
         request["Host"] = "127.0.0.1:" + to_string(port);
-        unique_ptr<SStandaloneHTTPSManager::Transaction> transaction = manager.send("http://127.0.0.1:" + to_string(port) + "/", request);
+        unique_ptr<SStandaloneHTTPSManager::Transaction> transaction = manager.send("http://127.0.0.1:" + to_string(port) + "/", request, SStandaloneHTTPSManager::MAX_RECONNECT_ATTEMPTS);
         transaction->timeoutAt = STimeNow() + 10'000'000;
 
         waitForResponse(manager, *transaction, 1'000, [&]() {
@@ -482,14 +487,14 @@ struct SSLTest : tpunit::TestFixture
         EXPECT_EQUAL(server.connections, 1);
     }
 
-    void reconnectOptOutTest()
+    void noReconnectByDefaultTest()
     {
-        // A caller that passes 0 gets the connection failure straight away, without a reconnect.
+        // A caller that doesn't ask for reconnects gets the connection failure straight away.
         FailureStageHTTPSManager manager;
         const uint16_t port = FakeHTTPServer::unusedPort();
         SData request("GET / HTTP/1.1");
         request["Host"] = "127.0.0.1:" + to_string(port);
-        unique_ptr<SStandaloneHTTPSManager::Transaction> transaction = manager.send("http://127.0.0.1:" + to_string(port) + "/", request, 0);
+        unique_ptr<SStandaloneHTTPSManager::Transaction> transaction = manager.send("http://127.0.0.1:" + to_string(port) + "/", request);
         transaction->timeoutAt = STimeNow() + 10'000'000;
 
         waitForResponse(manager, *transaction);

@@ -58,10 +58,10 @@ private:
 
     static const string proxyAddressHTTPS;
 
-    // By default, a request sent with `_httpsSend` that fails before reaching its target host (DNS, connect, or the
-    // proxy refusing the tunnel) is retried on a new connection up to this many times, waiting
-    // RECONNECT_BASE_DELAY_US, then twice that, and so on. That spans a few seconds of lost connectivity, such as a
-    // firewall failover.
+    // A caller of `_httpsSend` can pass this as `maxReconnectAttempts` so that a request that fails before reaching its
+    // target host (DNS, connect, or the proxy refusing the tunnel) is retried on a new connection up to this many
+    // times, waiting RECONNECT_BASE_DELAY_US, then twice that, and so on. That spans a few seconds of lost
+    // connectivity, such as a firewall failover.
     static constexpr int MAX_RECONNECT_ATTEMPTS = 4;
     static constexpr uint64_t RECONNECT_BASE_DELAY_US = 500'000;
 
@@ -88,11 +88,11 @@ protected:   // Child API
 
     // Methods
     // `maxReconnectAttempts` limits how many times a request that never reached its target host is resent on a new
-    // connection. Pass 0 to fail on the first connection failure.
-    unique_ptr<Transaction> _httpsSend(const string& url, const SData& request, bool allowProxy = false, int maxReconnectAttempts = MAX_RECONNECT_ATTEMPTS);
+    // connection. By default it isn't resent, and the first connection failure is final.
+    unique_ptr<Transaction> _httpsSend(const string& url, const SData& request, bool allowProxy = false, int maxReconnectAttempts = 0);
 
     // A non-null connection requires an HTTPS URL with a matching host:port.
-    unique_ptr<Transaction> _httpsSend(const string& url, const SData& request, shared_ptr<const MTLSConnection> connection, bool allowProxy = false, int maxReconnectAttempts = MAX_RECONNECT_ATTEMPTS);
+    unique_ptr<Transaction> _httpsSend(const string& url, const SData& request, shared_ptr<const MTLSConnection> connection, bool allowProxy = false, int maxReconnectAttempts = 0);
 
     unique_ptr<Transaction> _createErrorTransaction();
 
