@@ -280,7 +280,10 @@ unique_ptr<SStandaloneHTTPSManager::Transaction> SStandaloneHTTPSManager::_https
     const bool useProxy = isHttps && allowProxy && proxyAddressHTTPS.size();
     if (useProxy) {
         string proxyHost, proxyPath;
-        SParseURI(proxyAddressHTTPS, proxyHost, proxyPath);
+        if (!SParseURI(proxyAddressHTTPS, proxyHost, proxyPath) || proxyHost.empty()) {
+            SWARN("Couldn't parse the HTTPS proxy address '" << proxyAddressHTTPS << "', not sending " << url);
+            return _createErrorTransaction();
+        }
         SINFO("Proxying " << url << " through " << proxyHost);
         transaction->proxyHost = proxyHost;
     }
