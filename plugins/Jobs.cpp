@@ -1693,7 +1693,7 @@ void BedrockJobsCommand::process(SQLite& db)
         }
         if (!db.writeIdempotent("UPDATE jobs SET state = 'CANCELLED' "
                                 "WHERE parentJobID != 0 AND parentJobID = " + SQ(jobID) +
-                                " AND state IN ('QUEUED', 'RUNQUEUED', 'PAUSED');")) {
+                                " AND state IN ('QUEUED', 'RUNQUEUED', 'PAUSED', 'FAILED');")) {
             STHROW("502 Failed to cancel child jobs");
         }
         const bool hasPendingChildren = _hasPendingChildJobs(db, jobID);

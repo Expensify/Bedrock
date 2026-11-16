@@ -37,7 +37,7 @@ Bedrock::Jobs is a plugin to the [Bedrock data foundation](../README.md) that ma
 
  * **CancelJobTree( jobID )** - Requests cancellation of a non-repeating root job with `retryAfter` and its children.
    * *jobID* - Identifier of the root job to cancel.
-   * Queued, runqueued, and paused children are canceled atomically. Work already executing can still run, and a child in the running state can finish.
+   * Queued, runqueued, paused, and failed children are canceled atomically. Work already executing can still run, and a child in the running state can finish.
    * Bedrock sets `_bedrockCancelRequested` and `wasCancelled` to `true` in the root job's data, rejects new children, and preserves them if a worker finishes or retries with stale data.
    * A paused root is requeued once its running children finish. Workers must check the marker and stop their remaining work.
    * A unique enqueue cannot reuse the canceled root until it finishes.

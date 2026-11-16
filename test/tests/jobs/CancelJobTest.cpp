@@ -23,6 +23,7 @@ struct CancelJobTest : tpunit::TestFixture
                               TEST(CancelJobTest::cancelTreeWithRunqueuedChild),
                               TEST(CancelJobTest::cancelTreeAfterWorkerFailure),
                               TEST(CancelJobTest::cancelTreeAfterParentFailed),
+                              TEST(CancelJobTest::cancelTreeWithFailedChild),
                               TEST(CancelJobTest::cancelTreeRejectsInvalidTargets),
                               TEST(CancelJobTest::cancelMarkerCannotBeSupplied),
                               AFTER(CancelJobTest::tearDown),
@@ -251,6 +252,28 @@ struct CancelJobTest : tpunit::TestFixture
         tester->executeWaitVerifyContent(fail);
         ASSERT_EQUAL(getState(parentID), "FAILED");
         ASSERT_EQUAL(getState(childID), "PAUSED");
+        cancelTree(parentID);
+        ASSERT_EQUAL(getState(parentID), "QUEUED");
+        ASSERT_EQUAL(getState(childID), "CANCELLED");
+        dequeueParent();
+        finishJob(parentID);
+        ASSERT_EQUAL(getState(parentID), "");
+        ASSERT_EQUAL(getState(childID), "");
+    }
+
+    void cancelTreeWithFailedChild()
+    {
+        const string parentID = startParent();
+        const string childID = createChild(parentID);
+        finishJob(parentID);
+        SData getChild("GetJob");
+        getChild["name"] = "tree-child";
+        tester->executeWaitVerifyContent(getChild);
+        SData fail("FailJob");
+        fail["jobID"] = childID;
+        tester->executeWaitVerifyContent(fail);
+        ASSERT_EQUAL(getState(parentID), "PAUSED");
+        ASSERT_EQUAL(getState(childID), "FAILED");
         cancelTree(parentID);
         ASSERT_EQUAL(getState(parentID), "QUEUED");
         ASSERT_EQUAL(getState(childID), "CANCELLED");
