@@ -110,11 +110,13 @@ struct CancelJobTest : tpunit::TestFixture
     {
         SQResult result;
         tester->readDB("SELECT IIF(JSON_VALID(data), JSON_TYPE(data, '$._bedrockCancelRequested'), '') AS marker, "
-                       "IIF(JSON_VALID(data), JSON_TYPE(data, '$.wasCancelled'), '') AS cancelled "
+                       "IIF(JSON_VALID(data), JSON_TYPE(data, '$.wasCancelled'), '') AS cancelled, "
+                       "IIF(JSON_VALID(data), JSON_EXTRACT(data, '$.receiptID'), 0) AS receiptID "
                        "FROM jobs WHERE jobID = " + SQ(parentID) + ";", result);
         ASSERT_FALSE(result.empty());
         ASSERT_EQUAL(result[0]["marker"], "true");
         ASSERT_EQUAL(result[0]["cancelled"], "true");
+        ASSERT_EQUAL(result[0]["receiptID"], "7");
     }
 
     void cancelTreeDuringRetry()
@@ -135,7 +137,7 @@ struct CancelJobTest : tpunit::TestFixture
 
         SData update("UpdateJob");
         update["jobID"] = parentID;
-        update["data"] = R"({"receiptID":7})";
+        update["data"] = R"({"receiptID":999})";
         tester->executeWaitVerifyContent(update);
         assertCancelledParentData(parentID);
 
