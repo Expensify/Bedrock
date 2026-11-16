@@ -386,6 +386,19 @@ bool STCPManager::Socket::send(const string& buffer, size_t* bytesSentCount)
     return send(bytesSentCount);
 }
 
+bool STCPManager::Socket::sendNonBlocking()
+{
+    lock_guard<decltype(sendRecvMutex)> lock(sendRecvMutex);
+    SASSERT(!ssl);
+
+    const size_t oldSize = sendBuffer.size();
+    const bool result = s > 0 && S_sendconsume(s, sendBuffer, MSG_DONTWAIT);
+    if (sendBuffer.size() != oldSize) {
+        lastSendTime = STimeNow();
+    }
+    return result;
+}
+
 bool STCPManager::Socket::sendBufferEmpty()
 {
     lock_guard<decltype(sendRecvMutex)> lock(sendRecvMutex);

@@ -44,7 +44,9 @@ struct ControlCommandTest : tpunit::TestFixture
         SData attachCommand("attach");
         follower.executeWaitVerifyContent(attachCommand, "401 Attaching prevented by TestPlugin", true);
 
-        sleep(5);
+        // Remain detached past the ten-second shutdown deadline. Status and Attach must still reply on the control port.
+        sleep(9);
+        follower.executeWaitVerifyContent(SData("Status"), "200", true);
 
         // Try to attach again, should be allowed now that the sleep in the plugin
         // has passed.
