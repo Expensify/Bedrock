@@ -109,13 +109,15 @@ static string findJobDataKey(const JSON::Value& data, const string& key)
     return key;
 }
 
-static string stripRerunIfDataChanged(const string& data)
+static string stripInternalJobMarkers(const string& data)
 {
-    const string key = "_bedrockRerunIfDataChanged";
+    const string rerunKey = "_bedrockRerunIfDataChanged";
+    const string cancelKey = "_bedrockCancelRequested";
     JSON::Value publicData = JSON::Value::parse(data);
     bool removed = false;
     for (auto member = publicData.objectBegin(); member != publicData.objectEnd();) {
-        if (member->first.size() == key.size() && SIEquals(member->first, key)) {
+        if ((member->first.size() == rerunKey.size() && SIEquals(member->first, rerunKey)) ||
+            (member->first.size() == cancelKey.size() && SIEquals(member->first, cancelKey))) {
             member = publicData.erase(member);
             removed = true;
         } else {
@@ -123,6 +125,13 @@ static string stripRerunIfDataChanged(const string& data)
         }
     }
     return removed ? publicData.serialize() : data;
+}
+
+static bool isJobCancellationRequested(const JSON::Value& data)
+{
+    return data.hasMember("_bedrockCancelRequested") &&
+           data["_bedrockCancelRequested"].isBool() &&
+           data["_bedrockCancelRequested"].getBool();
 }
 
 // Job headers use strings, while CreateJobs accepts JSON values for those same headers.
@@ -210,6 +219,7 @@ const set<string, STableComp> BedrockPlugin_Jobs::supportedRequestVerbs = {
     "CreateJob",
     "CreateJobs",
     "CancelJob",
+    "CancelJobTree",
     "UpdateJob",
     "RetryJob",
     "FinishJob",
@@ -468,7 +478,7 @@ bool BedrockJobsCommand::peek(SQLite& db)
                 // Throw if data is not a valid JSON object, otherwise UPDATE query will fail.
                 if (SContains(job, "data")) {
                     validateJobData(job["data"]);
-                    job["data"] = stripRerunIfDataChanged(job["data"]);
+                    job["data"] = stripInternalJobMarkers(job["data"]);
                 }
 
                 // Validate retryAfter
@@ -520,6 +530,9 @@ bool BedrockJobsCommand::peek(SQLite& db)
                     // any change made here will happen early enough for all of our existing checks to work correctly, and
                     // everything should be good when we get to `processCommand`.
                     const JSON::Value parentData = JSON::Value::parse(result[0][1]);
+                    if (isJobCancellationRequested(parentData)) {
+                        STHROW("405 Parent job cancellation requested");
+                    }
                     bool parentIsMocked = parentData.hasMember(findJobDataKey(parentData, "mockRequest"));
                     bool childIsMocked = request.isSet("mockRequest");
 
@@ -539,7 +552,8 @@ bool BedrockJobsCommand::peek(SQLite& db)
                           << (mockRequest ? "true" : "false"));
                     string operation = mockRequest ? "IS NOT" : "IS";
                     if (!db.read("SELECT jobID, JSON_REMOVE(data, '$._bedrockRerunIfDataChanged'), parentJobID, "
-                                 "JSON_TYPE(data, '$._bedrockRerunIfDataChanged') = 'true' "
+                                 "JSON_TYPE(data, '$._bedrockRerunIfDataChanged') = 'true', "
+                                 "IIF(JSON_VALID(data), JSON_TYPE(data, '$._bedrockCancelRequested') = 'true', 0) "
                                  "FROM jobs "
                                  "WHERE name = " + SQ(job["name"]) +
                                  "  AND JSON_EXTRACT(data, '$.mockRequest') " + operation + " NULL;",
@@ -549,6 +563,9 @@ bool BedrockJobsCommand::peek(SQLite& db)
 
                     // If there's no job or the existing job doesn't match the data we've been passed, escalate to leader.
                     if (!result.empty()) {
+                        if (result[0][4] == "1") {
+                            STHROW("405 Existing job cancellation requested");
+                        }
                         // If the parent passed does not match the parent the job already had, then it must mean we did something
                         // wrong or made a bad CQ, so we throw so we can investigate. Updating the parent here would be
                         // confusing, as it could leave the original parent in a bad state (like for example paused forever)
@@ -628,6 +645,11 @@ bool BedrockJobsCommand::peek(SQLite& db)
 
         return false; // Need to process command
     }
+    // ----------------------------------------------------------------------
+    else if (SIEquals(requestVerb, "CancelJobTree")) {
+        BedrockPlugin::verifyAttributeInt64(request, "jobID", 1);
+        return false;
+    }
 
     // Didn't recognize this command
     return false;
@@ -701,9 +723,9 @@ void BedrockJobsCommand::process(SQLite& db)
             // If unique flag was passed and the job exist in the DB, then we can finish the command without escalating to
             // leader.
 
-            // This marker is owned exclusively by Bedrock. Callers cannot create or overwrite it.
+            // These markers are owned exclusively by Bedrock. Callers cannot create or overwrite them.
             if (!job["data"].empty()) {
-                job["data"] = stripRerunIfDataChanged(job["data"]);
+                job["data"] = stripInternalJobMarkers(job["data"]);
             }
 
             // If this is a mock request, we insert that into the data.
@@ -731,7 +753,8 @@ void BedrockJobsCommand::process(SQLite& db)
                        << (mockRequest ? "true" : "false"));
                 string operation = mockRequest ? "IS NOT" : "IS";
                 if (!db.read("SELECT jobID, JSON_REMOVE(data, '$._bedrockRerunIfDataChanged'), "
-                             "JSON_TYPE(data, '$._bedrockRerunIfDataChanged') = 'true' "
+                             "JSON_TYPE(data, '$._bedrockRerunIfDataChanged') = 'true', "
+                             "IIF(JSON_VALID(data), JSON_TYPE(data, '$._bedrockCancelRequested') = 'true', 0) "
                              "FROM jobs "
                              "WHERE name = " + SQ(job["name"]) +
                              "  AND JSON_EXTRACT(data, '$.mockRequest') " + operation + " NULL;",
@@ -740,6 +763,9 @@ void BedrockJobsCommand::process(SQLite& db)
                 }
 
                 if (!result.empty()) {
+                    if (result[0][3] == "1") {
+                        STHROW("405 Existing job cancellation requested");
+                    }
                     existingRerunIfDataChanged = result[0][2] == "1";
                     const string incomingData = job["data"].empty() ? "{}" : job["data"];
                     const bool matchingData =
@@ -813,6 +839,9 @@ void BedrockJobsCommand::process(SQLite& db)
                 }
                 // Verify that the parent and child job have the same `mockRequest` setting.
                 const JSON::Value parentData = JSON::Value::parse(result[0][2]);
+                if (isJobCancellationRequested(parentData)) {
+                    STHROW("405 Parent job cancellation requested");
+                }
                 if (mockRequest != parentData.hasMember(findJobDataKey(parentData, "mockRequest"))) {
                     STHROW("405 Parent and child jobs must have matching mockRequest setting");
                 }
@@ -1270,7 +1299,8 @@ void BedrockJobsCommand::process(SQLite& db)
 
         // Verify there is a job like this
         SQResult result;
-        if (!db.read("SELECT jobID, nextRun, lastRun, JSON_EXTRACT(data, '$.mockRequest') "
+        if (!db.read("SELECT jobID, nextRun, lastRun, JSON_EXTRACT(data, '$.mockRequest'), "
+                     "IIF(JSON_VALID(data), JSON_TYPE(data, '$._bedrockCancelRequested') = 'true', 0) "
                      "FROM jobs "
                      "WHERE jobID=" + SQ(request.calc64("jobID")) + ";",
                      result)) {
@@ -1283,10 +1313,14 @@ void BedrockJobsCommand::process(SQLite& db)
         const string& nextRun = result[0][1];
         const string& lastRun = result[0][2];
         mockRequest = result[0][3] == "1";
+        const bool cancelRequested = result[0][4] == "1";
+        if (cancelRequested) {
+            return;
+        }
 
-        // Remove the internal marker from the request data. Restore it only if it is set on the stored job.
+        // Remove internal markers from the request data. Restore the rerun marker if it is set on the stored job.
         // Keep the stored mockRequest value too.
-        const string sanitizedRequestData = stripRerunIfDataChanged(request["data"]);
+        const string sanitizedRequestData = stripInternalJobMarkers(request["data"]);
         const string newData = mockRequest
             ? db.read("SELECT JSON_SET(" + SQ(sanitizedRequestData) + ", '$.mockRequest', JSON('true'));")
             : db.read("SELECT JSON_REMOVE(" + SQ(sanitizedRequestData) + ", '$.mockRequest');");
@@ -1369,7 +1403,8 @@ void BedrockJobsCommand::process(SQLite& db)
         SQResult result;
         if (!db.read("SELECT state, nextRun, lastRun, repeat, parentJobID, json_extract(data, '$.mockRequest'), "
                      "retryAfter, json_extract(data, '$.originalNextRun'), data, "
-                     "JSON_TYPE(data, '$._bedrockRerunIfDataChanged') = 'true' "
+                     "JSON_TYPE(data, '$._bedrockRerunIfDataChanged') = 'true', "
+                     "IIF(JSON_VALID(data), JSON_TYPE(data, '$._bedrockCancelRequested') = 'true', 0) "
                      "FROM jobs "
                      "WHERE jobID = " + SQ(jobID) + ";",
                      result)) {
@@ -1389,6 +1424,10 @@ void BedrockJobsCommand::process(SQLite& db)
         string originalNextRun = result[0][7];
         const string& currentData = result[0][8];
         const bool rerunIfDataChanged = result[0][9] == "1";
+        const bool cancelRequested = result[0][10] == "1";
+        if (cancelRequested) {
+            repeat.clear();
+        }
 
         // Make sure we're finishing a job that's actually running.
         if (state != "RUNNING" && state != "RUNQUEUED" && !mockRequest) {
@@ -1400,6 +1439,9 @@ void BedrockJobsCommand::process(SQLite& db)
         }
 
         const auto calculateNextRun = [&]() {
+            if (cancelRequested) {
+                return SIEquals(requestVerb, "RetryJob") ? SQ(SCURRENT_TIMESTAMP_MS()) : string();
+            }
             const bool ignoreRepeat = request.test("ignoreRepeat");
             if (!repeat.empty() && !ignoreRepeat) {
                 string lastScheduled = nextRun;
@@ -1433,7 +1475,7 @@ void BedrockJobsCommand::process(SQLite& db)
             return safeNextRun;
         };
 
-        if (rerunIfDataChanged && request.isSet("expectedData")) {
+        if (rerunIfDataChanged && !cancelRequested && request.isSet("expectedData")) {
             BedrockPlugin::verifyAttributeSize(request, "expectedData", 1, BedrockPlugin_Jobs::MAX_SIZE_BLOB);
             validateJobData(request["expectedData"], "expectedData");
             if (!callerDataEquals(currentData, request["expectedData"])) {
@@ -1452,7 +1494,7 @@ void BedrockJobsCommand::process(SQLite& db)
 
                 string dataExpression = "JSON_REMOVE(data, '$.retryAfterCount')";
                 if (!request["data"].empty()) {
-                    const string workerData = stripRerunIfDataChanged(request["data"]);
+                    const string workerData = stripInternalJobMarkers(request["data"]);
                     const JSON::Value parsedWorkerData = JSON::Value::parse(workerData);
                     const bool workerIsMocked = parsedWorkerData.hasMember(findJobDataKey(parsedWorkerData, "mockRequest"));
                     if (mockRequest != workerIsMocked) {
@@ -1492,9 +1534,13 @@ void BedrockJobsCommand::process(SQLite& db)
 
         // If we've been asked to update the data, let's do that
         auto data = request["data"];
+        if (cancelRequested) {
+            // The worker may have started before cancellation and cannot overwrite the cancellation request.
+            data.clear();
+        }
         if (!data.empty()) {
-            // Remove the internal marker from the worker data. Restore it only if it is set on the stored job.
-            data = stripRerunIfDataChanged(data);
+            // Remove internal markers from the worker data. Restore the rerun marker if it is set on the stored job.
+            data = stripInternalJobMarkers(data);
             // See if the new data says it's mocked.
             const JSON::Value newData = JSON::Value::parse(data);
             if (originalNextRun.empty()) {
@@ -1622,6 +1668,48 @@ void BedrockJobsCommand::process(SQLite& db)
         return;
     }
     // ----------------------------------------------------------------------
+    else if (SIEquals(requestVerb, "CancelJobTree")) {
+        BedrockPlugin::verifyAttributeInt64(request, "jobID", 1);
+        const int64_t jobID = request.calc64("jobID");
+        SQResult result;
+        if (!db.read("SELECT state, parentJobID, repeat, retryAfter FROM jobs WHERE jobID = " + SQ(jobID) + ";", result)) {
+            STHROW("502 Select failed");
+        }
+        if (result.empty()) {
+            STHROW("404 No job with this jobID");
+        }
+        if (SToInt64(result[0]["parentJobID"]) != 0 || !result[0]["repeat"].empty() || result[0]["retryAfter"].empty()) {
+            STHROW("405 Can only cancel non-repeating root jobs with retryAfter");
+        }
+        const string state = result[0]["state"];
+        if (state != "QUEUED" && state != "RUNNING" && state != "RUNQUEUED" && state != "PAUSED" && state != "FAILED") {
+            STHROW("405 Cannot cancel a job in this state");
+        }
+
+        if (!db.writeIdempotent("UPDATE jobs SET data = JSON_REMOVE("
+                                "JSON_SET(data, '$._bedrockCancelRequested', JSON('true'), '$.wasCancelled', JSON('true')), '$.retryAfterCount') "
+                                "WHERE jobID = " + SQ(jobID) + ";")) {
+            STHROW("502 Failed to cancel parent job");
+        }
+        if (!db.writeIdempotent("UPDATE jobs SET state = 'CANCELLED' "
+                                "WHERE parentJobID != 0 AND parentJobID = " + SQ(jobID) +
+                                " AND state IN ('QUEUED', 'RUNQUEUED', 'PAUSED');")) {
+            STHROW("502 Failed to cancel child jobs");
+        }
+        const bool hasPendingChildren = _hasPendingChildJobs(db, jobID);
+        if (state == "FAILED" && hasPendingChildren) {
+            if (!db.writeIdempotent("UPDATE jobs SET state = 'PAUSED' WHERE jobID = " + SQ(jobID) + " AND state = 'FAILED';")) {
+                STHROW("502 Failed to pause cancelled parent job");
+            }
+        } else if (state == "QUEUED" || ((state == "PAUSED" || state == "FAILED") && !hasPendingChildren)) {
+            if (!db.writeIdempotent("UPDATE jobs SET state = 'QUEUED', nextRun = " + SQ(SCURRENT_TIMESTAMP_MS()) +
+                                    " WHERE jobID = " + SQ(jobID) + " AND state IN ('QUEUED', 'PAUSED', 'FAILED');")) {
+                STHROW("502 Failed to resume cancelled parent job");
+            }
+        }
+        return;
+    }
+    // ----------------------------------------------------------------------
     else if (SIEquals(request.methodLine, "CancelJob")) {
         // - CancelJob (jobID)
         //
@@ -1681,7 +1769,8 @@ void BedrockJobsCommand::process(SQLite& db)
         // Verify there is a job like this and it's running
         SQResult result;
         if (!db.read("SELECT state, data, "
-                     "JSON_TYPE(data, '$._bedrockRerunIfDataChanged') = 'true' "
+                     "JSON_TYPE(data, '$._bedrockRerunIfDataChanged') = 'true', "
+                     "IIF(JSON_VALID(data), JSON_TYPE(data, '$._bedrockCancelRequested') = 'true', 0) "
                      "FROM jobs "
                      "WHERE jobID = " + SQ(jobID) + ";",
                      result)) {
@@ -1693,6 +1782,7 @@ void BedrockJobsCommand::process(SQLite& db)
         const string& state = result[0][0];
         const string& currentData = result[0][1];
         const bool rerunIfDataChanged = result[0][2] == "1";
+        const bool cancelRequested = result[0][3] == "1";
 
         // Make sure we're failing a job that's actually running or running with a retryAfter
         if (state != "RUNNING" && state != "RUNQUEUED") {
@@ -1701,6 +1791,14 @@ void BedrockJobsCommand::process(SQLite& db)
         }
         if (request.isSet("data")) {
             validateJobData(request["data"]);
+        }
+
+        if (cancelRequested) {
+            if (!db.writeIdempotent("UPDATE jobs SET state = 'QUEUED', nextRun = " + SQ(SCURRENT_TIMESTAMP_MS()) +
+                                    ", data = JSON_REMOVE(data, '$.retryAfterCount') WHERE jobID = " + SQ(jobID) + ";")) {
+                STHROW("502 Failed to resume cancelled job");
+            }
+            return;
         }
 
         if (rerunIfDataChanged && request.isSet("expectedData")) {
@@ -1724,7 +1822,7 @@ void BedrockJobsCommand::process(SQLite& db)
         list<string> updateList;
         if (request.isSet("data")) {
             // Update public data while preserving Bedrock's private opt-in marker.
-            const string newData = stripRerunIfDataChanged(request["data"]);
+            const string newData = stripInternalJobMarkers(request["data"]);
             updateList.push_back("data = " + preserveRerunIfDataChangedSQL(SQ(newData)));
         }
 

@@ -1,5 +1,6 @@
 #include <libstuff/SQResult.h>
 #include <libstuff/SData.h>
+#include <libstuff/JSON/Value.h>
 #include <test/lib/BedrockTester.h>
 
 struct CancelJobTest : tpunit::TestFixture
@@ -15,6 +16,15 @@ struct CancelJobTest : tpunit::TestFixture
                               TEST(CancelJobTest::cancelChildJob),
                               TEST(CancelJobTest::cancelJobWithoutParent),
                               TEST(CancelJobTest::cancelJobWithSiblings),
+                              TEST(CancelJobTest::cancelTreeDuringRetry),
+                              TEST(CancelJobTest::cancelTreeBeforeFinish),
+                              TEST(CancelJobTest::cancelTreeWhilePaused),
+                              TEST(CancelJobTest::cancelTreeWithRunningChild),
+                              TEST(CancelJobTest::cancelTreeWithRunqueuedChild),
+                              TEST(CancelJobTest::cancelTreeAfterWorkerFailure),
+                              TEST(CancelJobTest::cancelTreeAfterParentFailed),
+                              TEST(CancelJobTest::cancelTreeRejectsInvalidTargets),
+                              TEST(CancelJobTest::cancelMarkerCannotBeSupplied),
                               AFTER(CancelJobTest::tearDown),
                               AFTER_CLASS(CancelJobTest::tearDownClass))
     {
@@ -38,6 +48,253 @@ struct CancelJobTest : tpunit::TestFixture
     void tearDownClass()
     {
         delete tester;
+    }
+
+    string startParent()
+    {
+        SData create("CreateJob");
+        create["name"] = "tree-parent";
+        create["data"] = R"({"receiptID":7})";
+        create["retryAfter"] = "+5 MINUTES";
+        const string parentID = tester->executeWaitVerifyContentTable(create)["jobID"];
+        SData get("GetJob");
+        get["name"] = "tree-parent";
+        tester->executeWaitVerifyContent(get);
+        return parentID;
+    }
+
+    string createChild(const string& parentID, bool withRetry = false)
+    {
+        SData create("CreateJob");
+        create["name"] = "tree-child";
+        create["parentJobID"] = parentID;
+        if (withRetry) {
+            create["retryAfter"] = "+5 MINUTES";
+        }
+        return tester->executeWaitVerifyContentTable(create)["jobID"];
+    }
+
+    string getState(const string& jobID)
+    {
+        SQResult result;
+        tester->readDB("SELECT state FROM jobs WHERE jobID = " + SQ(jobID) + ";", result);
+        return result.empty() ? "" : result[0]["state"];
+    }
+
+    void cancelTree(const string& parentID)
+    {
+        SData cancel("CancelJobTree");
+        cancel["jobID"] = parentID;
+        tester->executeWaitVerifyContent(cancel);
+    }
+
+    void finishJob(const string& jobID, const string& data = "")
+    {
+        SData finish("FinishJob");
+        finish["jobID"] = jobID;
+        if (!data.empty()) {
+            finish["data"] = data;
+        }
+        tester->executeWaitVerifyContent(finish);
+    }
+
+    void dequeueParent()
+    {
+        SData get("GetJob");
+        get["name"] = "tree-parent";
+        tester->executeWaitVerifyContent(get);
+    }
+
+    void assertCancelledParentData(const string& parentID)
+    {
+        SQResult result;
+        tester->readDB("SELECT IIF(JSON_VALID(data), JSON_TYPE(data, '$._bedrockCancelRequested'), '') AS marker, "
+                       "IIF(JSON_VALID(data), JSON_TYPE(data, '$.wasCancelled'), '') AS cancelled "
+                       "FROM jobs WHERE jobID = " + SQ(parentID) + ";", result);
+        ASSERT_FALSE(result.empty());
+        ASSERT_EQUAL(result[0]["marker"], "true");
+        ASSERT_EQUAL(result[0]["cancelled"], "true");
+    }
+
+    void cancelTreeDuringRetry()
+    {
+        const string parentID = startParent();
+        const string childID = createChild(parentID);
+        cancelTree(parentID);
+        ASSERT_EQUAL(getState(parentID), "RUNQUEUED");
+        ASSERT_EQUAL(getState(childID), "CANCELLED");
+
+        SData create("CreateJob");
+        create["name"] = "late-child";
+        create["parentJobID"] = parentID;
+        tester->executeWaitVerifyContent(create, "405 Parent job cancellation requested");
+        SData createJobs("CreateJobs");
+        createJobs["jobs"] = "[{\"name\":\"late-child\",\"parentJobID\":" + parentID + "}]";
+        tester->executeWaitVerifyContent(createJobs, "405 Parent job cancellation requested");
+
+        SData update("UpdateJob");
+        update["jobID"] = parentID;
+        update["data"] = R"({"receiptID":7})";
+        tester->executeWaitVerifyContent(update);
+        assertCancelledParentData(parentID);
+
+        SData retry("RetryJob");
+        retry["jobID"] = parentID;
+        retry["delay"] = "120";
+        retry["data"] = R"({"receiptID":7,"pending":[1,2]})";
+        tester->executeWaitVerifyContent(retry);
+        ASSERT_EQUAL(getState(parentID), "QUEUED");
+        assertCancelledParentData(parentID);
+        dequeueParent();
+        finishJob(parentID, R"({"receiptID":7})");
+        ASSERT_EQUAL(getState(parentID), "");
+        ASSERT_EQUAL(getState(childID), "");
+    }
+
+    void cancelTreeBeforeFinish()
+    {
+        const string parentID = startParent();
+        const string childID = createChild(parentID);
+        cancelTree(parentID);
+        SData recreate("CreateJob");
+        recreate["name"] = "tree-parent";
+        recreate["unique"] = "true";
+        recreate["data"] = R"({"receiptID":7})";
+        tester->executeWaitVerifyContent(recreate, "405 Existing job cancellation requested");
+        finishJob(parentID, R"({"receiptID":7})");
+        ASSERT_EQUAL(getState(parentID), "");
+        ASSERT_EQUAL(getState(childID), "");
+        ASSERT_FALSE(tester->executeWaitVerifyContentTable(recreate)["jobID"].empty());
+    }
+
+    void cancelTreeWhilePaused()
+    {
+        const string parentID = startParent();
+        const string childID = createChild(parentID);
+        finishJob(parentID);
+        ASSERT_EQUAL(getState(parentID), "PAUSED");
+        ASSERT_EQUAL(getState(childID), "QUEUED");
+        cancelTree(parentID);
+        ASSERT_EQUAL(getState(parentID), "QUEUED");
+        ASSERT_EQUAL(getState(childID), "CANCELLED");
+        dequeueParent();
+        assertCancelledParentData(parentID);
+        finishJob(parentID);
+        ASSERT_EQUAL(getState(parentID), "");
+        ASSERT_EQUAL(getState(childID), "");
+    }
+
+    void cancelTreeWithRunningChild()
+    {
+        const string parentID = startParent();
+        const string childID = createChild(parentID);
+        finishJob(parentID);
+        SData getChild("GetJob");
+        getChild["name"] = "tree-child";
+        tester->executeWaitVerifyContent(getChild);
+        cancelTree(parentID);
+        ASSERT_EQUAL(getState(parentID), "PAUSED");
+        ASSERT_EQUAL(getState(childID), "RUNNING");
+        finishJob(childID);
+        ASSERT_EQUAL(getState(parentID), "QUEUED");
+        dequeueParent();
+        assertCancelledParentData(parentID);
+        finishJob(parentID);
+        ASSERT_EQUAL(getState(parentID), "");
+        ASSERT_EQUAL(getState(childID), "");
+    }
+
+    void cancelTreeWithRunqueuedChild()
+    {
+        const string parentID = startParent();
+        const string childID = createChild(parentID, true);
+        finishJob(parentID);
+        SData getChild("GetJob");
+        getChild["name"] = "tree-child";
+        tester->executeWaitVerifyContent(getChild);
+        ASSERT_EQUAL(getState(childID), "RUNQUEUED");
+        cancelTree(parentID);
+        ASSERT_EQUAL(getState(parentID), "QUEUED");
+        ASSERT_EQUAL(getState(childID), "CANCELLED");
+
+        SData staleFinish("FinishJob");
+        staleFinish["jobID"] = childID;
+        tester->executeWaitVerifyContent(staleFinish, "405 Can only retry/finish RUNNING and RUNQUEUED jobs");
+        dequeueParent();
+        finishJob(parentID);
+        ASSERT_EQUAL(getState(parentID), "");
+        ASSERT_EQUAL(getState(childID), "");
+    }
+
+    void cancelTreeAfterWorkerFailure()
+    {
+        const string parentID = startParent();
+        const string childID = createChild(parentID);
+        cancelTree(parentID);
+        SData fail("FailJob");
+        fail["jobID"] = parentID;
+        tester->executeWaitVerifyContent(fail);
+        ASSERT_EQUAL(getState(parentID), "QUEUED");
+        assertCancelledParentData(parentID);
+        dequeueParent();
+        finishJob(parentID);
+        ASSERT_EQUAL(getState(parentID), "");
+        ASSERT_EQUAL(getState(childID), "");
+    }
+
+    void cancelTreeAfterParentFailed()
+    {
+        const string parentID = startParent();
+        const string childID = createChild(parentID);
+        SData fail("FailJob");
+        fail["jobID"] = parentID;
+        tester->executeWaitVerifyContent(fail);
+        ASSERT_EQUAL(getState(parentID), "FAILED");
+        ASSERT_EQUAL(getState(childID), "PAUSED");
+        cancelTree(parentID);
+        ASSERT_EQUAL(getState(parentID), "QUEUED");
+        ASSERT_EQUAL(getState(childID), "CANCELLED");
+        dequeueParent();
+        finishJob(parentID);
+        ASSERT_EQUAL(getState(parentID), "");
+        ASSERT_EQUAL(getState(childID), "");
+    }
+
+    void cancelTreeRejectsInvalidTargets()
+    {
+        const string parentID = startParent();
+        const string childID = createChild(parentID);
+        SData cancel("CancelJobTree");
+        cancel["jobID"] = childID;
+        tester->executeWaitVerifyContent(cancel, "405 Can only cancel non-repeating root jobs with retryAfter");
+
+        SData create("CreateJob");
+        create["name"] = "repeating";
+        create["repeat"] = "HOURLY";
+        const string repeatingID = tester->executeWaitVerifyContentTable(create)["jobID"];
+        cancel["jobID"] = repeatingID;
+        tester->executeWaitVerifyContent(cancel, "405 Can only cancel non-repeating root jobs with retryAfter");
+
+        create.clear();
+        create.methodLine = "CreateJob";
+        create["name"] = "without-retry";
+        const string withoutRetryID = tester->executeWaitVerifyContentTable(create)["jobID"];
+        cancel["jobID"] = withoutRetryID;
+        tester->executeWaitVerifyContent(cancel, "405 Can only cancel non-repeating root jobs with retryAfter");
+    }
+
+    void cancelMarkerCannotBeSupplied()
+    {
+        SData create("CreateJob");
+        create["name"] = "tree-parent";
+        create["data"] = R"({"_bedrockCancelRequested":true,"_bedrockCancelRequested\u0000caller":"kept"})";
+        const string parentID = tester->executeWaitVerifyContentTable(create)["jobID"];
+        SData get("GetJob");
+        get["name"] = "tree-parent";
+        const JSON::Value job = JSON::Value::parse(tester->executeWaitVerifyContent(get));
+        ASSERT_FALSE(job["data"].hasMember("_bedrockCancelRequested"));
+        ASSERT_EQUAL(job["data"]["_bedrockCancelRequested\0caller"s].getString(), "kept");
+        ASSERT_FALSE(createChild(parentID).empty());
     }
 
     // Cannot cancel a job that doesn't exist
