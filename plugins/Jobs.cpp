@@ -221,7 +221,7 @@ static string stripInternalJobData(const string& data)
     bool removed = false;
     for (auto member = publicData.objectBegin(); member != publicData.objectEnd();) {
         const bool isInternal = (member->first.size() == rerunKey.size() && SIEquals(member->first, rerunKey)) ||
-                                (member->first.size() == atomicKey.size() && SIEquals(member->first, atomicKey));
+            (member->first.size() == atomicKey.size() && SIEquals(member->first, atomicKey));
         if (isInternal) {
             member = publicData.erase(member);
             removed = true;
