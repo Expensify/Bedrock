@@ -12,20 +12,23 @@
 // Only SCHEDULED repeats shorter than this re-anchor to now after a missed window; longer intervals
 // keep their scheduled time since they may need to run on a specific calendar date.
 static constexpr int64_t REPEAT_REANCHOR_THRESHOLD_SECONDS = 4 * 60 * 60;
+static constexpr const char* ATOMIC_MAP_FIELD = "_bedrockAtomicMapField";
 
 // These top-level keys are Bedrock metadata, not caller-owned job data.
 static const set<string> IGNORED_BEDROCK_JOB_DATA_KEYS = {
+    ATOMIC_MAP_FIELD,
     "_bedrockRerunIfDataChanged",
     "retryAfterCount",
     "originalNextRun",
     "_commitCounts",
 };
 
-static void validateJobData(const string& data, const string& name = "Data")
+static JSON::Value validateJobData(const string& data, const string& name = "Data")
 {
     try {
-        if (JSON::Value::parse(data).isObject()) {
-            return;
+        JSON::Value parsed = JSON::Value::parse(data);
+        if (parsed.isObject()) {
+            return parsed;
         }
     } catch (const JSON::Error&) {
     }
@@ -49,6 +52,107 @@ static bool membersEqual(const JSON::Value& left, const JSON::Value& right, cons
         return left.hasMember(key) == right.hasMember(key);
     }
     return left[key] == right[key];
+}
+
+static JSON::Value getJobDataMap(const JSON::Value& data, const string& field)
+{
+    if (!data.hasMember(field)) {
+        return JSON::Value(JSON::OBJECT);
+    }
+    const JSON::Value& value = data[field];
+    if (value.isObject()) {
+        return value;
+    }
+    // PHP encodes an empty associative array as [].
+    if (value.isArray() && value.size() == 0) {
+        return JSON::Value(JSON::OBJECT);
+    }
+    STHROW("402 Atomic map field is not an object");
+}
+
+static JSON::Value mergeJobObjectFields(const JSON::Value& current, const JSON::Value& expected, const JSON::Value& worker)
+{
+    set<string> keys;
+    for (const auto& member : JSON::ConstObjectValue(current)) {
+        keys.insert(member.first);
+    }
+    for (const auto& member : JSON::ConstObjectValue(expected)) {
+        keys.insert(member.first);
+    }
+    for (const auto& member : JSON::ConstObjectValue(worker)) {
+        keys.insert(member.first);
+    }
+    JSON::Value merged(JSON::OBJECT);
+    for (const string& key : keys) {
+        const JSON::Value& selected = membersEqual(current, expected, key) ? worker : current;
+        if (selected.hasMember(key)) {
+            merged[key] = selected[key];
+        }
+    }
+    return merged;
+}
+
+static JSON::Value mergeAtomicJobMap(const string& currentData, const string& expectedData,
+                                     const string& workerData, const string& mapField)
+{
+    JSON::Value current = JSON::Value::parse(currentData);
+    JSON::Value expected = JSON::Value::parse(expectedData);
+    JSON::Value worker = JSON::Value::parse(workerData);
+    current.erase(ATOMIC_MAP_FIELD);
+    expected.erase(ATOMIC_MAP_FIELD);
+    worker.erase(ATOMIC_MAP_FIELD);
+
+    if (!worker.hasMember(mapField)) {
+        STHROW("402 Worker data is missing the atomic map field");
+    }
+    const JSON::Value currentMap = getJobDataMap(current, mapField);
+    const JSON::Value expectedMap = getJobDataMap(expected, mapField);
+    const JSON::Value workerMap = getJobDataMap(worker, mapField);
+    set<string> mapKeys;
+    for (const auto& member : JSON::ConstObjectValue(currentMap)) {
+        mapKeys.insert(member.first);
+    }
+    for (const auto& member : JSON::ConstObjectValue(expectedMap)) {
+        mapKeys.insert(member.first);
+    }
+    for (const auto& member : JSON::ConstObjectValue(workerMap)) {
+        mapKeys.insert(member.first);
+    }
+    JSON::Value mergedMap(JSON::OBJECT);
+    for (const string& key : mapKeys) {
+        if (currentMap.hasMember(key) && expectedMap.hasMember(key) && workerMap.hasMember(key) &&
+            currentMap[key].isObject() && expectedMap[key].isObject() && workerMap[key].isObject()) {
+            mergedMap[key] = mergeJobObjectFields(currentMap[key], expectedMap[key], workerMap[key]);
+            continue;
+        }
+        const JSON::Value& selected = membersEqual(currentMap, expectedMap, key) ? workerMap : currentMap;
+        if (selected.hasMember(key)) {
+            mergedMap[key] = selected[key];
+        }
+    }
+
+    set<string> keys;
+    for (const auto& member : JSON::ConstObjectValue(current)) {
+        keys.insert(member.first);
+    }
+    for (const auto& member : JSON::ConstObjectValue(expected)) {
+        keys.insert(member.first);
+    }
+    for (const auto& member : JSON::ConstObjectValue(worker)) {
+        keys.insert(member.first);
+    }
+    JSON::Value merged(JSON::OBJECT);
+    for (const string& key : keys) {
+        if (key == mapField) {
+            merged[key] = mergedMap;
+            continue;
+        }
+        const JSON::Value& selected = membersEqual(current, expected, key) ? worker : current;
+        if (selected.hasMember(key)) {
+            merged[key] = selected[key];
+        }
+    }
+    return merged;
 }
 
 // Apply worker changes only when a newer enqueue did not change the same top-level field.
@@ -109,13 +213,16 @@ static string findJobDataKey(const JSON::Value& data, const string& key)
     return key;
 }
 
-static string stripRerunIfDataChanged(const string& data)
+static string stripInternalJobData(const string& data)
 {
-    const string key = "_bedrockRerunIfDataChanged";
+    static const string rerunKey = "_bedrockRerunIfDataChanged";
+    static const string atomicKey = ATOMIC_MAP_FIELD;
     JSON::Value publicData = JSON::Value::parse(data);
     bool removed = false;
     for (auto member = publicData.objectBegin(); member != publicData.objectEnd();) {
-        if (member->first.size() == key.size() && SIEquals(member->first, key)) {
+        const bool isInternal = (member->first.size() == rerunKey.size() && SIEquals(member->first, rerunKey)) ||
+                                (member->first.size() == atomicKey.size() && SIEquals(member->first, atomicKey));
+        if (isInternal) {
             member = publicData.erase(member);
             removed = true;
         } else {
@@ -421,7 +528,7 @@ bool BedrockJobsCommand::peek(SQLite& db)
         // Verify there is a job like this
         SQResult result;
         if (!db.read("SELECT created, jobID, state, name, nextRun, lastRun, repeat, "
-                     "JSON_REMOVE(data, '$._bedrockRerunIfDataChanged'), retryAfter, priority "
+                     "JSON_REMOVE(data, '$._bedrockRerunIfDataChanged', '$._bedrockAtomicMapField'), retryAfter, priority "
                      "FROM jobs "
                      "WHERE jobID=" + SQ(request.calc64("jobID")) + ";",
                      result)) {
@@ -468,7 +575,7 @@ bool BedrockJobsCommand::peek(SQLite& db)
                 // Throw if data is not a valid JSON object, otherwise UPDATE query will fail.
                 if (SContains(job, "data")) {
                     validateJobData(job["data"]);
-                    job["data"] = stripRerunIfDataChanged(job["data"]);
+                    job["data"] = stripInternalJobData(job["data"]);
                 }
 
                 // Validate retryAfter
@@ -703,7 +810,7 @@ void BedrockJobsCommand::process(SQLite& db)
 
             // This marker is owned exclusively by Bedrock. Callers cannot create or overwrite it.
             if (!job["data"].empty()) {
-                job["data"] = stripRerunIfDataChanged(job["data"]);
+                job["data"] = stripInternalJobData(job["data"]);
             }
 
             // If this is a mock request, we insert that into the data.
@@ -1093,7 +1200,7 @@ void BedrockJobsCommand::process(SQLite& db)
             job["jobID"] = result[c][0];
             job["name"] = result[c][1];
             job["data"] = db.read("SELECT JSON_REMOVE(" + SQ(result[c][2]) +
-                                  ", '$._bedrockRerunIfDataChanged');");
+                                  ", '$._bedrockRerunIfDataChanged', '$._bedrockAtomicMapField');");
             job["retryAfter"] = result[c][4];
             job["created"] = result[c][5];
             job["repeat"] = result[c][6];
@@ -1105,7 +1212,7 @@ void BedrockJobsCommand::process(SQLite& db)
             if (parentJobID) {
                 // Has a parent job, add the parent data
                 job["parentJobID"] = SToStr(parentJobID);;
-                job["parentData"] = db.read("SELECT JSON_REMOVE(data, '$._bedrockRerunIfDataChanged') "
+                job["parentData"] = db.read("SELECT JSON_REMOVE(data, '$._bedrockRerunIfDataChanged', '$._bedrockAtomicMapField') "
                                             "FROM jobs WHERE jobID = " + SQ(parentJobID) + ";");
             }
 
@@ -1118,7 +1225,7 @@ void BedrockJobsCommand::process(SQLite& db)
 
             // See if this job has any FINISHED/CANCELLED child jobs, indicating it is being resumed
             SQResult childJobs;
-            if (!db.read("SELECT jobID, JSON_REMOVE(data, '$._bedrockRerunIfDataChanged'), state "
+            if (!db.read("SELECT jobID, JSON_REMOVE(data, '$._bedrockRerunIfDataChanged', '$._bedrockAtomicMapField'), state "
                          "FROM jobs "
                          "WHERE parentJobID != 0 "
                          "  AND parentJobID = " + SQ(result[c][0]) + " "
@@ -1156,7 +1263,7 @@ void BedrockJobsCommand::process(SQLite& db)
             // expectedData is the job's data as a string; workers send it back so we can tell if the data changed while
             // they ran. It can't be an object: clients parse and re-serialize the response, which can turn {} into [].
             // SComposeJSONObject can only stringify all values or none, so we add this member to the JSON text directly.
-            jobResponse.insert(1, "\"expectedData\":" + SToJSON(job["data"], true) + ",");
+            jobResponse.insert(1, "\"supportsAtomicMapMerge\":true,\"expectedData\":" + SToJSON(job["data"], true) + ",");
             jobList.push_back(jobResponse);
         }
 
@@ -1286,7 +1393,7 @@ void BedrockJobsCommand::process(SQLite& db)
 
         // Remove the internal marker from the request data. Restore it only if it is set on the stored job.
         // Keep the stored mockRequest value too.
-        const string sanitizedRequestData = stripRerunIfDataChanged(request["data"]);
+        const string sanitizedRequestData = stripInternalJobData(request["data"]);
         const string newData = mockRequest
             ? db.read("SELECT JSON_SET(" + SQ(sanitizedRequestData) + ", '$.mockRequest', JSON('true'));")
             : db.read("SELECT JSON_REMOVE(" + SQ(sanitizedRequestData) + ", '$.mockRequest');");
@@ -1395,8 +1502,28 @@ void BedrockJobsCommand::process(SQLite& db)
             SINFO("Trying to finish job#" << jobID << ", but isn't RUNNING or RUNQUEUED (" << state << ")");
             STHROW("405 Can only retry/finish RUNNING and RUNQUEUED jobs");
         }
+        string atomicMergedData;
+        bool shouldRequeueAtomicMap = false;
+        bool shouldPreserveAtomicJobMetadata = false;
         if (request.isSet("data")) {
-            validateJobData(request["data"]);
+            const JSON::Value workerData = validateJobData(request["data"]);
+            if (workerData.hasMember(ATOMIC_MAP_FIELD)) {
+                if (!workerData[ATOMIC_MAP_FIELD].isString()) {
+                    STHROW("402 Malformed atomic map field");
+                }
+                const string mapField = workerData[ATOMIC_MAP_FIELD].getString();
+                if (mapField.empty() || mapField.size() > BedrockPlugin_Jobs::MAX_SIZE_SMALL ||
+                    mapField == ATOMIC_MAP_FIELD || IGNORED_BEDROCK_JOB_DATA_KEYS.contains(mapField) ||
+                    mapField == "mockRequest" || mapField == "delete") {
+                    STHROW("402 Malformed atomic map field");
+                }
+                BedrockPlugin::verifyAttributeSize(request, "expectedData", 1, BedrockPlugin_Jobs::MAX_SIZE_BLOB);
+                validateJobData(request["expectedData"], "expectedData");
+                shouldPreserveAtomicJobMetadata = !callerDataEquals(currentData, request["expectedData"]);
+                const JSON::Value merged = mergeAtomicJobMap(currentData, request["expectedData"], request["data"], mapField);
+                shouldRequeueAtomicMap = merged[mapField].size() > 0;
+                atomicMergedData = merged.serialize();
+            }
         }
 
         const auto calculateNextRun = [&]() {
@@ -1433,7 +1560,7 @@ void BedrockJobsCommand::process(SQLite& db)
             return safeNextRun;
         };
 
-        if (rerunIfDataChanged && request.isSet("expectedData")) {
+        if (atomicMergedData.empty() && rerunIfDataChanged && request.isSet("expectedData")) {
             BedrockPlugin::verifyAttributeSize(request, "expectedData", 1, BedrockPlugin_Jobs::MAX_SIZE_BLOB);
             validateJobData(request["expectedData"], "expectedData");
             if (!callerDataEquals(currentData, request["expectedData"])) {
@@ -1452,7 +1579,7 @@ void BedrockJobsCommand::process(SQLite& db)
 
                 string dataExpression = "JSON_REMOVE(data, '$.retryAfterCount')";
                 if (!request["data"].empty()) {
-                    const string workerData = stripRerunIfDataChanged(request["data"]);
+                    const string workerData = stripInternalJobData(request["data"]);
                     const JSON::Value parsedWorkerData = JSON::Value::parse(workerData);
                     const bool workerIsMocked = parsedWorkerData.hasMember(findJobDataKey(parsedWorkerData, "mockRequest"));
                     if (mockRequest != workerIsMocked) {
@@ -1491,10 +1618,10 @@ void BedrockJobsCommand::process(SQLite& db)
         }
 
         // If we've been asked to update the data, let's do that
-        auto data = request["data"];
+        auto data = atomicMergedData.empty() ? request["data"] : atomicMergedData;
         if (!data.empty()) {
             // Remove the internal marker from the worker data. Restore it only if it is set on the stored job.
-            data = stripRerunIfDataChanged(data);
+            data = stripInternalJobData(data);
             // See if the new data says it's mocked.
             const JSON::Value newData = JSON::Value::parse(data);
             if (originalNextRun.empty()) {
@@ -1552,9 +1679,17 @@ void BedrockJobsCommand::process(SQLite& db)
             return;
         }
 
+        if (SIEquals(requestVerb, "FinishJob") && shouldRequeueAtomicMap) {
+            if (!db.writeIdempotent("UPDATE jobs SET state='QUEUED', nextRun=" + SQ(SCURRENT_TIMESTAMP_MS()) +
+                                    " WHERE jobID=" + SQ(jobID) + ";")) {
+                STHROW("502 Failed to requeue job with pending map entries");
+            }
+            return;
+        }
+
         // If this is RetryJob and we want to update the name and/or priority, let's do that
         const string& name = request["name"];
-        if (SIEquals(requestVerb, "RetryJob")) {
+        if (SIEquals(requestVerb, "RetryJob") && !shouldPreserveAtomicJobMetadata) {
             list<string> updates;
             if (!name.empty()) {
                 updates.push_back("name=" + SQ(name) + " ");
@@ -1724,7 +1859,7 @@ void BedrockJobsCommand::process(SQLite& db)
         list<string> updateList;
         if (request.isSet("data")) {
             // Update public data while preserving Bedrock's private opt-in marker.
-            const string newData = stripRerunIfDataChanged(request["data"]);
+            const string newData = stripInternalJobData(request["data"]);
             updateList.push_back("data = " + preserveRerunIfDataChangedSQL(SQ(newData)));
         }
 

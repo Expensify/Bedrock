@@ -98,7 +98,8 @@ struct GetJobTest : tpunit::TestFixture
         response = tester->executeWaitVerifyContentTable(command);
         uint64_t end = STimeNow();
 
-        ASSERT_EQUAL(response.size(), 10);
+        ASSERT_EQUAL(response.size(), 11);
+        ASSERT_EQUAL(response["supportsAtomicMapMerge"], "true");
         ASSERT_EQUAL(response["jobID"], jobID);
         ASSERT_EQUAL(response["name"], jobName);
         ASSERT_EQUAL(response["data"], "{}");
@@ -170,7 +171,8 @@ struct GetJobTest : tpunit::TestFixture
 
         uint64_t end = STimeNow();
 
-        ASSERT_EQUAL(response.size(), 10);
+        ASSERT_EQUAL(response.size(), 11);
+        ASSERT_TRUE(response["supportsAtomicMapMerge"].getBool());
         ASSERT_EQUAL(response["jobID"].getInt(), stoll(jobID));
         ASSERT_EQUAL(response["name"].getString(), jobName);
         ASSERT_EQUAL(response["data"], JSON::Value::parse(data));
@@ -459,7 +461,7 @@ struct GetJobTest : tpunit::TestFixture
         tester->executeWaitVerifyContent(command);
 
         // Confirm the child has data about the parent in the response
-        ASSERT_EQUAL(response.size(), 12);
+        ASSERT_EQUAL(response.size(), 13);
         ASSERT_EQUAL(response["jobID"], finishedChildID);
         ASSERT_EQUAL(response["name"], "child_finished");
         ASSERT_EQUAL(response["data"], finishedChildData);
@@ -490,7 +492,7 @@ struct GetJobTest : tpunit::TestFixture
         response = tester->executeWaitVerifyContentTable(command);
 
         // Confirm data on the children are in the response
-        ASSERT_EQUAL(response.size(), 12);
+        ASSERT_EQUAL(response.size(), 13);
         ASSERT_EQUAL(response["jobID"], parentID);
         ASSERT_EQUAL(response["name"], "parent");
         ASSERT_EQUAL(response["data"], parentData);
