@@ -21,7 +21,7 @@ To see a full list of Bedrock's configuration options, just run `bedrock -?` on 
 	-versionOverride <version>  Pretends to be a different version when talking to peers
 	-db             <filename>  Use a database with the given name (default 'bedrock.db')
 	-serverHost     <host:port> Listen on this host:port for cluster connections (default 'localhost:8888')
-	-nodeName       <name>      Name this specfic node in the cluster as indicated (defaults to the value of $hostname)
+	-nodeName       <name>      Name this specific node in the cluster as indicated (defaults to the value of $hostname)
 	-nodeHost       <host:port> Listen on this host:port for connections from other nodes
 	-peerList       <list>      See below
 	-priority       <value>     See '-peerList Details' below (defaults to 100)
@@ -34,7 +34,7 @@ To see a full list of Bedrock's configuration options, just run `bedrock -?` on 
 
 	Quick Start Tips:
 	-----------------
-	In a hurry?  Just run 'bedrock -clean' the first time, and it'll create a new database called 'bedrock.db', then use all the defaults listed above.  (After the first time, leave out the '-clean' to reuse the same database.)  Once running, you can verify it's working using NetCat to manualy send a Ping request as follows:
+	In a hurry?  Just run 'bedrock -clean' the first time, and it'll create a new database called 'bedrock.db', then use all the defaults listed above.  (After the first time, leave out the '-clean' to reuse the same database.)  Once running, you can verify it's working using NetCat to manually send a Ping request as follows:
 
 	$ bedrock -clean &
 	$ nc local 8888

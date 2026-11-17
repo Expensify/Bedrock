@@ -4,7 +4,7 @@ layout: default
 
 Deploying Bedrock in Multiple Zones
 ====
-Bedrock works as well as any other database on a single server, but really shines when deployed across mulitple servers -- ideally in different datacenters (or availability zones) on opposite sides of the internet.  Like all things Bedrock, doing this is much simipler than you'd expect.
+Bedrock works as well as any other database on a single server, but really shines when deployed across multiple servers -- ideally in different datacenters (or availability zones) on opposite sides of the internet.  Like all things Bedrock, doing this is much simpler than you'd expect.
 
 Testing multiple Bedrock nodes on a single server
 ----

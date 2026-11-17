@@ -178,7 +178,7 @@ The point of a job system is to distribute a bunch of worker processes across a 
     connection: wait
     timeout: 60000
 
-The worker will just block until it's avaiable.  Then if we queue a job from some other process (or server):
+The worker will just block until it's available.  Then if we queue a job from some other process (or server):
 
     CreateJob
     name: SendEmail
@@ -209,7 +209,7 @@ It's usage is simply:
 This will pull down jobs of any name, and look in the `/your/code/path` directory for a worker class that shares the name of the job to be queued.  It will keep spawning new workers so long as new jobs are queued, so long as the total CPU load stays under `maxLoad`.  In general, you can run BWM on all your webservers to also make them into job servers that "soak up" excess capacity to do background operations, without impacting live site performance.
 
 ## Repeat Syntax
-It's surprisingly tricky to come up with a succint but powerful language to describe all the myriad possible recurring patterns.  With this in mind, we lean heavily upon the extensive capabilities already built into sqlite.  Specifically, a recurring pattern is defined as a "base" and one or more "modifiers":
+It's surprisingly tricky to come up with a succinct but powerful language to describe all the myriad possible recurring patterns.  With this in mind, we lean heavily upon the extensive capabilities already built into sqlite.  Specifically, a recurring pattern is defined as a "base" and one or more "modifiers":
 
 ### Repeat Base
 The "base" defines from which moment in time to calculate the next time the job should run.  Three separate moments are supported:
