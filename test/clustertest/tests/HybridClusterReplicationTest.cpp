@@ -92,17 +92,24 @@ struct HybridClusterReplicationTest : tpunit::TestFixture
         return SToUInt64(JSON::Utils::toSTable(JSON::Value::parse(node.executeWaitVerifyContent(SData("Status"), "200", true)))["commitCount"]);
     }
 
-    uint64_t writeCommits(Cluster& cluster, uint64_t first = 0)
+    uint64_t writeCommits(Cluster& cluster, uint64_t first = 0, size_t concurrency = 1)
     {
         BedrockTester& leader = *cluster.nodes[0];
         const uint64_t before = commitCount(leader);
+        vector<SData> writes;
         for (uint64_t i = first; i < first + 100; ++i) {
             SData write("Query");
             write["Query"] = "INSERT INTO hybridReplication VALUES (" + SQ(i) + ", " + SQ("value-" + to_string(i)) + ");";
-            leader.executeWaitVerifyContent(write);
+            writes.push_back(move(write));
+        }
+        const auto responses = leader.executeWaitMultipleData(writes, concurrency);
+        EXPECT_EQUAL(responses.size(), writes.size());
+        for (const auto& response : responses) {
+            EXPECT_EQUAL(response.methodLine, "200 OK");
         }
         const uint64_t after = commitCount(leader);
-        EXPECT_EQUAL(after, before + 100);
+        // Conflicting native commits can consume additional CIDs.
+        EXPECT_TRUE(concurrency == 1 ? after == before + 100 : after >= before + 100);
         return after;
     }
 
@@ -159,12 +166,15 @@ struct HybridClusterReplicationTest : tpunit::TestFixture
         ASSERT_TRUE(follower.readDB("SELECT id, hex(query) AS query, hash FROM journalEntries WHERE id <= " + SQ(boundary) + " ORDER BY id;", preserved));
         EXPECT_EQUAL(preserved.serializeToText(), before.serializeToText());
 
-        const uint64_t target = writeCommits(cluster, 100);
+        const uint64_t target = writeCommits(cluster, 100, 8);
         verifyRows(cluster, 200, target);
-        EXPECT_EQUAL(follower.readDB("SELECT COUNT(*) FROM hct_journal;"), "101");
+        EXPECT_EQUAL(follower.readDB("SELECT COUNT(*) FROM hct_journal;"), to_string(target - boundary + 1));
         EXPECT_EQUAL(follower.readDB("SELECT MAX(cid) FROM hct_journal;"), to_string(target));
-        EXPECT_EQUAL(follower.readDB("SELECT COUNT(*) FROM hct_journal WHERE cid > " + SQ(boundary) + " AND snapshot != cid - 1;"), "0");
         SQResult expected, actual;
+        const string snapshots = "SELECT cid, snapshot FROM hct_journal WHERE cid > " + SQ(boundary) + " ORDER BY cid;";
+        ASSERT_TRUE(cluster.nodes[0]->readDB(snapshots, expected));
+        ASSERT_TRUE(follower.readDB(snapshots, actual));
+        EXPECT_EQUAL(actual.serializeToText(), expected.serializeToText());
         ASSERT_TRUE(cluster.nodes[0]->readDB(journalQuery, expected));
         ASSERT_TRUE(follower.readDB(journalQuery, actual));
         EXPECT_EQUAL(actual.serializeToText(), expected.serializeToText());
