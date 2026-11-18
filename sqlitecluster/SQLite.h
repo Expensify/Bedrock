@@ -505,7 +505,7 @@ public:
         // is not reset at the end of each checkpoint. This way the graph that relies on this value won't dip to 0
         atomic<size_t> knownOutstandingFramesToCheckpoint = 0;
 
-        // This can be locked in exclusive mode to prevent all writes. This exists to support the `BlockWrites` command.
+        // BlockWrites, role changes and blocking leader transactions close writer admission while active transactions finish.
         shared_timed_mutex writeLock;
 
         // Count transactions that may still write after releasing writeLock.
