@@ -2180,13 +2180,19 @@ void SQLite::SharedData::initializeCommitState(const CommitState& state)
 void SQLite::SharedData::recordLocalCommit(CommitID id, CommittedTransaction transaction)
 {
     lock_guard<decltype(_internalStateMutex)> lock(_internalStateMutex);
-    SASSERT(id == commitCount + 1);
-    if (!transaction.hash.empty()) {
-        hashCommitID = id;
-        lastCommittedHash = transaction.hash;
+    CommitID contiguous = commitCount;
+    SASSERT(id > contiguous);
+    auto [it, inserted] = _committedTransactions.emplace(id, move(transaction));
+    SASSERT(inserted);
+    while (it != _committedTransactions.end() && it->first == contiguous + 1) {
+        contiguous = it->first;
+        if (!it->second.hash.empty()) {
+            hashCommitID = contiguous;
+            lastCommittedHash = it->second.hash;
+        }
+        ++it;
     }
-    _committedTransactions.emplace(id, move(transaction));
-    commitCount = id;
+    commitCount = contiguous;
 }
 
 void SQLite::SharedData::recordReplicationCommit(uint64_t commitID, const string& commitHash)
@@ -2209,6 +2215,7 @@ void SQLite::SharedData::discardOutOfOrderCommits()
 {
     lock_guard<decltype(_internalStateMutex)> lock(_internalStateMutex);
     _outOfOrderCommits.clear();
+    _committedTransactions.erase(_committedTransactions.upper_bound(commitCount), _committedTransactions.end());
 }
 
 SQLite::CommitState SQLite::SharedData::getCommitState() const
@@ -2220,9 +2227,15 @@ SQLite::CommitState SQLite::SharedData::getCommitState() const
 SQLite::CommittedTransactions SQLite::SharedData::popCommittedTransactions()
 {
     lock_guard<decltype(_internalStateMutex)> lock(_internalStateMutex);
-    decltype(_committedTransactions) result;
-    result = move(_committedTransactions);
-    _committedTransactions.clear();
+    CommittedTransactions result;
+    const CommitID contiguous = commitCount;
+    if (_committedTransactions.empty() || _committedTransactions.rbegin()->first <= contiguous) {
+        result.swap(_committedTransactions);
+    } else {
+        while (_committedTransactions.begin()->first <= contiguous) {
+            result.insert(result.end(), _committedTransactions.extract(_committedTransactions.begin()));
+        }
+    }
     return result;
 }
 
