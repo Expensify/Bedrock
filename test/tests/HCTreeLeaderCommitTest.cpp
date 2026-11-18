@@ -100,7 +100,24 @@ struct HCTreeLeaderCommitTest : tpunit::TestFixture
             return began;
         });
         waiting.get_future().wait();
-        EXPECT_TRUE(blocking.wait_for(50ms) == future_status::timeout);
+        // Keep the first CID paused. Once the blocker starts waiting, later readers must stop entering,
+        // even though they would be compatible with the active shared transaction.
+        SQLite late(db);
+        bool admissionClosed = false;
+        const auto deadline = chrono::steady_clock::now() + 2s;
+        while (!admissionClosed && chrono::steady_clock::now() < deadline) {
+            late.setTimeout(50ms);
+            try {
+                late.beginTransaction();
+                late.rollback();
+            } catch (const SQLite::timeout_error&) {
+                admissionClosed = true;
+            }
+            late.clearTimeout();
+            this_thread::yield();
+        }
+        EXPECT_TRUE(admissionClosed);
+        EXPECT_TRUE(blocking.wait_for(0ms) == future_status::timeout);
         pause.resume.set_value();
         EXPECT_EQUAL(first.get(), conflict ? SQLITE_BUSY_SNAPSHOT : SQLITE_OK);
         EXPECT_FALSE(pause.timedOut);
