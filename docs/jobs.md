@@ -18,12 +18,14 @@ Bedrock::Jobs is a plugin to the [Bedrock data foundation](../README.md) that ma
    * *name* - A pattern to match in GLOB syntax (eg, "Foo*" will get the first job whose name starts with "Foo")
    * *connection* - (optional) If set to "wait", will wait up to "timeout" ms for the match
    * *timeout* - (optional) Number of ms to wait for a match
+   * *supportsAtomicMapMerge* - When true, the worker may use the atomic map merge described below.
 
  * **GetJobs( name, numResults [connection: wait, [timeout] ] )** - Waits for a match (if requested) and atomically dequeues up to the number of requested jobs.
    * *name* - A pattern to match in GLOB syntax (eg, "Foo*" will get the first job whose name starts with "Foo")
    * *numResults* - Maximum number of jobs to dequeue
    * *connection* - (optional) If set to "wait", will wait up to "timeout" ms for the match
    * *timeout* - (optional) Number of ms to wait for a match
+   * Each returned job includes the same capability flag as `GetJob`.
 
  * **UpdateJob( jobID, data )** - Updates the data associated with a job.
    * *jobID* - Identifier of the job to update
@@ -92,6 +94,30 @@ Several data changes during one active run collapse into one subsequent run. The
 The *retryAfter* field has a separate purpose. It recovers a job when a worker stops without a completion command.
 
 The *retryAfter* field does not detect a new enqueue. It does not cause the subsequent run described in this section.
+
+## Atomic map merge
+
+Workers that manage several independent entries inside one job can merge one top-level map during
+`RetryJob` or `FinishJob`. First check that the dequeued job has `supportsAtomicMapMerge=true`, and
+pass its `expectedData` unchanged. Add `_bedrockAtomicMapField` to the worker's completion data with
+the name of the map to merge, for example `"agents"`. Bedrock consumes this marker; it is not saved
+in the job data.
+
+For each map entry, Bedrock applies the worker's change only if that entry still matches the
+dequeued snapshot. A concurrently changed entry is kept. When all three versions of an entry are
+objects, Bedrock applies that comparison to each of their fields instead. Other top-level fields
+use the same comparison. An empty array is accepted as an empty map for PHP callers. `RetryJob` keeps the
+requested retry time. `FinishJob` requeues immediately when the merged map still has entries; if
+the job has pending children, it waits for them first. If the data changed while the worker ran,
+`RetryJob` keeps the current job name and priority. Atomic map completion replaces the
+`rerunIfDataChanged` completion behavior: changes outside the map alone do not requeue `FinishJob`.
+
+The marker requires `expectedData` and a map in the worker's data. Invalid input is rejected without
+finishing the job. Workers must only set the marker after observing the capability flag, so they
+remain compatible with older Bedrock versions. The flag describes the server that dequeued the job,
+not every possible leader. Upgrade the whole cluster before enabling these workers, and disable them
+and let in-flight runs finish before rolling Bedrock back, so a failover cannot send their completion
+to an older server.
 
 ## Sample Session
 This provides comprehensive functionality for scheduled, recurring, atomically-processed jobs by blocking workers.  For example, first create a job and assign it some data to be used by the worker:

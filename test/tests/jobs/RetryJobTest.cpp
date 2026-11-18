@@ -15,6 +15,11 @@ struct RetryJobTest : tpunit::TestFixture
                               TEST(RetryJobTest::removeFinishedAndCancelledChildren),
                               TEST(RetryJobTest::updateData),
                               TEST(RetryJobTest::rerunIfDataChangedThreeWayMerge),
+                              TEST(RetryJobTest::atomicMapRetryPreservesConcurrentEntries),
+                              TEST(RetryJobTest::atomicMapFinishRequeuesConcurrentEntries),
+                              TEST(RetryJobTest::atomicMapMergesIndependentEntryFields),
+                              TEST(RetryJobTest::atomicMapFinishKeepsPendingChildren),
+                              TEST(RetryJobTest::atomicMapRejectsInvalidInput),
                               TEST(RetryJobTest::negativeDelay),
                               TEST(RetryJobTest::positiveDelay),
                               TEST(RetryJobTest::delayError),
@@ -299,6 +304,230 @@ struct RetryJobTest : tpunit::TestFixture
             "\"workerNull\":null,\"enqueueChange\":\"new\",\"enqueueAdd\":true,\"workerAdd\":true,"
             "\"nested\":{\"a\":1,\"b\":2}}";
         ASSERT_TRUE(JSON::Value::parse(result[0][4]) == JSON::Value::parse(expectedMergedData));
+    }
+
+    void atomicMapRetryPreservesConcurrentEntries()
+    {
+        SData command("CreateJob");
+        command["name"] = "atomic-map-retry";
+        command["unique"] = "true";
+        command["data"] = R"({"agents":{"agent":{"request":"A"},"other":{"request":"O"}},"workerField":1})";
+        const string jobID = tester->executeWaitVerifyContentTable(command)["jobID"];
+
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "atomic-map-retry";
+        const STable runningJob = tester->executeWaitVerifyContentTable(command);
+        ASSERT_EQUAL(runningJob.at("supportsAtomicMapMerge"), "true");
+        const string expectedData = runningJob.at("expectedData");
+
+        command.clear();
+        command.methodLine = "CreateJob";
+        command["name"] = "atomic-map-retry";
+        command["unique"] = "true";
+        command["jobPriority"] = "750";
+        command["data"] = R"({"agents":{"agent":{"request":"B"},"newAgent":{"request":"C"}}})";
+        tester->executeWaitVerifyContent(command);
+
+        command.clear();
+        command.methodLine = "RetryJob";
+        command["jobID"] = jobID;
+        command["expectedData"] = expectedData;
+        command["data"] = R"({"_bedrockAtomicMapField":"agents","agents":{"other":{"request":"O"},"retryA":{"request":"A","attempt":1}},"workerField":2})";
+        command["nextRun"] = "2042-04-02 00:42:42";
+        command["name"] = "stale-name";
+        command["jobPriority"] = "1000";
+        tester->executeWaitVerifyContent(command);
+
+        SQResult result;
+        tester->readDB("SELECT state, nextRun, data, name, priority FROM jobs WHERE jobID = " + SQ(jobID) + ";", result);
+        ASSERT_EQUAL(result.size(), 1);
+        ASSERT_EQUAL(result[0][0], "QUEUED");
+        ASSERT_EQUAL(result[0][1], "2042-04-02 00:42:42");
+        ASSERT_EQUAL(result[0][3], "atomic-map-retry");
+        ASSERT_EQUAL(result[0][4], "750");
+        const JSON::Value data = JSON::Value::parse(result[0][2]);
+        const JSON::Value expected = JSON::Value::parse(R"({"agents":{"agent":{"request":"B"},"newAgent":{"request":"C"},"other":{"request":"O"},"retryA":{"request":"A","attempt":1}},"workerField":2})");
+        ASSERT_TRUE(data == expected);
+        ASSERT_FALSE(data.hasMember("_bedrockAtomicMapField"));
+    }
+
+    void atomicMapFinishRequeuesConcurrentEntries()
+    {
+        SData command("CreateJob");
+        command["name"] = "atomic-map-finish";
+        command["unique"] = "true";
+        command["data"] = R"({"agents":{"agent":{"request":"A"}}})";
+        const string jobID = tester->executeWaitVerifyContentTable(command)["jobID"];
+
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "atomic-map-finish";
+        const string expectedData = tester->executeWaitVerifyContentTable(command)["expectedData"];
+
+        command.clear();
+        command.methodLine = "CreateJob";
+        command["name"] = "atomic-map-finish";
+        command["unique"] = "true";
+        command["data"] = R"({"agents":{"agent":{"request":"B"}}})";
+        tester->executeWaitVerifyContent(command);
+
+        command.clear();
+        command.methodLine = "FinishJob";
+        command["jobID"] = jobID;
+        command["expectedData"] = expectedData;
+        command["data"] = R"({"_bedrockAtomicMapField":"agents","agents":[]})";
+        tester->executeWaitVerifyContent(command);
+
+        command.clear();
+        command.methodLine = "QueryJob";
+        command["jobID"] = jobID;
+        const STable queuedJob = tester->executeWaitVerifyContentTable(command);
+        ASSERT_EQUAL(queuedJob.at("state"), "QUEUED");
+        ASSERT_EQUAL(JSON::Value::parse(queuedJob.at("data"))["agents"]["agent"]["request"].getString(), "B");
+
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "atomic-map-finish";
+        const string nextExpectedData = tester->executeWaitVerifyContentTable(command)["expectedData"];
+        command.clear();
+        command.methodLine = "FinishJob";
+        command["jobID"] = jobID;
+        command["expectedData"] = nextExpectedData;
+        command["data"] = R"({"_bedrockAtomicMapField":"agents","agents":[]})";
+        tester->executeWaitVerifyContent(command);
+
+        command.clear();
+        command.methodLine = "QueryJob";
+        command["jobID"] = jobID;
+        tester->executeWaitVerifyContent(command, "404 No job with this jobID");
+    }
+
+    void atomicMapFinishKeepsPendingChildren()
+    {
+        SData command("CreateJob");
+        command["name"] = "atomic-map-parent";
+        command["unique"] = "true";
+        command["data"] = R"({"agents":{"agent":{"request":"A"}}})";
+        const string parentID = tester->executeWaitVerifyContentTable(command)["jobID"];
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "atomic-map-parent";
+        const string expectedData = tester->executeWaitVerifyContentTable(command)["expectedData"];
+
+        command.clear();
+        command.methodLine = "CreateJob";
+        command["name"] = "atomic-map-child";
+        command["parentJobID"] = parentID;
+        const string childID = tester->executeWaitVerifyContentTable(command)["jobID"];
+        command.clear();
+        command.methodLine = "CreateJob";
+        command["name"] = "atomic-map-parent";
+        command["unique"] = "true";
+        command["data"] = R"({"agents":{"agent":{"request":"B"}}})";
+        tester->executeWaitVerifyContent(command);
+
+        command.clear();
+        command.methodLine = "FinishJob";
+        command["jobID"] = parentID;
+        command["expectedData"] = expectedData;
+        command["data"] = R"({"_bedrockAtomicMapField":"agents","agents":[]})";
+        tester->executeWaitVerifyContent(command);
+
+        SQResult result;
+        tester->readDB("SELECT state, data FROM jobs WHERE jobID = " + SQ(parentID) + ";", result);
+        ASSERT_EQUAL(result.size(), 1);
+        ASSERT_EQUAL(result[0][0], "PAUSED");
+        ASSERT_EQUAL(JSON::Value::parse(result[0][1])["agents"]["agent"]["request"].getString(), "B");
+        ASSERT_EQUAL(tester->readDB("SELECT state FROM jobs WHERE jobID = " + SQ(childID) + ";"), "QUEUED");
+
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "atomic-map-child";
+        tester->executeWaitVerifyContent(command);
+        command.clear();
+        command.methodLine = "FinishJob";
+        command["jobID"] = childID;
+        tester->executeWaitVerifyContent(command);
+        ASSERT_EQUAL(tester->readDB("SELECT state FROM jobs WHERE jobID = " + SQ(parentID) + ";"), "QUEUED");
+
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "atomic-map-parent";
+        const string nextExpectedData = tester->executeWaitVerifyContentTable(command)["expectedData"];
+        command.clear();
+        command.methodLine = "FinishJob";
+        command["jobID"] = parentID;
+        command["expectedData"] = nextExpectedData;
+        command["data"] = R"({"_bedrockAtomicMapField":"agents","agents":[]})";
+        tester->executeWaitVerifyContent(command);
+        ASSERT_TRUE(tester->readDB("SELECT state FROM jobs WHERE jobID = " + SQ(parentID) + ";").empty());
+        ASSERT_TRUE(tester->readDB("SELECT state FROM jobs WHERE jobID = " + SQ(childID) + ";").empty());
+    }
+
+    void atomicMapMergesIndependentEntryFields()
+    {
+        SData command("CreateJob");
+        command["name"] = "atomic-map-entry-fields";
+        command["unique"] = "true";
+        command["data"] = R"({"agents":{"agent":{"trigger":"A","mention":{"id":1}},"other":{"trigger":"A","mention":{"id":1}},"scalar":1,"removed":7}})";
+        const string jobID = tester->executeWaitVerifyContentTable(command)["jobID"];
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "atomic-map-entry-fields";
+        const string expectedData = tester->executeWaitVerifyContentTable(command)["expectedData"];
+
+        command.clear();
+        command.methodLine = "CreateJob";
+        command["name"] = "atomic-map-entry-fields";
+        command["unique"] = "true";
+        command["data"] = R"({"agents":{"agent":{"trigger":"B"},"other":{"mention":{"id":2}},"scalar":2}})";
+        tester->executeWaitVerifyContent(command);
+        command.clear();
+        command.methodLine = "RetryJob";
+        command["jobID"] = jobID;
+        command["expectedData"] = expectedData;
+        command["data"] = R"({"_bedrockAtomicMapField":"agents","agents":{"agent":{"trigger":"B"},"other":{"trigger":"A"},"scalar":3}})";
+        tester->executeWaitVerifyContent(command);
+
+        const JSON::Value data = JSON::Value::parse(tester->readDB("SELECT data FROM jobs WHERE jobID = " + SQ(jobID) + ";"));
+        ASSERT_EQUAL(data["agents"]["agent"]["trigger"].getString(), "B");
+        ASSERT_FALSE(data["agents"]["agent"].hasMember("mention"));
+        ASSERT_EQUAL(data["agents"]["other"]["mention"]["id"].getInt(), 2);
+        ASSERT_EQUAL(data["agents"]["scalar"].getInt(), 2);
+        ASSERT_FALSE(data["agents"].hasMember("removed"));
+    }
+
+    void atomicMapRejectsInvalidInput()
+    {
+        SData command("CreateJob");
+        command["name"] = "atomic-map-invalid";
+        command["data"] = R"({"_bedrockAtomicMapField":"agents","agents":{"agent":1}})";
+        const string jobID = tester->executeWaitVerifyContentTable(command)["jobID"];
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "atomic-map-invalid";
+        const string expectedData = tester->executeWaitVerifyContentTable(command)["expectedData"];
+
+        command.clear();
+        command.methodLine = "RetryJob";
+        command["jobID"] = jobID;
+        command["data"] = R"({"_bedrockAtomicMapField":"agents","agents":[]})";
+        tester->executeWaitVerifyContent(command, "402");
+
+        command["expectedData"] = expectedData;
+        command["data"] = R"({"_bedrockAtomicMapField":"agents"})";
+        tester->executeWaitVerifyContent(command, "402 Worker data is missing the atomic map field");
+        command["data"] = R"({"_bedrockAtomicMapField":"agents","agents":"invalid"})";
+        tester->executeWaitVerifyContent(command, "402 Atomic map field is not an object");
+        command["data"] = R"({"_bedrockAtomicMapField":"delete","delete":true})";
+        tester->executeWaitVerifyContent(command, "402 Malformed atomic map field");
+
+        SQResult result;
+        tester->readDB("SELECT state, data FROM jobs WHERE jobID = " + SQ(jobID) + ";", result);
+        ASSERT_EQUAL(result.size(), 1);
+        ASSERT_EQUAL(result[0][0], "RUNNING");
+        ASSERT_TRUE(JSON::Value::parse(result[0][1]) == JSON::Value::parse(expectedData));
     }
 
     // Cannot retry with a negative delay
