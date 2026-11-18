@@ -1416,10 +1416,11 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash, chrono::m
         (*_onPrepareHandler)(*this, journalID);
     }
 
-    // Serialized commits allocate the next ID. Parallel follower commits retain the received ID instead.
+    // SQLite assigns a native leader's CID at commit time. Followers replay the ID assigned by their leader.
+    const bool nativeLeader = isExperimentalHCTree() && !_sharedData.hctreeFollowerMode;
     const uint64_t commitCount = _sharedData.commitCount;
-    const CommitID commitID = _replicationInfo.has_value() ? _replicationInfo.value().commitID : commitCount + 1;
-    if (!parallelFollower && commitID != commitCount + 1) {
+    const CommitID commitID = _replicationInfo.has_value() ? _replicationInfo.value().commitID : nativeLeader ? 0 : commitCount + 1;
+    if (_replicationInfo.has_value() && !parallelFollower && commitID != commitCount + 1) {
         STHROW("Replication commit ID is not contiguous");
     }
 
@@ -1478,6 +1479,7 @@ int SQLite::commit(const string& description, const string& commandName, functio
 int SQLite::commit(uint64_t& journalCommitID, const string& description, const string& commandName, function<void()>* preCheckpointCallback)
 {
     journalCommitID = 0;
+    HCTJournalSnapshotID journalSnapshot = 0;
     // If commits have been disabled, return an error without attempting the commit.
     if (!_sharedData._commitEnabled) {
         return COMMIT_DISABLED;
@@ -1509,10 +1511,10 @@ int SQLite::commit(uint64_t& journalCommitID, const string& description, const s
         const string journalData = _uncommittedHash + ":" + _uncommittedQuery;
         if (_sharedData.hctreeFollowerMode) {
             const CommitID cid = _replicationInfo.has_value() ? _replicationInfo.value().commitID : _sharedData.commitCount + 1;
-            const HCTJournalSnapshotID snapshot = _replicationInfo.has_value() ? _replicationInfo.value().hctJournalSnapshotID : _sharedData.commitCount.load();
+            journalSnapshot = _replicationInfo.has_value() ? _replicationInfo.value().hctJournalSnapshotID : _sharedData.commitCount.load();
             result = sqlite3_hct_journal_follower_commit(_db,
                 reinterpret_cast<const unsigned char*>(journalData.data()), journalData.size(),
-                cid, snapshot);
+                cid, journalSnapshot);
             if (result == SQLITE_OK) {
                 journalCommitID = cid;
             }
@@ -1522,13 +1524,10 @@ int SQLite::commit(uint64_t& journalCommitID, const string& description, const s
             result = sqlite3_hct_journal_leader_commit(_db,
                 reinterpret_cast<const unsigned char*>(journalData.data()), journalData.size(), &cid, &snapshot);
             journalCommitID = static_cast<uint64_t>(cid);
-            if (cid) {
-                SASSERT(cid == _sharedData.commitCount + 1);
-                if (result) {
-                    // SQLite allocated a CID but rolled back this transaction. The
-                    // corresponding HC-Tree journal row is an empty commit.
-                    _sharedData.recordLocalCommit(journalCommitID, {"", "", journalCommitID - 1});
-                }
+            journalSnapshot = static_cast<HCTJournalSnapshotID>(snapshot);
+            if (cid && result != SQLITE_OK) {
+                // A conflict that consumed a CID leaves a blank entry in the native journal.
+                _sharedData.recordLocalCommit(journalCommitID, {"", "", journalSnapshot});
             }
         }
         // Match SQuery's extended conflict result before another SQLite call replaces the error state.
@@ -1539,6 +1538,7 @@ int SQLite::commit(uint64_t& journalCommitID, const string& description, const s
         result = SQuery(_db, "COMMIT");
         if (result == SQLITE_OK) {
             journalCommitID = _sharedData.commitCount + 1;
+            journalSnapshot = journalCommitID - 1;
         }
     }
     if (_hctree) {
@@ -1599,7 +1599,7 @@ int SQLite::commit(uint64_t& journalCommitID, const string& description, const s
             if (_replicationInfo.has_value()) {
                 _sharedData.recordReplicationCommit(journalCommitID, _uncommittedHash);
             } else {
-                _sharedData.recordLocalCommit(journalCommitID, {move(_uncommittedQuery), move(_uncommittedHash), journalCommitID - 1});
+                _sharedData.recordLocalCommit(journalCommitID, {move(_uncommittedQuery), move(_uncommittedHash), journalSnapshot});
             }
         }
         _insideTransaction = false;

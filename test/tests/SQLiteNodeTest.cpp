@@ -642,7 +642,7 @@ struct SQLiteNodeTest : tpunit::TestFixture
                 EXPECT_EQUAL(guid.find_first_not_of("0123456789ABCDEFabcdef"), string::npos);
                 EXPECT_TRUE(guids.insert(guid).second);
                 EXPECT_EQUAL(hash, guid + ":" + SToHex(SHashSHA1(guid + query)));
-                EXPECT_EQUAL(commitID, commitCount + 1);
+                EXPECT_EQUAL(commitID, db.isExperimentalHCTree() && attempt != 2 ? 0ull : commitCount + 1);
                 if (attempt == 2) {
                     EXPECT_EQUAL(db.getCommittedHash(), hash);
                     string storedQuery, storedHash;

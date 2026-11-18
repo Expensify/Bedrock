@@ -829,9 +829,8 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                                 _syncNode->notifyCommit();
                             }
                             _conflictManager.recordTables(command->request.methodLine, db.getTablesUsed());
-                            // So we must still be leading, and at this point our commit has succeeded, let's
-                            // mark it as complete. We add the currentCommit count here as well.
-                            command->response["commitCount"] = to_string(db.getCommitCount());
+                             // A subsequent follower read must wait for this write even if an earlier CID is still in flight.
+                             command->response["commitCount"] = to_string(max(transactionID, db.getCommitCount()));
                             command->complete = true;
                         } else if (commitResult == SQLiteCore::COMMIT_RESULT::TIMEOUT && command->httpsRequests.empty()) {
                             // A long wait for the commit lock means the leader is overloaded. Retrying would run the command

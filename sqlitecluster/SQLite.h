@@ -217,7 +217,7 @@ private:
 
     // Prepare to commit or rollback the transaction. This also inserts the current uncommitted query into the
     // journal; no additional writes are allowed until the next transaction has begun.
-    // The transactionID and transactionHash, if passed, will be updated with the values prepared for this transaction.
+    // A native HC-Tree leader returns transactionID zero here; commit() supplies the CID allocated by SQLite.
     // The commitLockTimeout, if passed, will limit the time we wait for the lock. If not, we'll use 24 hours, which
     // is effectively no timeout.
     // Note that if this transaction fails to commit, these will not ultimately be accurate.
