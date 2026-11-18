@@ -1443,11 +1443,6 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash, chrono::m
         SINFO("Will commmit blank query");
     }
 
-    // Stash the (now possibly compressed) query so SQLiteNode can ship it to peers without re-compressing.
-    if (!_replicationInfo.has_value()) {
-        _sharedData.prepareTransactionInfo(commitID, _uncommittedQuery, _uncommittedHash);
-    }
-
     int result = SQLITE_OK;
     if (!_hctree || !hctreeExperimentalMode) {
         string query = "INSERT INTO " + _journalName + " VALUES (:commitID, :query, :hash)";
@@ -1532,8 +1527,7 @@ int SQLite::commit(uint64_t& journalCommitID, const string& description, const s
                 if (result) {
                     // SQLite allocated a CID but rolled back this transaction. The
                     // corresponding HC-Tree journal row is an empty commit.
-                    _sharedData.prepareTransactionInfo(cid, "", "");
-                    _sharedData.incrementCommit("");
+                    _sharedData.recordLocalCommit(journalCommitID, {"", "", journalCommitID - 1});
                 }
             }
         }
@@ -1605,11 +1599,8 @@ int SQLite::commit(uint64_t& journalCommitID, const string& description, const s
             if (_replicationInfo.has_value()) {
                 _sharedData.recordReplicationCommit(journalCommitID, _uncommittedHash);
             } else {
-                _sharedData.incrementCommit(_uncommittedHash);
+                _sharedData.recordLocalCommit(journalCommitID, {move(_uncommittedQuery), move(_uncommittedHash), journalCommitID - 1});
             }
-        } else {
-            // A read-only HC-Tree leader transaction can succeed without allocating a CID.
-            _sharedData.discardPreparedTransactionInfo(_sharedData.commitCount + 1);
         }
         _insideTransaction = false;
         _prepared = false;
@@ -1705,7 +1696,7 @@ int SQLite::getCheckpointModeFromString(const string& checkpointModeString)
     SERROR("Invalid checkpoint type: " << checkpointModeString);
 }
 
-map<uint64_t, pair<string, string>> SQLite::popCommittedTransactions()
+SQLite::CommittedTransactions SQLite::popCommittedTransactions()
 {
     return _sharedData.popCommittedTransactions();
 }
@@ -2186,15 +2177,16 @@ void SQLite::SharedData::initializeCommitState(const CommitState& state)
     lastCommittedHash = state.hash;
 }
 
-void SQLite::SharedData::incrementCommit(const string& commitHash)
+void SQLite::SharedData::recordLocalCommit(CommitID id, CommittedTransaction transaction)
 {
     lock_guard<decltype(_internalStateMutex)> lock(_internalStateMutex);
-    commitCount++;
-    commitTransactionInfo(commitCount);
-    if (!commitHash.empty()) {
-        hashCommitID = commitCount;
-        lastCommittedHash = commitHash;
+    SASSERT(id == commitCount + 1);
+    if (!transaction.hash.empty()) {
+        hashCommitID = id;
+        lastCommittedHash = transaction.hash;
     }
+    _committedTransactions.emplace(id, move(transaction));
+    commitCount = id;
 }
 
 void SQLite::SharedData::recordReplicationCommit(uint64_t commitID, const string& commitHash)
@@ -2225,25 +2217,7 @@ SQLite::CommitState SQLite::SharedData::getCommitState() const
     return {commitCount.load(), hashCommitID, lastCommittedHash};
 }
 
-void SQLite::SharedData::prepareTransactionInfo(uint64_t commitID, const string& query, const string& hash)
-{
-    lock_guard<decltype(_internalStateMutex)> lock(_internalStateMutex);
-    _preparedTransactions.insert_or_assign(commitID, make_pair(query, hash));
-}
-
-void SQLite::SharedData::discardPreparedTransactionInfo(uint64_t commitID)
-{
-    lock_guard<decltype(_internalStateMutex)> lock(_internalStateMutex);
-    _preparedTransactions.erase(commitID);
-}
-
-void SQLite::SharedData::commitTransactionInfo(uint64_t commitID)
-{
-    lock_guard<decltype(_internalStateMutex)> lock(_internalStateMutex);
-    _committedTransactions.insert(_preparedTransactions.extract(commitID));
-}
-
-map<uint64_t, pair<string, string>> SQLite::SharedData::popCommittedTransactions()
+SQLite::CommittedTransactions SQLite::SharedData::popCommittedTransactions()
 {
     lock_guard<decltype(_internalStateMutex)> lock(_internalStateMutex);
     decltype(_committedTransactions) result;
