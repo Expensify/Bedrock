@@ -697,7 +697,7 @@ void SQLite::beginWriteTransaction()
     if (_isWriteTransaction) {
         return;
     }
-    shared_lock<shared_mutex> lock(_sharedData.writeLock);
+    shared_lock lock(_sharedData.writeLock);
     _sharedData.openWriteTransactionCount++;
     _isWriteTransaction = true;
 }
@@ -735,30 +735,38 @@ bool SQLite::beginLeaderTransaction(TRANSACTION_TYPE type, bool tryOnly)
         return true;
     }
 
-    // Register before waiting for the gate. A role change must drain us without blocking our first write.
-    beginWriteTransaction();
-    if (_sharedData.hctreeFollowerMode) {
-        return true;
-    }
     const auto start = chrono::steady_clock::now();
-    LeaderTransaction tx{&_sharedData, 1, shared_lock(_sharedData.leaderCommitLock, defer_lock), unique_lock(_sharedData.leaderCommitLock, defer_lock)};
-    try {
-        while (!(type == TRANSACTION_TYPE::EXCLUSIVE ? tx.exclusive.try_lock_for(100ms) : tx.shared.try_lock_for(100ms))) {
-            if (tryOnly) {
-                finishWriteTransaction();
-                return false;
-            }
+    const auto acquire = [&](auto& lock) {
+        if (tryOnly) {
+            return lock.try_lock_until(start + 100ms);
+        }
+        while (!lock.try_lock_for(100ms)) {
             _checkInterruptErrors("waiting to begin leader transaction");
             if (isSyncThread && chrono::steady_clock::now() - start >= 5s) {
                 STHROW("512 Internal Lock Timeout");
             }
         }
-        _leaderTransactions.push_back(move(tx));
-    } catch (...) {
-        finishWriteTransaction();
-        throw;
+        return true;
+    };
+
+    // A blocking writer closes admission before waiting for active transactions. New shared transactions
+    // would otherwise be able to enter indefinitely while it waits for the leader gate.
+    unique_lock blockAdmission(_sharedData.writeLock, defer_lock);
+    shared_lock sharedAdmission(_sharedData.writeLock, defer_lock);
+    if (!(type == TRANSACTION_TYPE::EXCLUSIVE ? acquire(blockAdmission) : acquire(sharedAdmission))) {
+        return false;
     }
-    _inLeaderTransaction = true;
+    if (!_sharedData.hctreeFollowerMode) {
+        LeaderTransaction tx{&_sharedData, 1, shared_lock(_sharedData.leaderCommitLock, defer_lock), unique_lock(_sharedData.leaderCommitLock, defer_lock)};
+        if (!(type == TRANSACTION_TYPE::EXCLUSIVE ? acquire(tx.exclusive) : acquire(tx.shared))) {
+            return false;
+        }
+        _leaderTransactions.push_back(move(tx));
+        _inLeaderTransaction = true;
+    }
+    // Register before reopening admission so a role change cannot pass between BEGIN and our first write.
+    _sharedData.openWriteTransactionCount++;
+    _isWriteTransaction = true;
     _commitLockWait += chrono::duration_cast<chrono::microseconds>(chrono::steady_clock::now() - start).count();
     return true;
 }
@@ -2223,9 +2231,11 @@ void SQLite::SharedData::setCommitEnabled(bool enable)
         return;
     }
 
-    unique_lock<shared_timed_mutex> leaderLock(leaderCommitLock, defer_lock);
+    unique_lock admission(writeLock, defer_lock);
+    unique_lock leaderLock(leaderCommitLock, defer_lock);
     if (!hctreeFollowerMode) {
         // Finish native commits and their queue inserts before the sync thread flushes on stand-down.
+        admission.lock();
         leaderLock.lock();
     }
     lock_guard<decltype(commitLock)> lock(commitLock);

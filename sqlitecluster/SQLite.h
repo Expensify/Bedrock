@@ -506,7 +506,7 @@ public:
         atomic<size_t> knownOutstandingFramesToCheckpoint = 0;
 
         // This can be locked in exclusive mode to prevent all writes. This exists to support the `BlockWrites` command.
-        shared_mutex writeLock;
+        shared_timed_mutex writeLock;
 
         // Count transactions that may still write after releasing writeLock.
         atomic<uint64_t> openWriteTransactionCount{0};
