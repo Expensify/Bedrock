@@ -484,9 +484,9 @@ public:
         // in the journal at startup may get dropped.
         atomic<uint64_t> commitCount;
 
-        // Serializes commits except explicit experimental HC-Tree follower replication. writeLock and the open writer
-        // count must be used to finish all writers, including parallel follower commits, when changing between FOLLOWER/LEADER.
-        recursive_timed_mutex commitLock;
+        // Blocking transactions hold this exclusively from BEGIN. Ordinary native leader transactions hold it
+        // shared from BEGIN; legacy journal writers take it exclusively during prepare.
+        shared_timed_mutex commitLock;
 
         // If set to false, this prevents any thread from being able to commit to the DB.
         atomic<bool> _commitEnabled;
@@ -611,6 +611,7 @@ private:
     // we call `rollback`. Note that this indicates whether this object has locked the mutex, not whether the mutex is
     // locked (i.e., this is `false` if some other DB object has locked the mutex).
     bool _mutexLocked = false;
+    shared_lock<shared_timed_mutex> _sharedCommitLock;
 
     atomic<int64_t> _lastConflictPage = 0;
     atomic<string> _lastConflictLocation;

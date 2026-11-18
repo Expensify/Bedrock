@@ -706,6 +706,9 @@ void SQLite::finishWriteTransaction()
     if (!_isWriteTransaction) {
         return;
     }
+    if (_sharedCommitLock.owns_lock()) {
+        _sharedCommitLock.unlock();
+    }
     _isWriteTransaction = false;
     if (_sharedData.openWriteTransactionCount.fetch_sub(1) == 1) {
         _sharedData.openWriteTransactionCount.notify_all();
@@ -801,6 +804,25 @@ bool SQLite::beginTransaction(SQLite::TRANSACTION_TYPE type, bool beginOnly)
         _commitLockWait += chrono::duration_cast<chrono::microseconds>(chrono::steady_clock::now() - commitLockWaitStart).count();
         _sharedData._commitLockTimer.start("EXCLUSIVE");
         _mutexLocked = true;
+    } else if (isExperimentalHCTree() && !_sharedData.hctreeFollowerMode) {
+        // Register before acquiring commitLock so a role change can drain us without blocking our first write.
+        beginWriteTransaction();
+        if (!_sharedData.hctreeFollowerMode) {
+            const auto start = chrono::steady_clock::now();
+            _sharedCommitLock = shared_lock(_sharedData.commitLock, defer_lock);
+            try {
+                while (!_sharedCommitLock.try_lock_for(100ms)) {
+                    _checkInterruptErrors("waiting to begin leader transaction");
+                    if (isSyncThread && chrono::steady_clock::now() - start >= 5s) {
+                        STHROW("512 Internal Lock Timeout");
+                    }
+                }
+            } catch (...) {
+                finishWriteTransaction();
+                throw;
+            }
+            _commitLockWait += chrono::duration_cast<chrono::microseconds>(chrono::steady_clock::now() - start).count();
+        }
     }
 
     // We actively track transaction counts incrementing and decrementing to log the number of active open transactions at any given moment.
@@ -1344,8 +1366,7 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash, chrono::m
 
     // Even a blank transaction writes a journal entry. Register before acquiring commitLock.
     beginWriteTransaction();
-    // Only experimental HC-Tree follower commits can preserve their IDs without serializing through commitLock.
-    if (!_mutexLocked && !parallelFollower) {
+    if (!_mutexLocked && !_sharedCommitLock.owns_lock() && !parallelFollower) {
         auto start = chrono::steady_clock::now();
         auto finalLockTimeout = start + commitLockTimeout;
         auto nextLockTimeout = start + min(commitLockTimeout, 1'000'000us);
@@ -1466,7 +1487,6 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash, chrono::m
     _prepared = true;
     SDEBUG("Prepared transaction");
 
-    // We're still holding commitLock now, and will until the commit is complete.
     return true;
 }
 

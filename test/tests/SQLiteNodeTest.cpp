@@ -1017,7 +1017,7 @@ struct SQLiteNodeTest : tpunit::TestFixture
             EXPECT_EQUAL(db.getCommitCount(), commitCount);
             EXPECT_EQUAL(db.getCommittedHash(), committedHash);
 
-            // The commit mutex is recursive, so only another thread can detect a leaked lock.
+            // Another writer must be able to prepare on a separate handle.
             bool prepared = false;
             thread waiter([&]() {
                 if (other.beginTransaction()) {
