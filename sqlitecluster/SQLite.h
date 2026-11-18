@@ -215,16 +215,14 @@ private:
     };
     using CommittedTransactions = map<CommitID, CommittedTransaction>;
 
-    // Prepare to commit or rollback the transaction. This also inserts the current uncommitted query into the
-    // journal; no additional writes are allowed until the next transaction has begun.
+    // Finalizes the payload, inserting it here when using a legacy journal. No additional writes are allowed.
     // A native HC-Tree leader returns transactionID zero here; commit() supplies the CID allocated by SQLite.
     // The commitLockTimeout, if passed, will limit the time we wait for the lock. If not, we'll use 24 hours, which
     // is effectively no timeout.
-    // Note that if this transaction fails to commit, these will not ultimately be accurate.
     // Local transactions generate a new GUID. Replication supplies the received GUID (32 hex characters), or an
     // explicit empty string for a blank journal entry (which must also have an empty query).
     // Replication callers must compare the prepared hash with the received hash before committing.
-    // Explicit replication IDs permit concurrent commits only on experimental HC-Tree followers.
+    // Followers use the CID supplied in the replication message.
     bool prepare(uint64_t* transactionID = nullptr, string* transactionHash = nullptr, chrono::microseconds commitLockTimeout = chrono::hours(24), atomic<bool>* abortPtr = nullptr, const optional<string>& replicationGUID = nullopt, const optional<ReplicationInfo>& replication = nullopt);
 
     // This enables or disables automatic re-writing. This feature is to support mocked requests and load testing. This

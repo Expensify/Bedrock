@@ -6,7 +6,9 @@
 
 struct HCTreeLeaderCommitTest : tpunit::TestFixture
 {
-    HCTreeLeaderCommitTest() : tpunit::TestFixture("HCTreeLeaderCommit", TEST(HCTreeLeaderCommitTest::parallelCommits)) {}
+    HCTreeLeaderCommitTest() : tpunit::TestFixture("HCTreeLeaderCommit", TEST(HCTreeLeaderCommitTest::parallelCommits))
+    {
+    }
 
     struct CommitPause
     {
@@ -117,7 +119,7 @@ struct HCTreeLeaderCommitTest : tpunit::TestFixture
             ASSERT_TRUE(db.beginTransaction());
             ASSERT_TRUE(db.write("UPDATE source SET value = 2 WHERE id = 3;"));
             ASSERT_TRUE(db.prepare());
-            EXPECT_EQUAL(db.commit(), SQLite::COMMIT_DISABLED);
+            EXPECT_TRUE(db.commit() == SQLite::COMMIT_DISABLED);
             db.rollback();
             EXPECT_TRUE(db.popCommittedTransactions().empty());
         }

@@ -710,7 +710,7 @@ void SQLite::finishWriteTransaction()
     _isWriteTransaction = false;
     if (_inLeaderTransaction) {
         _inLeaderTransaction = false;
-        const auto it = find_if(_leaderTransactions.begin(), _leaderTransactions.end(), [this](const auto& tx) { return tx.database == &_sharedData; });
+        const auto it = ranges::find(_leaderTransactions, &_sharedData, &LeaderTransaction::database);
         SASSERT(it != _leaderTransactions.end());
         if (--it->handles) {
             return;
@@ -724,16 +724,15 @@ void SQLite::finishWriteTransaction()
 
 bool SQLite::beginLeaderTransaction(TRANSACTION_TYPE type, bool tryOnly)
 {
-    for (auto& tx : _leaderTransactions) {
-        if (tx.database == &_sharedData) {
-            if (type == TRANSACTION_TYPE::EXCLUSIVE && !tx.exclusive.owns_lock()) {
-                STHROW("Cannot begin a blocking transaction inside a shared leader transaction");
-            }
-            ++tx.handles;
-            _isWriteTransaction = true;
-            _inLeaderTransaction = true;
-            return true;
+    const auto existing = ranges::find(_leaderTransactions, &_sharedData, &LeaderTransaction::database);
+    if (existing != _leaderTransactions.end()) {
+        if (type == TRANSACTION_TYPE::EXCLUSIVE && !existing->exclusive.owns_lock()) {
+            STHROW("Cannot begin a blocking transaction inside a shared leader transaction");
         }
+        ++existing->handles;
+        _isWriteTransaction = true;
+        _inLeaderTransaction = true;
+        return true;
     }
 
     // Register before waiting for the gate. A role change must drain us without blocking our first write.
@@ -1479,7 +1478,7 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash, chrono::m
     // SQLite assigns a native leader's CID at commit time. Followers replay the ID assigned by their leader.
     const bool nativeLeader = isExperimentalHCTree() && !_sharedData.hctreeFollowerMode;
     const uint64_t commitCount = _sharedData.commitCount;
-    const CommitID commitID = _replicationInfo.has_value() ? _replicationInfo.value().commitID : nativeLeader ? 0 : commitCount + 1;
+    const CommitID commitID = _replicationInfo.has_value() ? _replicationInfo.value().commitID : (nativeLeader ? 0 : commitCount + 1);
     if (_replicationInfo.has_value() && !parallelFollower && commitID != commitCount + 1) {
         STHROW("Replication commit ID is not contiguous");
     }
