@@ -396,6 +396,14 @@ bool TestPluginCommand::peek(SQLite& db)
         response["stored_peekedAt"] = plugin().arbitraryData["peekedAt"];
         response["stored_not_special"] = plugin().arbitraryData["not_special"];
         return true;
+    } else if (request.methodLine == "sendrequest completed") {
+        // Escalate a completed HTTPS result without depending on a network round-trip.
+        auto transaction = make_unique<TestHTTPSManager::Transaction>(*plugin().httpsManager);
+        transaction->response = 200;
+        transaction->fullResponse.methodLine = "HTTP/1.1 200 OK";
+        transaction->finished = STimeNow();
+        httpsRequests.push_back(move(transaction));
+        return false;
     } else if (SStartsWith(request.methodLine, "sendrequest")) {
         int requestCount = 1;
         if (request.isSet("httpsRequestCount")) {

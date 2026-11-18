@@ -83,11 +83,21 @@ struct SynchronousCommandsTest : tpunit::TestFixture
         waiter["value"] = "waiter";
         waiter["processTimeout"] = "1000";
         vector<SData> waiterResults = tester->getTester(0).executeWaitMultipleData({waiter});
+
+        // The follower has already completed the HTTPS request. Its write on the leader may wait past
+        // processTimeout and must still commit exactly once with the original result.
+        SData httpsWaiter("sendrequest completed");
+        httpsWaiter["value"] = "https-waiter";
+        httpsWaiter["processTimeout"] = "250";
+        const auto httpsResults = tester->getTester(1).executeWaitMultipleData({httpsWaiter});
         holderThread.join();
 
         // The waiter fails instead of retrying until the holder lets go, and the holder still commits.
         ASSERT_EQUAL(waiterResults[0].methodLine, "555 Timeout waiting for commit lock");
         ASSERT_EQUAL(holderResults[0].methodLine, "200 OK");
         ASSERT_EQUAL(tester->getTester(0).readDB("SELECT COUNT(*) FROM test WHERE value = 'waiter';"), "0");
+        ASSERT_EQUAL(httpsResults[0].methodLine, "200 OK");
+        ASSERT_EQUAL(httpsResults[0].content, "200\n");
+        ASSERT_EQUAL(tester->getTester(0).readDB("SELECT COUNT(*) FROM test WHERE value = 'https-waiter';"), "1");
     }
 } __SynchronousCommandsTest;
