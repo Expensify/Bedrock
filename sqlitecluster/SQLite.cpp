@@ -722,7 +722,7 @@ void SQLite::finishWriteTransaction()
     }
 }
 
-bool SQLite::beginLeaderTransaction(TRANSACTION_TYPE type, bool tryOnly)
+bool SQLite::beginLeaderTransaction(TRANSACTION_TYPE type, optional<chrono::microseconds> lockTimeout)
 {
     const auto existing = ranges::find(_leaderTransactions, &_sharedData, &LeaderTransaction::database);
     if (existing != _leaderTransactions.end()) {
@@ -736,13 +736,18 @@ bool SQLite::beginLeaderTransaction(TRANSACTION_TYPE type, bool tryOnly)
     }
 
     const auto start = chrono::steady_clock::now();
+    const auto deadline = lockTimeout.has_value() ? start + lockTimeout.value() : chrono::steady_clock::time_point::max();
     const auto acquire = [&](auto& lock) {
-        if (tryOnly) {
-            return lock.try_lock_until(start + 100ms);
+        if (lock.try_lock()) {
+            return true;
         }
-        while (!lock.try_lock_for(100ms)) {
-            _checkInterruptErrors("waiting to begin leader transaction");
-            if (isSyncThread && chrono::steady_clock::now() - start >= 5s) {
+        while (!lock.try_lock_until(min(deadline, chrono::steady_clock::now() + 100ms))) {
+            _checkInterruptErrors("waiting to begin leader transaction", !lockTimeout.has_value());
+            const auto now = chrono::steady_clock::now();
+            if (now >= deadline) {
+                return false;
+            }
+            if (isSyncThread && now - start >= 5s) {
                 STHROW("512 Internal Lock Timeout");
             }
         }
@@ -830,6 +835,11 @@ void SQLite::resetCommitLockWait()
 
 bool SQLite::beginTransaction(SQLite::TRANSACTION_TYPE type, bool beginOnly)
 {
+    return beginTransaction(type, beginOnly, nullopt) == BEGIN_RESULT::STARTED;
+}
+
+SQLite::BEGIN_RESULT SQLite::beginTransaction(TRANSACTION_TYPE type, bool beginOnly, optional<chrono::microseconds> leaderLockTimeout)
+{
     if (_insideTransaction) {
         rollback();
         STHROW("Attempted to begin transaction while in invalid state: already inside transaction");
@@ -844,8 +854,8 @@ bool SQLite::beginTransaction(SQLite::TRANSACTION_TYPE type, bool beginOnly)
     }
     _lastTransactionType = type;
     _transactionTimer.start("BEGIN_TRANSACTION");
-    if (isExperimentalHCTree() && !_sharedData.hctreeFollowerMode) {
-        beginLeaderTransaction(type);
+    if (isExperimentalHCTree() && !_sharedData.hctreeFollowerMode && !beginLeaderTransaction(type, leaderLockTimeout)) {
+        return BEGIN_RESULT::LOCK_TIMEOUT;
     }
     if (type == TRANSACTION_TYPE::EXCLUSIVE) {
         beginWriteTransaction();
@@ -901,7 +911,7 @@ bool SQLite::beginTransaction(SQLite::TRANSACTION_TYPE type, bool beginOnly)
     _lastConflictPage = 0;
     _lastConflictLocation = "";
     _totalTransactionElapsed = 0;
-    return _insideTransaction;
+    return _insideTransaction ? BEGIN_RESULT::STARTED : BEGIN_RESULT::FAILED;
 }
 
 bool SQLite::verifyTable(const string& tableName, const string& sql, bool& created, const string& type)
@@ -1051,14 +1061,14 @@ bool SQLite::read(const string& query, const map<string, Parameter>& params, SQR
     return queryResult;
 }
 
-void SQLite::_checkInterruptErrors(const string& error) const
+void SQLite::_checkInterruptErrors(const string& error, bool checkQueryTimeout) const
 {
     // Local error code.
     int errorCode = 0;
     uint64_t time = 0;
 
     // Check timeout.
-    if (_timeoutLimit) {
+    if (checkQueryTimeout && _timeoutLimit) {
         uint64_t now = STimeNow();
         if (now > _timeoutLimit) {
             _timeoutError = now - _timeoutStart;
@@ -1158,7 +1168,7 @@ bool SQLite::writeLocalUnreplicated(const string& query)
     }
 
     if (isExperimentalHCTree() && !_sharedData.hctreeFollowerMode) {
-        if (!beginLeaderTransaction(TRANSACTION_TYPE::SHARED, true)) {
+        if (!beginLeaderTransaction(TRANSACTION_TYPE::SHARED, 100ms)) {
             return false;
         }
     } else {

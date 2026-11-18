@@ -138,6 +138,9 @@ private:
     // Begins a new transaction. Returns true on success. If type is EXCLUSIVE, locks the commit mutex to guarantee
     // that this transaction cannot conflict with any others.
     bool beginTransaction(TRANSACTION_TYPE type = TRANSACTION_TYPE::SHARED, bool beginOnly = false);
+    enum class BEGIN_RESULT { STARTED, FAILED, LOCK_TIMEOUT };
+    // A supplied timeout covers both native leader admission locks, independently of the SQL execution timeout.
+    BEGIN_RESULT beginTransaction(TRANSACTION_TYPE type, bool beginOnly, optional<chrono::microseconds> leaderLockTimeout);
 
     // Verifies a table exists and has a particular definition. If the database is left with the right schema, it
     // returns true. If it had to create a new table (ie, the table was missing), it also sets created to true. If the
@@ -620,7 +623,7 @@ private:
     };
     static thread_local vector<LeaderTransaction> _leaderTransactions;
     bool _inLeaderTransaction = false;
-    bool beginLeaderTransaction(TRANSACTION_TYPE type, bool tryOnly = false);
+    bool beginLeaderTransaction(TRANSACTION_TYPE type, optional<chrono::microseconds> lockTimeout);
 
     atomic<int64_t> _lastConflictPage = 0;
     atomic<string> _lastConflictLocation;
@@ -685,7 +688,7 @@ private:
 
     // Check out various error cases that can interrupt a query.
     // We check them all together because we need to make sure we atomically pick a single one to handle.
-    void _checkInterruptErrors(const string& error) const;
+    void _checkInterruptErrors(const string& error, bool checkQueryTimeout = true) const;
 
     // Callbacks to run after each successful commit. Set at construction and copied to every handle derived from
     // this one, so they need no locking.
