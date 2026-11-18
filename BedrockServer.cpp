@@ -787,10 +787,8 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                     BedrockCore::RESULT result = core.processCommand(command, isBlocking);
                     if (result == BedrockCore::RESULT::NEEDS_COMMIT) {
                         // If processCommand returned true, then we need to do a commit. Otherwise, the command is
-                        // done, and we just need to respond. `commit` takes the commit lock, so we serialize against
-                        // every other thread that's committing. We can still conflict with a transaction that another
-                        // thread committed between our call to `processCommand` and our call to `commit`. This is
-                        // scoped to the minimum time required.
+                        // done, and we just need to respond. A competing writer can cause a conflict even after
+                        // processCommand has finished.
                         SQLiteCore::COMMIT_RESULT commitResult = SQLiteCore::COMMIT_RESULT::CONFLICT;
                         uint64_t transactionID = 0;
                         string transactionHash;
