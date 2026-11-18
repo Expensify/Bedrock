@@ -84,11 +84,15 @@ struct HCTreeLeaderCommitTest : tpunit::TestFixture
         EXPECT_EQUAL(db.getCommittedHash(), before.hash);
         EXPECT_TRUE(db.popCommittedTransactions().empty());
 
-        // A blocking transaction cannot begin while the first handle still holds its shared transaction lock.
+        // Both a blocking transaction and the final stand-down flush must wait for the missing CID.
         promise<void> waiting;
         auto blocking = async(launch::async, [&]() {
             SQLite writer(db);
             waiting.set_value();
+            if (conflict) {
+                writer.setCommitEnabled(false);
+                return true;
+            }
             const bool began = writer.beginTransaction(SQLite::TRANSACTION_TYPE::EXCLUSIVE);
             writer.rollback();
             return began;
@@ -109,6 +113,14 @@ struct HCTreeLeaderCommitTest : tpunit::TestFixture
         EXPECT_TRUE(transactions.at(secondID).snapshot <= before.commitCount);
         EXPECT_EQUAL(db.read("SELECT snapshot FROM hct_journal WHERE cid = " + SQ(secondID)), to_string(transactions.at(secondID).snapshot));
         EXPECT_TRUE(db.popCommittedTransactions().empty());
+        if (conflict) {
+            ASSERT_TRUE(db.beginTransaction());
+            ASSERT_TRUE(db.write("UPDATE source SET value = 2 WHERE id = 3;"));
+            ASSERT_TRUE(db.prepare());
+            EXPECT_EQUAL(db.commit(), SQLite::COMMIT_DISABLED);
+            db.rollback();
+            EXPECT_TRUE(db.popCommittedTransactions().empty());
+        }
     }
 
     void parallelCommits()
