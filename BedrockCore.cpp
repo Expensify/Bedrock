@@ -32,22 +32,23 @@ private:
     bool (*_handler)(int, const char*, string&);
 };
 
+static chrono::microseconds getProcessTimeout(const BedrockCommand& command)
+{
+    const int64_t timeoutMS = command.request.isSet("processTimeout") ? command.request.calc("processTimeout") : BedrockCommand::DEFAULT_PROCESS_TIMEOUT;
+    return chrono::milliseconds(timeoutMS);
+}
+
 chrono::microseconds BedrockCore::getRemainingTime(const unique_ptr<BedrockCommand>& command, bool isProcessing)
 {
-    int64_t timeout = command->timeout();
-    int64_t now = STimeNow();
-
-    // This is what's left for the "absolute" time. If it's negative, we've already timed out.
-    int64_t adjustedTimeout = timeout - now;
-
-    // We also want to know the processTimeout, because we'll return early if we get stuck processing for too long.
-    int64_t processTimeout = command->request.isSet("processTimeout") ? command->request.calc("processTimeout") : BedrockCommand::DEFAULT_PROCESS_TIMEOUT;
-
-    // Since timeouts are specified in ms, we convert to us.
-    processTimeout *= 1000;
+    const int64_t timeout = command->timeout();
+    const int64_t now = STimeNow();
+    auto remaining = chrono::microseconds(timeout - now);
+    if (isProcessing) {
+        remaining = min(remaining, getProcessTimeout(*command));
+    }
 
     // Already expired.
-    if (adjustedTimeout <= 0 || (isProcessing && processTimeout <= 0)) {
+    if (remaining <= 0us) {
         // Some plugins want to alert timeout errors themselves, and make them silent on bedrock.
         if (command->shouldSuppressTimeoutWarnings()) {
             SWARN("Command " << command->request.methodLine << " timed out.");
@@ -57,8 +58,32 @@ chrono::microseconds BedrockCore::getRemainingTime(const unique_ptr<BedrockComma
         STHROW("555 Timeout");
     }
 
-    // Both of these are positive, return the lowest remaining.
-    return chrono::microseconds(isProcessing ? min(processTimeout, adjustedTimeout) : adjustedTimeout);
+    return remaining;
+}
+
+void BedrockCore::_beginCommandTransaction(const unique_ptr<BedrockCommand>& command, bool exclusive)
+{
+    const auto remaining = getRemainingTime(command, false);
+    _db.setTimeout(remaining);
+
+    // Ordinary workers fail fast on lock contention. Blocking commands and commands with an HTTPS result
+    // can wait until the command deadline, so we don't discard a completed external operation.
+    const bool failFast = !exclusive && command->httpsRequests.empty();
+    const auto lockTimeout = failFast ? clamp(getProcessTimeout(*command), 0us, remaining) : remaining;
+    const auto type = exclusive ? SQLite::TRANSACTION_TYPE::EXCLUSIVE : SQLite::TRANSACTION_TYPE::SHARED;
+    switch (_db.beginTransaction(type, false, lockTimeout)) {
+        case SQLite::BEGIN_RESULT::STARTED:
+            return;
+
+        case SQLite::BEGIN_RESULT::LOCK_TIMEOUT:
+            if (failFast) {
+                STHROW("555 Timeout waiting for commit lock");
+            }
+            STHROW("555 Timeout");
+
+        case SQLite::BEGIN_RESULT::FAILED:
+            STHROW("501 Failed to begin " + (exclusive ? "exclusive"s : "shared"s) + " transaction");
+    }
 }
 
 bool BedrockCore::isTimedOut(unique_ptr<BedrockCommand>& command, SQLite* db, const BedrockServer* server)
@@ -159,13 +184,10 @@ BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command
         SDEBUG("Peeking at '" << request.methodLine << "'");
         _throwIfAborted(command);
         command->peekCount++;
-        _db.setTimeout(getRemainingTime(command, false));
         _db.setAbortRef(command->shouldAbort);
 
         try {
-            if (!_db.beginTransaction(exclusive ? SQLite::TRANSACTION_TYPE::EXCLUSIVE : SQLite::TRANSACTION_TYPE::SHARED)) {
-                STHROW("501 Failed to begin " + (exclusive ? "exclusive"s : "shared"s) + " transaction");
-            }
+            _beginCommandTransaction(command, exclusive);
 
             if (exclusive) {
                 decreaseCommandTimeout(command, command->isSynchronous ? BedrockCommand::SYNCHRONOUS_COMMAND_TIMEOUT
@@ -260,20 +282,16 @@ BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& comm
         SDEBUG("Processing '" << request.methodLine << "'");
         _throwIfAborted(command);
         command->processCount++;
-        _db.setTimeout(getRemainingTime(command, true));
         _db.setAbortRef(command->shouldAbort);
-        if (!_db.insideTransaction()) {
-            // If a transaction was already begun in `peek`, then this won't run. We call it here to support the case where
-            // peek created a httpsRequest and closed it's first transaction until the httpsRequest was complete, in which
-            // case we need to open a new transaction.
-            if (!_db.beginTransaction(exclusive ? SQLite::TRANSACTION_TYPE::EXCLUSIVE : SQLite::TRANSACTION_TYPE::SHARED)) {
-                STHROW("501 Failed to begin " + (exclusive ? "exclusive"s : "shared"s) + " transaction");
-            }
-
-            if (exclusive) {
-                decreaseCommandTimeout(command, command->isSynchronous ? BedrockCommand::SYNCHRONOUS_COMMAND_TIMEOUT
-                                                                       : BedrockCommand::DEFAULT_PROCESS_TIMEOUT);
-            }
+        const bool needsTransaction = !_db.insideTransaction();
+        if (needsTransaction) {
+            // A command resuming after an HTTPS request starts a new transaction here.
+            _beginCommandTransaction(command, exclusive);
+        }
+        _db.setTimeout(getRemainingTime(command, true));
+        if (needsTransaction && exclusive) {
+            decreaseCommandTimeout(command, command->isSynchronous ? BedrockCommand::SYNCHRONOUS_COMMAND_TIMEOUT
+                                                                   : BedrockCommand::DEFAULT_PROCESS_TIMEOUT);
         }
 
         // We start the timer here to avoid including the time spent acquiring the lock _sharedData.commitLock

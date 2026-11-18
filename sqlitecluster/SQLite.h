@@ -138,7 +138,13 @@ private:
     // Begins a new transaction. Returns true on success. If type is EXCLUSIVE, locks the commit mutex to guarantee
     // that this transaction cannot conflict with any others.
     bool beginTransaction(TRANSACTION_TYPE type = TRANSACTION_TYPE::SHARED, bool beginOnly = false);
-    enum class BEGIN_RESULT { STARTED, FAILED, LOCK_TIMEOUT };
+
+    enum class BEGIN_RESULT
+    {
+        STARTED,
+        FAILED,
+        LOCK_TIMEOUT
+    };
     // A supplied timeout covers both native leader admission locks, independently of the SQL execution timeout.
     BEGIN_RESULT beginTransaction(TRANSACTION_TYPE type, bool beginOnly, optional<chrono::microseconds> leaderLockTimeout);
 

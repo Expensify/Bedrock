@@ -76,6 +76,8 @@ private:
     static chrono::microseconds getRemainingTime(const unique_ptr<BedrockCommand>& command, bool isProcessing);
 
 private:
+    void _beginCommandTransaction(const unique_ptr<BedrockCommand>& command, bool exclusive);
+
     // When called in the context of handling an exception, returns the demangled (if possible) name of the exception.
     string _getExceptionName();
 
