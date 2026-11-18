@@ -108,50 +108,17 @@ static JSON::Value mergeAtomicJobMap(const string& currentData, const string& ex
     const JSON::Value currentMap = getJobDataMap(current, mapField);
     const JSON::Value expectedMap = getJobDataMap(expected, mapField);
     const JSON::Value workerMap = getJobDataMap(worker, mapField);
-    set<string> mapKeys;
-    for (const auto& member : JSON::ConstObjectValue(currentMap)) {
-        mapKeys.insert(member.first);
-    }
+    JSON::Value mergedMap = mergeJobObjectFields(currentMap, expectedMap, workerMap);
     for (const auto& member : JSON::ConstObjectValue(expectedMap)) {
-        mapKeys.insert(member.first);
-    }
-    for (const auto& member : JSON::ConstObjectValue(workerMap)) {
-        mapKeys.insert(member.first);
-    }
-    JSON::Value mergedMap(JSON::OBJECT);
-    for (const string& key : mapKeys) {
-        if (currentMap.hasMember(key) && expectedMap.hasMember(key) && workerMap.hasMember(key) &&
-            currentMap[key].isObject() && expectedMap[key].isObject() && workerMap[key].isObject()) {
+        const string& key = member.first;
+        if (currentMap.hasMember(key) && workerMap.hasMember(key) &&
+            currentMap[key].isObject() && member.second.isObject() && workerMap[key].isObject()) {
             mergedMap[key] = mergeJobObjectFields(currentMap[key], expectedMap[key], workerMap[key]);
-            continue;
-        }
-        const JSON::Value& selected = membersEqual(currentMap, expectedMap, key) ? workerMap : currentMap;
-        if (selected.hasMember(key)) {
-            mergedMap[key] = selected[key];
         }
     }
 
-    set<string> keys;
-    for (const auto& member : JSON::ConstObjectValue(current)) {
-        keys.insert(member.first);
-    }
-    for (const auto& member : JSON::ConstObjectValue(expected)) {
-        keys.insert(member.first);
-    }
-    for (const auto& member : JSON::ConstObjectValue(worker)) {
-        keys.insert(member.first);
-    }
-    JSON::Value merged(JSON::OBJECT);
-    for (const string& key : keys) {
-        if (key == mapField) {
-            merged[key] = mergedMap;
-            continue;
-        }
-        const JSON::Value& selected = membersEqual(current, expected, key) ? worker : current;
-        if (selected.hasMember(key)) {
-            merged[key] = selected[key];
-        }
-    }
+    JSON::Value merged = mergeJobObjectFields(current, expected, worker);
+    merged[mapField] = move(mergedMap);
     return merged;
 }
 

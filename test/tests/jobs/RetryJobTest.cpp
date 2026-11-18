@@ -470,7 +470,7 @@ struct RetryJobTest : tpunit::TestFixture
         SData command("CreateJob");
         command["name"] = "atomic-map-entry-fields";
         command["unique"] = "true";
-        command["data"] = R"({"agents":{"agent":{"trigger":"A","mention":{"id":1}},"other":{"trigger":"A","mention":{"id":1}}}})";
+        command["data"] = R"({"agents":{"agent":{"trigger":"A","mention":{"id":1}},"other":{"trigger":"A","mention":{"id":1}},"scalar":1,"removed":7}})";
         const string jobID = tester->executeWaitVerifyContentTable(command)["jobID"];
         command.clear();
         command.methodLine = "GetJob";
@@ -481,19 +481,21 @@ struct RetryJobTest : tpunit::TestFixture
         command.methodLine = "CreateJob";
         command["name"] = "atomic-map-entry-fields";
         command["unique"] = "true";
-        command["data"] = R"({"agents":{"agent":{"trigger":"B"},"other":{"mention":{"id":2}}}})";
+        command["data"] = R"({"agents":{"agent":{"trigger":"B"},"other":{"mention":{"id":2}},"scalar":2}})";
         tester->executeWaitVerifyContent(command);
         command.clear();
         command.methodLine = "RetryJob";
         command["jobID"] = jobID;
         command["expectedData"] = expectedData;
-        command["data"] = R"({"_bedrockAtomicMapField":"agents","agents":{"agent":{"trigger":"B"},"other":{"trigger":"A"}}})";
+        command["data"] = R"({"_bedrockAtomicMapField":"agents","agents":{"agent":{"trigger":"B"},"other":{"trigger":"A"},"scalar":3}})";
         tester->executeWaitVerifyContent(command);
 
         const JSON::Value data = JSON::Value::parse(tester->readDB("SELECT data FROM jobs WHERE jobID = " + SQ(jobID) + ";"));
         ASSERT_EQUAL(data["agents"]["agent"]["trigger"].getString(), "B");
         ASSERT_FALSE(data["agents"]["agent"].hasMember("mention"));
         ASSERT_EQUAL(data["agents"]["other"]["mention"]["id"].getInt(), 2);
+        ASSERT_EQUAL(data["agents"]["scalar"].getInt(), 2);
+        ASSERT_FALSE(data["agents"].hasMember("removed"));
     }
 
     void atomicMapRejectsInvalidInput()

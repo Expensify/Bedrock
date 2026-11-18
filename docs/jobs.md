@@ -109,7 +109,8 @@ objects, Bedrock applies that comparison to each of their fields instead. Other 
 use the same comparison. An empty array is accepted as an empty map for PHP callers. `RetryJob` keeps the
 requested retry time. `FinishJob` requeues immediately when the merged map still has entries; if
 the job has pending children, it waits for them first. If the data changed while the worker ran,
-`RetryJob` keeps the current job name and priority.
+`RetryJob` keeps the current job name and priority. Atomic map completion replaces the
+`rerunIfDataChanged` completion behavior: changes outside the map alone do not requeue `FinishJob`.
 
 The marker requires `expectedData` and a map in the worker's data. Invalid input is rejected without
 finishing the job. Workers must only set the marker after observing the capability flag, so they
