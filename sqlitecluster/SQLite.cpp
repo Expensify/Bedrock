@@ -707,10 +707,10 @@ void SQLite::finishWriteTransaction()
         return;
     }
     _isWriteTransaction = false;
-    if (_sharedLeaderLock.owns_lock()) {
-        _sharedLeaderLock.unlock();
-    } else if (_exclusiveLeaderLock.owns_lock()) {
-        _exclusiveLeaderLock.unlock();
+    if (_sharedCommitLock.owns_lock()) {
+        _sharedCommitLock.unlock();
+    } else if (_exclusiveCommitLock.owns_lock()) {
+        _exclusiveCommitLock.unlock();
     }
     if (_sharedData.openWriteTransactionCount.fetch_sub(1) == 1) {
         _sharedData.openWriteTransactionCount.notify_all();
@@ -752,7 +752,7 @@ bool SQLite::lockLeaderCommit(TRANSACTION_TYPE type, optional<chrono::microsecon
     if (!acquire(admission)) {
         return false;
     }
-    if (!(type == TRANSACTION_TYPE::EXCLUSIVE ? acquire(_exclusiveLeaderLock) : acquire(_sharedLeaderLock))) {
+    if (!(type == TRANSACTION_TYPE::EXCLUSIVE ? acquire(_exclusiveCommitLock) : acquire(_sharedCommitLock))) {
         return false;
     }
     _commitLockWait += chrono::duration_cast<chrono::microseconds>(chrono::steady_clock::now() - start).count();
@@ -837,25 +837,23 @@ bool SQLite::beginTransaction(SQLite::TRANSACTION_TYPE type, bool beginOnly)
         try {
             if (isExperimentalHCTree() && !_sharedData.hctreeFollowerMode) {
                 lockLeaderCommit(type, nullopt);
+            } else {
+                const auto commitLockWaitStart = chrono::steady_clock::now();
+                if (isSyncThread) {
+                    if (!_exclusiveCommitLock.try_lock_for(5s)) {
+                        SWARN("Failed to acquire commit lock in sync thread exclusive transaction!");
+                        STHROW("512 Internal Lock Timeout");
+                    }
+                } else {
+                    _exclusiveCommitLock.lock();
+                }
+                _commitLockWait += chrono::duration_cast<chrono::microseconds>(chrono::steady_clock::now() - commitLockWaitStart).count();
             }
         } catch (...) {
             finishWriteTransaction();
             throw;
         }
-        auto commitLockWaitStart = chrono::steady_clock::now();
-        if (isSyncThread) {
-            // Blocking the sync thread has catastrophic results (forking) and so we either get this quickly, or we fail the transaction.
-            if (!_sharedData.commitLock.try_lock_for(5s)) {
-                finishWriteTransaction();
-                SWARN("Failed to acquire commit lock in sync thread exclusive transaction!");
-                STHROW("512 Internal Lock Timeout");
-            }
-        } else {
-            _sharedData.commitLock.lock();
-        }
-        _commitLockWait += chrono::duration_cast<chrono::microseconds>(chrono::steady_clock::now() - commitLockWaitStart).count();
         _sharedData._commitLockTimer.start("EXCLUSIVE");
-        _mutexLocked = true;
     }
 
     // We actively track transaction counts incrementing and decrementing to log the number of active open transactions at any given moment.
@@ -869,11 +867,6 @@ bool SQLite::beginTransaction(SQLite::TRANSACTION_TYPE type, bool beginOnly)
     string beginQuery = (beginOnly && _hctree) ? "BEGIN" : "BEGIN CONCURRENT";
     _insideTransaction = !SQuery(_db, beginQuery);
 
-    // If we locked the mutex and then failed to begin, unlock it before returning
-    if (_mutexLocked && !_insideTransaction) {
-        _sharedData.commitLock.unlock();
-        _mutexLocked = false;
-    }
     if (!_insideTransaction) {
         _sharedData.openTransactionCount--;
         finishWriteTransaction();
@@ -1400,11 +1393,11 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash, chrono::m
 
     // Even a blank transaction writes a journal entry. Register before acquiring commitLock.
     beginWriteTransaction();
-    if (!_mutexLocked && isExperimentalHCTree() && !_sharedData.hctreeFollowerMode) {
+    if (!_exclusiveCommitLock.owns_lock() && isExperimentalHCTree() && !_sharedData.hctreeFollowerMode) {
         if (!lockLeaderCommit(TRANSACTION_TYPE::SHARED, commitLockTimeout, abortPtr)) {
             return false;
         }
-    } else if (!_mutexLocked && !parallelFollower) {
+    } else if (!_exclusiveCommitLock.owns_lock() && !parallelFollower) {
         auto start = chrono::steady_clock::now();
         auto finalLockTimeout = start + commitLockTimeout;
         auto nextLockTimeout = start + min(commitLockTimeout, 1'000'000us);
@@ -1414,14 +1407,14 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash, chrono::m
         }
 
         bool lockAcquired = false;
-        lockAcquired = _sharedData.commitLock.try_lock();
+        lockAcquired = _exclusiveCommitLock.try_lock();
         bool waited = true;
         if (lockAcquired) {
             // If we never waited at all, we record that.
             waited = false;
         }
         while (!lockAcquired) {
-            lockAcquired = _sharedData.commitLock.try_lock_until(nextLockTimeout);
+            lockAcquired = _exclusiveCommitLock.try_lock_until(nextLockTimeout);
             if (lockAcquired || chrono::steady_clock::now() >= finalLockTimeout) {
                 break;
             }
@@ -1447,10 +1440,8 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash, chrono::m
             SINFO("Transaction was aborted while waiting for commitLock acquisition.");
 
             // It's possible for us to get the lock, and also the caller sets the abort flag at the same time.
-            // In this case, we still abort, but we need to make sure that the lock isn't held, as _mutexLocked is
-            // not yet set and so won't get reset in a call to rollback().
             if (lockAcquired) {
-                _sharedData.commitLock.unlock();
+                _exclusiveCommitLock.unlock();
             }
             return false;
         } else if (!lockAcquired) {
@@ -1465,7 +1456,6 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash, chrono::m
             SINFO("Acquired commit lock immediately.");
         }
         _sharedData._commitLockTimer.start("SHARED");
-        _mutexLocked = true;
     }
 
     // We pass the journal number selected to the handler so that a caller can utilize the
@@ -1649,7 +1639,7 @@ int SQLite::commit(uint64_t& journalCommitID, const string& description, const s
         }
 
         _commitElapsed += STimeNow() - before;
-        if (_mutexLocked) {
+        if (_exclusiveCommitLock.owns_lock()) {
             _commitLockElapsed += _sharedData._commitLockTimer.stop();
         }
         _totalTransactionElapsed = _transactionTimer.stop();
@@ -1677,10 +1667,6 @@ int SQLite::commit(uint64_t& journalCommitID, const string& description, const s
             }
         }
 
-        if (_mutexLocked) {
-            _sharedData.commitLock.unlock();
-            _mutexLocked = false;
-        }
         finishWriteTransaction();
         _queryCache.clear();
         _sharedData.openTransactionCount--;
@@ -1795,12 +1781,8 @@ void SQLite::rollback(const string& commandName)
         _uncommittedHash.clear();
         _uncommittedQuery.clear();
 
-        // Only unlock the mutex if we've previously locked it. We can call `rollback` to cancel a transaction without
-        // ever having called `prepare`, which would have locked our mutex.
-        if (_mutexLocked) {
-            _mutexLocked = false;
+        if (_exclusiveCommitLock.owns_lock()) {
             _commitLockElapsed += _sharedData._commitLockTimer.stop();
-            _sharedData.commitLock.unlock();
         }
         finishWriteTransaction();
     } else {
@@ -2224,11 +2206,9 @@ void SQLite::SharedData::setCommitEnabled(bool enable)
     }
 
     unique_lock admission(leaderCommitAdmission, defer_lock);
-    unique_lock leaderLock(leaderCommitLock, defer_lock);
     if (!hctreeFollowerMode) {
         // Finish native commits and their queue inserts before the sync thread flushes on stand-down.
         admission.lock();
-        leaderLock.lock();
     }
     lock_guard<decltype(commitLock)> lock(commitLock);
     _commitEnabled = enable;

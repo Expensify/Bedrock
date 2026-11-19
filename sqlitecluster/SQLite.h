@@ -482,24 +482,20 @@ public:
         // in the journal at startup may get dropped.
         atomic<uint64_t> commitCount;
 
-        recursive_timed_mutex commitLock;
-
-        // This lock serves to enforce the order in which transactions can acquire `leaderCommitLock`. Any transaction, exclusive or otherwise,
-        // that needs to commit, will acquire this lock exclusively before locking `leaderCommitLock`. This lock can then be immediately released.
+        // On a native leader, every committer takes admission exclusively before acquiring commitLock, then releases admission.
         // This means that when all transactions trying to commit are parallel transactions, they all serialize "getting in line" (note: despite
         // the anlogy, there is not a strict order in which a pool of parallel transactions will finally write) to commit one at a time through this
         // mutex, but once they have gotten through that gate, they can all proceed in parallel.
         // However, for exclusive transactions, what happens here is that this blocks other shared transactions from getting in line until the
-        // exclusive transaction has it's unique lock on leaderCommitLock.
+        // exclusive transaction has its unique lock on commitLock.
         // This prevents exclusive transactions from never being able to run in the event that there is a steady stream of shared locks that keep
         // getting acquired by various parallel transactions. Without this extra lock, if the number of parallel transactions never drops to 0,
         // then the exclusive transaction could be blocked indefinitely until it times out.
         timed_mutex leaderCommitAdmission;
 
-        // Blocking writers take this lock exclusively for their entire transaction duration. Native HC-Tree writers take it as a
-        // shared lock only from prepare() through the end of the commit. This prevents them finalizing their transaction while a
-        // blocking transaction is running.
-        shared_timed_mutex leaderCommitLock;
+        // Blocking writers take this exclusively before BEGIN. Ordinary writers take it at prepare:
+        // shared on native leaders, exclusively for serial commits. Parallel follower replay skips it.
+        shared_timed_mutex commitLock;
 
         // If set to false, this prevents any thread from being able to commit to the DB.
         atomic<bool> _commitEnabled;
@@ -620,12 +616,8 @@ private:
 
     SPerformanceTimer _transactionTimer;
 
-    // We keep track of whether we've locked the global mutex so that we know whether or not we need to unlock it when
-    // we call `rollback`. Note that this indicates whether this object has locked the mutex, not whether the mutex is
-    // locked (i.e., this is `false` if some other DB object has locked the mutex).
-    bool _mutexLocked = false;
-    shared_lock<shared_timed_mutex> _sharedLeaderLock{_sharedData.leaderCommitLock, defer_lock};
-    unique_lock<shared_timed_mutex> _exclusiveLeaderLock{_sharedData.leaderCommitLock, defer_lock};
+    shared_lock<shared_timed_mutex> _sharedCommitLock{_sharedData.commitLock, defer_lock};
+    unique_lock<shared_timed_mutex> _exclusiveCommitLock{_sharedData.commitLock, defer_lock};
     bool lockLeaderCommit(TRANSACTION_TYPE type, optional<chrono::microseconds> lockTimeout, atomic<bool>* abortPtr = nullptr);
 
     atomic<int64_t> _lastConflictPage = 0;
