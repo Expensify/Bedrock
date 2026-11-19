@@ -100,20 +100,14 @@ struct HCTreeLeaderCommitTest : tpunit::TestFixture
             return began;
         });
         waiting.get_future().wait();
-        // Keep the first CID paused. Once the blocker starts waiting, later readers must stop entering,
-        // even though they would be compatible with the active shared transaction.
+        // A waiting blocker must stop later committers, even though their reads can still proceed.
         SQLite late(db);
         bool admissionClosed = false;
         const auto deadline = chrono::steady_clock::now() + 2s;
         while (!admissionClosed && chrono::steady_clock::now() < deadline) {
-            late.setTimeout(50ms);
-            try {
-                late.beginTransaction();
-                late.rollback();
-            } catch (const SQLite::timeout_error&) {
-                admissionClosed = true;
-            }
-            late.clearTimeout();
+            late.beginTransaction();
+            admissionClosed = !late.prepare(nullptr, nullptr, 50ms);
+            late.rollback();
             this_thread::yield();
         }
         EXPECT_TRUE(admissionClosed);
@@ -142,6 +136,45 @@ struct HCTreeLeaderCommitTest : tpunit::TestFixture
         }
     }
 
+    void checkExclusiveSnapshot()
+    {
+        BedrockTester files({}, {}, 0, 0, 0, false);
+        SQLite db(files.getArg("-db"), 1000, 1000, 0, 0, true);
+        db.setHCTreeFollowerMode(false);
+        ASSERT_TRUE(db.beginTransaction());
+        ASSERT_TRUE(db.write("CREATE TABLE t (id INTEGER PRIMARY KEY, value INTEGER);"));
+        ASSERT_TRUE(db.write("INSERT INTO t VALUES(1, 0);"));
+        ASSERT_TRUE(db.prepare());
+        ASSERT_EQUAL(db.commit(), SQLITE_OK);
+
+        // This writer has modified the same row, but hasn't tried to commit yet.
+        ASSERT_TRUE(db.beginTransaction());
+        ASSERT_TRUE(db.write("UPDATE t SET value = 1 WHERE id = 1;"));
+        promise<void> exclusiveReady, finish;
+        auto blocking = async(launch::async, [&]() {
+            SQLite writer(db);
+            writer.setTimeout(2s);
+            if (!writer.beginTransaction(SQLite::TRANSACTION_TYPE::EXCLUSIVE) || writer.read("SELECT value FROM t;") != "0" ||
+                !writer.write("UPDATE t SET value = 2 WHERE id = 1;")) {
+                return false;
+            }
+            exclusiveReady.set_value();
+            return finish.get_future().wait_for(3s) == future_status::ready && writer.prepare() && writer.commit() == SQLITE_OK;
+        });
+        ASSERT_TRUE(exclusiveReady.get_future().wait_for(3s) == future_status::ready);
+        SQLite reader(db);
+        reader.setTimeout(1s);
+        ASSERT_TRUE(reader.beginTransaction());
+        EXPECT_EQUAL(reader.read("SELECT value FROM t;"), "0");
+        reader.rollback();
+        finish.set_value();
+        ASSERT_TRUE(blocking.get());
+        ASSERT_TRUE(db.prepare());
+        EXPECT_EQUAL(db.commit(), SQLITE_BUSY_SNAPSHOT);
+        db.rollback();
+        EXPECT_EQUAL(db.read("SELECT value FROM t;"), "2");
+    }
+
     void parallelCommits()
     {
         // Native journal mode is process-wide. Other unit fixtures may be running in parallel.
@@ -153,5 +186,6 @@ struct HCTreeLeaderCommitTest : tpunit::TestFixture
         SQLite::hctreeExperimentalMode = true;
         checkGap(false);
         checkGap(true);
+        checkExclusiveSnapshot();
     }
 } __HCTreeLeaderCommitTest;
