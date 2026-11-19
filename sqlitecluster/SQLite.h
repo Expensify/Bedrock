@@ -483,9 +483,22 @@ public:
         atomic<uint64_t> commitCount;
 
         recursive_timed_mutex commitLock;
-        // Serialize entry to the gate so new shared committers cannot pass a waiting exclusive writer.
+
+        // This lock serves to enforce the order in which transactions can acquire `leaderCommitLock`. Any transaction, exclusive or otherwise,
+        // that needs to commit, will acquire this lock exclusively before locking `leaderCommitLock`. This lock can then be immediately released.
+        // This means that when all transactions trying to commit are parallel transactions, they all serialize "getting in line" (note: despite
+        // the anlogy, there is not a strict order in which a pool of parallel transactions will finally write) to commit one at a time through this
+        // mutex, but once they have gotten through that gate, they can all proceed in parallel.
+        // However, for exclusive transactions, what happens here is that this blocks other shared transactions from getting in line until the
+        // exclusive transaction has it's unique lock on leaderCommitLock.
+        // This prevents exclusive transactions from never being able to run in the event that there is a steady stream of shared locks that keep
+        // getting acquired by various parallel transactions. Without this extra lock, if the number of parallel transactions never drops to 0,
+        // then the exclusive transaction could be blocked indefinitely until it times out.
         timed_mutex leaderCommitAdmission;
-        // Native commits share this from prepare through commit or rollback. Blocking writers take it before BEGIN.
+
+        // Blocking writers take this lock exclusively for their entire transaction duration. Native HC-Tree writers take it as a
+        // shared lock only from prepare() through the end of the commit. This prevents them finalizing their transaction while a
+        // blocking transaction is running.
         shared_timed_mutex leaderCommitLock;
 
         // If set to false, this prevents any thread from being able to commit to the DB.
