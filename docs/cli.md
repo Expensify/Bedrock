@@ -54,7 +54,9 @@ To see a full list of Bedrock's configuration options, just run `bedrock -?` on 
 
 With `-hctreeExperimentalMode`, HC-Tree nodes write leader and follower commits to `hct_journal` and do not create legacy journal tables. Existing legacy tables remain readable for synchronization. This is a one-way transition: once `hct_journal` exists, starting without the flag aborts with "cannot downgrade from hct_journal, restore from backup". To run without the flag again, restore a backup that has no `hct_journal`.
 
-Experimental HC-Tree followers use up to 16 replication threads for live commits and synchronization batches. A commit waits until its dependency snapshot is available. Leaders currently send sequential dependencies (`commitID - 1`), so ordinary replication remains sequential. The receiver can also accept earlier dependency snapshots and apply independent commits in parallel. WAL2 and non-experimental HC-Tree followers always apply commits in ID order.
+Experimental HC-Tree leaders can commit ordinary transactions in parallel. A blocking writer excludes other commits from before it opens its snapshot until it commits or rolls back. Other transactions can still read and stage writes; only writers entering prepare wait for the gate. The leader broadcasts completed commits in ID order, using the dependency snapshot SQLite assigned to each commit. Experimental HC-Tree followers use up to 16 replication threads and can apply independent live commits in parallel once their snapshots are available. WAL2 and non-experimental HC-Tree followers always apply commits in ID order.
+
+Plugin prepare callbacks on an experimental HC-Tree leader can run concurrently. A sequence number assigned by a callback does not establish the order in which the transactions will commit.
 
 On first initialization, the newest legacy commit is moved atomically into `hct_journal`, preserving older legacy history. With no legacy history, HC-Tree starts at its initial CID 1. Legacy-only databases also create a blank entry at ID 1, so new databases in either mode start normal commits at ID 2. Subsequent startups reuse the journal without rebasing it.
 

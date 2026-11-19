@@ -537,17 +537,15 @@ void SQLiteNode::_sendOutstandingTransactions()
             SALERT("Already sent a transaction in committed transaction list");
             continue;
         }
-        string& query = i.second.first;
-        string& hash = i.second.second;
         // Every transaction we send has already committed here, so it goes out as a single TRANSACTION that the
         // follower applies and commits on its own.
         SData transaction("TRANSACTION");
         transaction["ID"] = to_string(id);
         transaction["NewCount"] = transaction["ID"];
-        transaction["NewHash"] = hash;
-        transaction["Snapshot"] = to_string(id - 1);
+        transaction["NewHash"] = i.second.hash;
+        transaction["Snapshot"] = to_string(i.second.snapshot);
         transaction["leaderSendTime"] = sendTime;
-        transaction.content = query;
+        transaction.content = move(i.second.query);
 
         // Allows us to easily figure out how far behind followers are by analyzing the logs.
         SINFO("Sending transaction " << id << " to followers");

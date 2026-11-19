@@ -787,10 +787,8 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                     BedrockCore::RESULT result = core.processCommand(command, isBlocking);
                     if (result == BedrockCore::RESULT::NEEDS_COMMIT) {
                         // If processCommand returned true, then we need to do a commit. Otherwise, the command is
-                        // done, and we just need to respond. `commit` takes the commit lock, so we serialize against
-                        // every other thread that's committing. We can still conflict with a transaction that another
-                        // thread committed between our call to `processCommand` and our call to `commit`. This is
-                        // scoped to the minimum time required.
+                        // done, and we just need to respond. A competing writer can cause a conflict even after
+                        // processCommand has finished.
                         SQLiteCore::COMMIT_RESULT commitResult = SQLiteCore::COMMIT_RESULT::CONFLICT;
                         uint64_t transactionID = 0;
                         string transactionHash;
@@ -829,9 +827,8 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                                 _syncNode->notifyCommit();
                             }
                             _conflictManager.recordTables(command->request.methodLine, db.getTablesUsed());
-                            // So we must still be leading, and at this point our commit has succeeded, let's
-                            // mark it as complete. We add the currentCommit count here as well.
-                            command->response["commitCount"] = to_string(db.getCommitCount());
+                            // A subsequent follower read must wait for this write even if an earlier CID is still in flight.
+                            command->response["commitCount"] = to_string(max(transactionID, db.getCommitCount()));
                             command->complete = true;
                         } else if (commitResult == SQLiteCore::COMMIT_RESULT::TIMEOUT && command->httpsRequests.empty()) {
                             // A long wait for the commit lock means the leader is overloaded. Retrying would run the command

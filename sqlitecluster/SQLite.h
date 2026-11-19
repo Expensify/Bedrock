@@ -207,16 +207,22 @@ private:
         HCTJournalSnapshotID hctJournalSnapshotID;
     };
 
-    // Prepare to commit or rollback the transaction. This also inserts the current uncommitted query into the
-    // journal; no additional writes are allowed until the next transaction has begun.
-    // The transactionID and transactionHash, if passed, will be updated with the values prepared for this transaction.
+    struct CommittedTransaction
+    {
+        string query;
+        string hash;
+        HCTJournalSnapshotID snapshot;
+    };
+    using CommittedTransactions = map<CommitID, CommittedTransaction>;
+
+    // Finalizes the payload, inserting it here when using a legacy journal. No additional writes are allowed.
+    // A native HC-Tree leader returns transactionID zero here; commit() supplies the CID allocated by SQLite.
     // The commitLockTimeout, if passed, will limit the time we wait for the lock. If not, we'll use 24 hours, which
     // is effectively no timeout.
-    // Note that if this transaction fails to commit, these will not ultimately be accurate.
     // Local transactions generate a new GUID. Replication supplies the received GUID (32 hex characters), or an
     // explicit empty string for a blank journal entry (which must also have an empty query).
     // Replication callers must compare the prepared hash with the received hash before committing.
-    // Explicit replication IDs permit concurrent commits only on experimental HC-Tree followers.
+    // Followers use the CID supplied in the replication message.
     bool prepare(uint64_t* transactionID = nullptr, string* transactionHash = nullptr, chrono::microseconds commitLockTimeout = chrono::hours(24), atomic<bool>* abortPtr = nullptr, const optional<string>& replicationGUID = nullopt, const optional<ReplicationInfo>& replication = nullopt);
 
     // This enables or disables automatic re-writing. This feature is to support mocked requests and load testing. This
@@ -378,11 +384,8 @@ private:
     void setAbortRef(atomic<bool>& abortVar);
     void clearAbortRef();
 
-    // This atomically removes and returns committed transactions from our internal list. SQLiteNode can call this, and
-    // it will return a map of transaction IDs to pairs of (query, hash), so that those transactions can be replicated
-    // out to peers. The query is in its post-prepare() form (a zstd frame when journalZstdDictionaryID is non-zero,
-    // otherwise the raw SQL) and is shipped to followers as-is.
-    map<uint64_t, pair<string, string>> popCommittedTransactions();
+    // Removes transactions ready to broadcast. The query bytes are already prepared for the wire.
+    CommittedTransactions popCommittedTransactions();
 
     // The whitelist is either nullptr, in which case the feature is disabled, or it's a map of table names to sets of
     // column names that are allowed for reading. Using whitelist at all put the database handle into a more
@@ -455,9 +458,7 @@ public:
         // Initialize all commit metadata from the journal under _internalStateMutex.
         void initializeCommitState(const CommitState& state);
 
-        // Update the shared state of the DB to include the newest commit with the newest hash. This needs to be done
-        // after completing a commit and before releasing the commit lock.
-        void incrementCommit(const string& commitHash);
+        void recordLocalCommit(CommitID id, CommittedTransaction transaction);
 
         // Remember completed replication IDs and publish only the contiguous prefix and its nonblank hash.
         void recordReplicationCommit(uint64_t commitID, const string& commitHash);
@@ -468,8 +469,7 @@ public:
 
         CommitState getCommitState() const;
 
-        // This removes and returns all committed transactions.
-        map<uint64_t, pair<string, string>> popCommittedTransactions();
+        CommittedTransactions popCommittedTransactions();
 
         // Identity of the latest nonblank commit, protected by _internalStateMutex.
         string lastCommittedHash;
@@ -478,26 +478,24 @@ public:
         // Round-robin journal selection for transactions across all handles.
         atomic<int64_t> nextJournalCount;
 
-        // When `SQLite::prepare` is called, we need to save a set of info that will be broadcast to peers when the
-        // transaction is ultimately committed. This should be cleared out if the transaction is rolled back. The
-        // query is in its post-prepare() form (a zstd frame when compression is enabled, raw SQL otherwise) and is
-        // shipped directly to followers in TRANSACTION.
-        void prepareTransactionInfo(uint64_t commitID, const string& query, const string& hash);
-
-        // Discard a prepared entry when the transaction completes without recording it in the journal.
-        void discardPreparedTransactionInfo(uint64_t commitID);
-
-        // When a transaction that was prepared is committed, we move the data from the prepared list to the committed
-        // list.
-        void commitTransactionInfo(uint64_t commitID);
-
         // Highest contiguous committed ID, loaded from the journal at initialization. Note that any discontiguous commits
         // in the journal at startup may get dropped.
         atomic<uint64_t> commitCount;
 
-        // Serializes commits except explicit experimental HC-Tree follower replication. writeLock and the open writer
-        // count must be used to finish all writers, including parallel follower commits, when changing between FOLLOWER/LEADER.
-        recursive_timed_mutex commitLock;
+        // On a native leader, every committer takes admission exclusively before acquiring commitLock, then releases admission.
+        // This means that when all transactions trying to commit are parallel transactions, they all serialize "getting in line" (note: despite
+        // the anlogy, there is not a strict order in which a pool of parallel transactions will finally write) to commit one at a time through this
+        // mutex, but once they have gotten through that gate, they can all proceed in parallel.
+        // However, for exclusive transactions, what happens here is that this blocks other shared transactions from getting in line until the
+        // exclusive transaction has its unique lock on commitLock.
+        // This prevents exclusive transactions from never being able to run in the event that there is a steady stream of shared locks that keep
+        // getting acquired by various parallel transactions. Without this extra lock, if the number of parallel transactions never drops to 0,
+        // then the exclusive transaction could be blocked indefinitely until it times out.
+        timed_mutex leaderCommitAdmission;
+
+        // Blocking writers take this exclusively before BEGIN. Ordinary writers take it at prepare:
+        // shared on native leaders, exclusively for serial commits. Parallel follower replay skips it.
+        shared_timed_mutex commitLock;
 
         // If set to false, this prevents any thread from being able to commit to the DB.
         atomic<bool> _commitEnabled;
@@ -518,7 +516,7 @@ public:
         // is not reset at the end of each checkpoint. This way the graph that relies on this value won't dip to 0
         atomic<size_t> knownOutstandingFramesToCheckpoint = 0;
 
-        // This can be locked in exclusive mode to prevent all writes. This exists to support the `BlockWrites` command.
+        // BlockWrites and role changes close writer admission while active transactions finish.
         shared_mutex writeLock;
 
         // Count transactions that may still write after releasing writeLock.
@@ -535,10 +533,7 @@ public:
         vector<size_t> journalTrimTables;
 
 private:
-        // The data required to replicate transactions, in two lists, depending on whether this has only been prepared
-        // or if it's been committed.
-        map<uint64_t, pair<string, string>> _preparedTransactions;
-        map<uint64_t, pair<string, string>> _committedTransactions;
+        CommittedTransactions _committedTransactions;
 
         // Map of commit ID to hash for non-contiguous commits passed the commitCount that are waiting on earlier commits to arrive.
         // Commits are automatically removed from the beginning when they become part of the contiguous journal.
@@ -546,7 +541,7 @@ private:
 
         // This mutex is locked when we need to change the state of the _sharedData object. It is shared between a
         // variety of operations (i.e., updating _committedTransactions, etc).
-        mutable recursive_mutex _internalStateMutex;
+        mutable mutex _internalStateMutex;
     };
 
     struct SharedDataLookupMap;
@@ -621,10 +616,9 @@ private:
 
     SPerformanceTimer _transactionTimer;
 
-    // We keep track of whether we've locked the global mutex so that we know whether or not we need to unlock it when
-    // we call `rollback`. Note that this indicates whether this object has locked the mutex, not whether the mutex is
-    // locked (i.e., this is `false` if some other DB object has locked the mutex).
-    bool _mutexLocked = false;
+    shared_lock<shared_timed_mutex> _sharedCommitLock{_sharedData.commitLock, defer_lock};
+    unique_lock<shared_timed_mutex> _exclusiveCommitLock{_sharedData.commitLock, defer_lock};
+    bool lockLeaderCommit(TRANSACTION_TYPE type, optional<chrono::microseconds> lockTimeout, atomic<bool>* abortPtr = nullptr);
 
     atomic<int64_t> _lastConflictPage = 0;
     atomic<string> _lastConflictLocation;
