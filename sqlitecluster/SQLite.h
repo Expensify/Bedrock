@@ -624,16 +624,8 @@ private:
     // we call `rollback`. Note that this indicates whether this object has locked the mutex, not whether the mutex is
     // locked (i.e., this is `false` if some other DB object has locked the mutex).
     bool _mutexLocked = false;
-    // Nested handles on one thread share ownership of the native commit gate.
-    struct LeaderTransaction
-    {
-        SharedData* database;
-        size_t handles;
-        shared_lock<shared_timed_mutex> shared;
-        unique_lock<shared_timed_mutex> exclusive;
-    };
-    static thread_local vector<LeaderTransaction> _leaderTransactions;
-    bool _inLeaderTransaction = false;
+    shared_lock<shared_timed_mutex> _sharedLeaderLock{_sharedData.leaderCommitLock, defer_lock};
+    unique_lock<shared_timed_mutex> _exclusiveLeaderLock{_sharedData.leaderCommitLock, defer_lock};
     bool lockLeaderCommit(TRANSACTION_TYPE type, optional<chrono::microseconds> lockTimeout, atomic<bool>* abortPtr = nullptr);
 
     atomic<int64_t> _lastConflictPage = 0;
