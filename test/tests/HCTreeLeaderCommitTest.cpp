@@ -158,6 +158,10 @@ struct HCTreeLeaderCommitTest : tpunit::TestFixture
                 !writer.write("UPDATE t SET value = 2 WHERE id = 1;")) {
                 return false;
             }
+            SQLite nested(writer);
+            if (nested.writeLocalUnreplicated("UPDATE t SET value = 3 WHERE id = 1;")) {
+                return false;
+            }
             exclusiveReady.set_value();
             return finish.get_future().wait_for(3s) == future_status::ready && writer.prepare() && writer.commit() == SQLITE_OK;
         });

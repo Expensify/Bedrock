@@ -730,8 +730,12 @@ bool SQLite::lockLeaderCommit(TRANSACTION_TYPE type, optional<chrono::microsecon
     SASSERT(_isWriteTransaction);
     const auto existing = ranges::find(_leaderTransactions, &_sharedData, &LeaderTransaction::database);
     if (existing != _leaderTransactions.end()) {
-        if (type == TRANSACTION_TYPE::EXCLUSIVE && !existing->exclusive.owns_lock()) {
-            STHROW("Cannot begin a blocking transaction inside a shared leader transaction");
+        if (type == TRANSACTION_TYPE::EXCLUSIVE) {
+            STHROW("Cannot begin a blocking transaction inside a leader commit");
+        }
+        // A second handle on the exclusive owner's thread cannot wait for itself or commit through its gate.
+        if (existing->exclusive.owns_lock()) {
+            return false;
         }
         ++existing->handles;
         _inLeaderTransaction = true;
