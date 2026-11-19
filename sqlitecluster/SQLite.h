@@ -139,15 +139,6 @@ private:
     // that this transaction cannot conflict with any others.
     bool beginTransaction(TRANSACTION_TYPE type = TRANSACTION_TYPE::SHARED, bool beginOnly = false);
 
-    enum class BEGIN_RESULT
-    {
-        STARTED,
-        FAILED,
-        LOCK_TIMEOUT
-    };
-    // A supplied timeout covers both native leader admission locks, independently of the SQL execution timeout.
-    BEGIN_RESULT beginTransaction(TRANSACTION_TYPE type, bool beginOnly, optional<chrono::microseconds> leaderLockTimeout);
-
     // Verifies a table exists and has a particular definition. If the database is left with the right schema, it
     // returns true. If it had to create a new table (ie, the table was missing), it also sets created to true. If the
     // table is already there with the wrong schema, it returns false.
@@ -492,7 +483,9 @@ public:
         atomic<uint64_t> commitCount;
 
         recursive_timed_mutex commitLock;
-        // Native leader transactions share this gate from BEGIN; blocking transactions hold it exclusively.
+        // Serialize entry to the gate so new shared committers cannot pass a waiting exclusive writer.
+        timed_mutex leaderCommitAdmission;
+        // Native commits share this from prepare through commit or rollback. Blocking writers take it before BEGIN.
         shared_timed_mutex leaderCommitLock;
 
         // If set to false, this prevents any thread from being able to commit to the DB.
@@ -514,8 +507,8 @@ public:
         // is not reset at the end of each checkpoint. This way the graph that relies on this value won't dip to 0
         atomic<size_t> knownOutstandingFramesToCheckpoint = 0;
 
-        // BlockWrites, role changes and blocking leader transactions close writer admission while active transactions finish.
-        shared_timed_mutex writeLock;
+        // BlockWrites and role changes close writer admission while active transactions finish.
+        shared_mutex writeLock;
 
         // Count transactions that may still write after releasing writeLock.
         atomic<uint64_t> openWriteTransactionCount{0};
@@ -618,8 +611,7 @@ private:
     // we call `rollback`. Note that this indicates whether this object has locked the mutex, not whether the mutex is
     // locked (i.e., this is `false` if some other DB object has locked the mutex).
     bool _mutexLocked = false;
-    // A plugin can use multiple handles on the same thread. They share one writer registration and one
-    // acquisition of the native leader gate until the last transaction on that thread finishes.
+    // Nested handles on one thread share ownership of the native commit gate.
     struct LeaderTransaction
     {
         SharedData* database;
@@ -629,7 +621,7 @@ private:
     };
     static thread_local vector<LeaderTransaction> _leaderTransactions;
     bool _inLeaderTransaction = false;
-    bool beginLeaderTransaction(TRANSACTION_TYPE type, optional<chrono::microseconds> lockTimeout);
+    bool lockLeaderCommit(TRANSACTION_TYPE type, optional<chrono::microseconds> lockTimeout, atomic<bool>* abortPtr = nullptr);
 
     atomic<int64_t> _lastConflictPage = 0;
     atomic<string> _lastConflictLocation;
@@ -694,7 +686,7 @@ private:
 
     // Check out various error cases that can interrupt a query.
     // We check them all together because we need to make sure we atomically pick a single one to handle.
-    void _checkInterruptErrors(const string& error, bool checkQueryTimeout = true) const;
+    void _checkInterruptErrors(const string& error) const;
 
     // Callbacks to run after each successful commit. Set at construction and copied to every handle derived from
     // this one, so they need no locking.
