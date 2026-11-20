@@ -1609,7 +1609,9 @@ void BedrockServer::_status(unique_ptr<BedrockCommand>& command)
         content["state"] = SQLiteNode::stateName(getState());
         content["version"] = _version;
         content["host"] = args["-nodeHost"];
-        content["commandCount"] = BedrockCommand::getCommandCount();
+        const auto commandCounts = _commandQueue.getCommandCounts();
+        content["commandCount"] = commandCounts.commandCount;
+        content["activeCommandCount"] = commandCounts.activeCommandCount;
         content["isDetached"] = isDetached() ? "true" : "false";
 
         {

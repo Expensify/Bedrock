@@ -60,6 +60,16 @@ public:
     // Returns a list of all the method lines for all the requests currently queued.
     list<string> getRequestMethodLines();
 
+    struct CommandCounts
+    {
+        size_t commandCount = 0;
+        size_t activeCommandCount = 0;
+    };
+
+    // Returns the process-wide command count and the count excluding this queue's unexpired future schedules.
+    // Commands waiting to retry after a conflict remain active. Both counts are sampled while the queue is locked.
+    CommandCounts getCommandCounts();
+
     // Discards all commands scheduled more than msInFuture milliseconds after right now.
     void abandonFutureCommands(int msInFuture);
 
