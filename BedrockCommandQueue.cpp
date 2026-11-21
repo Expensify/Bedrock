@@ -133,6 +133,24 @@ list<string> BedrockCommandQueue::getRequestMethodLines()
     return returnVal;
 }
 
+BedrockCommandQueue::CommandCounts BedrockCommandQueue::getCommandCounts()
+{
+    lock_guard<decltype(_queueMutex)> queueLock(_queueMutex);
+    const uint64_t now = STimeNow();
+    size_t futureCommandCount = 0;
+    for (auto iterator = _queue.upper_bound(now); iterator != _queue.end(); ++iterator) {
+        // A conflict retry has a future queue time but its original scheduled time is already due.
+        const ItemTimeoutPair& queuedCommand = iterator->second;
+        if (queuedCommand.item->scheduledTime > now && queuedCommand.timeout > now) {
+            ++futureCommandCount;
+        }
+    }
+
+    // Keep queued commands alive through this read so a concurrent dequeue cannot make the subtraction underflow.
+    const size_t commandCount = BedrockCommand::getCommandCount();
+    return {commandCount, commandCount - futureCommandCount};
+}
+
 void BedrockCommandQueue::abandonFutureCommands(int msInFuture)
 {
     uint64_t timeLimit = STimeNow() + msInFuture * 1000;
