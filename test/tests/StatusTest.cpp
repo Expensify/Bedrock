@@ -67,6 +67,7 @@ struct StatusTest : tpunit::TestFixture
 
     void testFutureCommandsRemainQueued()
     {
+        // Given an insert scheduled for tomorrow.
         BedrockTester tester;
         SData query("Query");
         query["query"] = "CREATE TABLE scheduledStatusTest (value INTEGER);";
@@ -76,14 +77,17 @@ struct StatusTest : tpunit::TestFixture
         query["commandExecuteTime"] = to_string(STimeNow() + STIME_US_PER_D);
         tester.executeWaitVerifyContent(query, "202");
 
+        // When waiting for immediate work to finish.
         ASSERT_TRUE(tester.waitForStatusTerm("commandCount", "2"));
         ASSERT_TRUE(tester.waitForStatusTerm("activeCommandCount", "1"));
+
+        // Then the future insert must stay queued and unexecuted.
         ASSERT_FALSE(tester.waitForStatusTerm("commandCount", "1", 100'000));
         ASSERT_EQUAL(tester.readDB("SELECT COUNT(*) FROM scheduledStatusTest;"), "0");
 
+        // HCTree reads may still be finishing, so compare counts from the same snapshot.
         const STable status = tester.executeWaitVerifyContentTable(SData("Status"));
-        ASSERT_EQUAL(status.at("commandCount"), "2");
-        ASSERT_EQUAL(status.at("activeCommandCount"), "1");
+        ASSERT_EQUAL(SToUInt64(status.at("commandCount")) - SToUInt64(status.at("activeCommandCount")), 1);
         ASSERT_EQUAL(status.at("queuedCommandList"), "[\"Query\"]");
     }
 } __StatusTest;
